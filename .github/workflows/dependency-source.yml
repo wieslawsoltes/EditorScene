@@ -1,0 +1,30 @@
+name: Verify pinned editor source
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/dependency-source.yml
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: wieslawsoltes/AvaloniaEdit
+          ref: 1a2df473f157a0127d2559f241dc712d1ce60188
+          path: unoedit
+          persist-credentials: false
+      - name: Archive pinned source without credentials or build output
+        run: |
+          test "$(git -C unoedit rev-parse HEAD)" = 1a2df473f157a0127d2559f241dc712d1ce60188
+          git -C unoedit archive --format=tar.gz --output="$PWD/unoedit-source.tar.gz" HEAD
+          sha256sum unoedit-source.tar.gz > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unoedit-pinned-source
+          path: |
+            unoedit-source.tar.gz
+            SHA256SUMS.txt
+          retention-days: 7
