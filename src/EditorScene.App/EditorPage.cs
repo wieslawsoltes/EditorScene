@@ -61,7 +61,7 @@ public sealed partial class EditorPage : Page
 #if __WASM__
         _diagnostics = Uno.Foundation.WebAssemblyRuntime.InvokeJS("new URLSearchParams(location.search).get('test') === '1' ? 'yes' : 'no'") == "yes";
         // Reliable browser upload/download, including browsers without File System Access API support.
-        Uno.WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration = Uno.Storage.Pickers.WasmPickerConfiguration.DownloadUpload;
+        Uno.WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration = Uno.WasmPickerConfiguration.DownloadUpload;
 #endif
         _diagnostics |= Environment.GetEnvironmentVariable("EDITORSCENE_NATIVE_CHECKS") == "1";
         BuildLayout(); WireEditor(_primary); SetActive(_primary);
