@@ -1,0 +1,76 @@
+name: Validate EditorScene
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**']
+    paths-ignore: ['docs/**', '**.md']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: editorscene-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Build desktop control and application
+        run: python3 tools/build.py desktop > desktop-build.log 2>&1 || { tail -100 desktop-build.log; exit 1; }
+      - name: Exercise actual Uno-host commands and lifecycle
+        run: python3 tools/build.py native-checks
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-validation
+          path: |
+            artifacts/native-checks.*
+            desktop-build.log
+          retention-days: 14
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Publish Uno WebAssembly application
+        run: |
+          mkdir -p artifacts
+          python3 tools/build.py browser --install-workloads > artifacts/browser-build.log 2>&1 || { tail -100 artifacts/browser-build.log; exit 1; }
+      - name: Install pinned browser test tools
+        run: |
+          npm install --prefix tools --no-save --package-lock=false playwright@1.64.0
+          tools/node_modules/.bin/playwright install --with-deps chromium > artifacts/playwright-install.log 2>&1
+      - name: Exercise the published application through real browser input
+        run: node tools/browser-smoke.mjs artifacts/site
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-validation
+          path: |
+            artifacts/browser-tests
+            artifacts/*.log
+            artifacts/site/build.json
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: published-browser
+          path: artifacts/site
+          retention-days: 14
