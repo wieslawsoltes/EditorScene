@@ -1,0 +1,66 @@
+name: Split development cache for local validation
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/development-cache-parts.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: development-dependencies
+          run-id: 37994398610
+          github-token: ${{ github.token }}
+          path: dependencies
+      - name: Split public package archive
+        run: |
+          cd dependencies
+          sha256sum -c SHA256SUMS.txt || sha256sum *.tar.gz
+          split -b 400M nuget-packages.tar.gz nuget-packages.part-
+          ls -lh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-sdk
+          path: dependencies/dotnet-sdk.tar.gz
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-nuget-aa
+          path: dependencies/nuget-packages.part-aa
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-nuget-ab
+          path: dependencies/nuget-packages.part-ab
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-nuget-ac
+          path: dependencies/nuget-packages.part-ac
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-nuget-ad
+          path: dependencies/nuget-packages.part-ad
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-nuget-ae
+          path: dependencies/nuget-packages.part-ae
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-nuget-af
+          path: dependencies/nuget-packages.part-af
+          compression-level: 0
+          retention-days: 3
