@@ -13,6 +13,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <WasmShellMonoRuntimeExecutionMode>Interpreter</WasmShellMonoRuntimeExecutionMode>
     <WasmShellEnableThreading>false</WasmShellEnableThreading>
+    <!-- Roslyn is not trim-safe. Retain its compiler metadata/reflection paths instead of suppressing IL2104. -->
+    <PublishTrimmed Condition="'$(TargetFramework)' == 'net10.0-browserwasm'">false</PublishTrimmed>
     <WasmShellWebAppBasePath Condition="'$(WasmShellWebAppBasePath)' == ''">/EditorScene/</WasmShellWebAppBasePath>
   </PropertyGroup>
   <ItemGroup>

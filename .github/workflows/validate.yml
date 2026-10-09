@@ -12,6 +12,25 @@ concurrency:
   group: editorscene-validation-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Run document, language, protocol and rendering regressions
+        run: python3 tools/build.py test
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: regression-tests
+          path: artifacts/tests
+          retention-days: 14
   native:
     runs-on: ubuntu-latest
     timeout-minutes: 25
