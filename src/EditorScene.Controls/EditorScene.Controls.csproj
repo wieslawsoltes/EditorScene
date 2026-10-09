@@ -1,0 +1,14 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-desktop;net10.0-browserwasm</TargetFrameworks>
+    <TargetFrameworks Condition="'$(EditorSceneTargetFrameworks)' != ''">$(EditorSceneTargetFrameworks)</TargetFrameworks>
+    <UnoFeatures>SkiaRenderer</UnoFeatures>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Reusable EditorScene.Controls component for native and browser code editing.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EditorScene.Rendering.Skia/EditorScene.Rendering.Skia.csproj" />
+    <ProjectReference Include="../../external/UnoEdit/src/UnoEdit.Uno/UnoEdit.Uno.csproj" />
+
+  </ItemGroup>
+</Project>

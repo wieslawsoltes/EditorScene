@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Reusable EditorScene.Rendering.Skia component for native and browser code editing.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EditorScene.LanguageServices/EditorScene.LanguageServices.csproj" />
+    <ProjectReference Include="../../external/UnoEdit/src/UnoEdit.Rendering.Skia/UnoEdit.Rendering.Skia.csproj" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.2" />
+  </ItemGroup>
+</Project>
