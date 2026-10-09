@@ -3,6 +3,8 @@
     <TargetFrameworks>net10.0-desktop;net10.0-browserwasm</TargetFrameworks>
     <TargetFrameworks Condition="'$(EditorSceneTargetFrameworks)' != ''">$(EditorSceneTargetFrameworks)</TargetFrameworks>
     <UnoFeatures>SkiaRenderer</UnoFeatures>
+    <OutputType>Library</OutputType>
+    <IsPackable>true</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Description>Reusable EditorScene.Controls component for native and browser code editing.</Description>
   </PropertyGroup>
