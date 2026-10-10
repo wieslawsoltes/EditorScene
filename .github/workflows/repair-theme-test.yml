@@ -1,0 +1,67 @@
+name: Repair theme test and replay exact browser artifact
+on:
+  push:
+    branches: [feat/reusable-uno-editor]
+    paths: [.github/workflows/repair-theme-test.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Repair only the observed theme input race
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('tools/browser-smoke.mjs'); text=path.read_text()
+          old="  // Keyboard navigation exercises the actual ComboBox without depending on its transient container template.\n  await click('Theme');await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');"
+          new="  // Wait for the actual popup item before input; immediate key presses can precede popup focus.\n  await click('Theme');await click('Choice Dark');"
+          if text.count(old)!=1: raise RuntimeError('Expected one theme test anchor')
+          path.write_text(text.replace(old,new))
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/repair-theme-test.yml
+          git add tools/browser-smoke.mjs
+          git commit -m 'test(browser): await visible theme popup before selecting its item'
+          git push origin HEAD:feat/reusable-uno-editor
+      - uses: actions/download-artifact@v4
+        with:
+          name: published-browser
+          run-id: 38091692634
+          github-token: ${{ github.token }}
+          path: artifacts/site
+      - name: Verify exact compiled application and unchanged application source
+        run: |
+          git diff --exit-code bda8975deb62276b4a63f438d11467393d8b469f HEAD -- src external global.json Directory.Build.props NuGet.Config
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          build=json.loads(Path('artifacts/site/build.json').read_text())
+          assert build['revision']=='bda8975deb62276b4a63f438d11467393d8b469f', build
+          print('Replaying application build:', build)
+          PY
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install browser tools
+        run: |
+          npm install --prefix tools --no-save --package-lock=false playwright@1.64.0
+          tools/node_modules/.bin/playwright install --with-deps chromium > artifacts/playwright-install.log 2>&1
+      - name: Run complete interaction suite against the same compiled code
+        run: node tools/browser-smoke.mjs artifacts/site
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: exact-browser-replay
+          path: |
+            artifacts/browser-tests
+            artifacts/site/build.json
+          retention-days: 14
