@@ -93,8 +93,8 @@ try {
   await click('Toolbar Split editor');await wait(()=>globalThis.__editorSceneState?.Split);await focusEditor();await page.keyboard.press('Control+End');await page.keyboard.type('// shared');
   await wait(()=>globalThis.__editorSceneState?.SecondaryTextPrefix===globalThis.__editorSceneState?.TextPrefix && globalThis.__editorSceneState.TextPrefix.endsWith('// shared'));
   checks.push('Shared-document split view and anchored bookmark indicator');await click('Toolbar Split editor');await wait(()=>globalThis.__editorSceneState?.Split===false);
-  // Keyboard navigation exercises the actual ComboBox without depending on its transient container template.
-  await click('Theme');await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+  // Wait for the actual popup item before input; immediate key presses can precede popup focus.
+  await click('Theme');await click('Choice Dark');
   await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');await page.screenshot({path:path.join(output,'dark-editor.png')});checks.push('Theme changes update native editor and application chrome');
   await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly);const before=(await state()).TextPrefix;await focusEditor();await page.keyboard.type('BLOCKED');await textIs(before);await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);checks.push('Read-only user input protection');
   await paste('for');await page.keyboard.press('Tab');await wait(()=>globalThis.__editorSceneState?.SnippetActive && globalThis.__editorSceneState.SnippetFields.length===2);
