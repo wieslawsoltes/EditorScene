@@ -57,11 +57,14 @@ public sealed class LanguageTests
     {
         const string code = "Imports System\nPublic Class Sample\n Public Sub M()\n  Dim value As Integer = \"bad\"\n  Console.Wri\n End Sub\nEnd Class";
         using var document = new EditorDocument(code, "test.vb"); var language = new DotNetLanguage(true);
-        var analysis = await language.AnalyzeAsync(document.Snapshot());
+        // A test continuation has no UI synchronization context. Capture on the owning
+        // thread once, then reuse the immutable snapshot for every provider request.
+        var snapshot = document.Snapshot();
+        var analysis = await language.AnalyzeAsync(snapshot);
         Assert.That(analysis.Diagnostics.Any(d => d.Severity == IssueSeverity.Error), Is.True);
         Assert.That(analysis.Foldings.Length, Is.GreaterThanOrEqualTo(2));
         Assert.That(Flatten(analysis.Symbols).Any(s => s.Name.Contains("Sample", StringComparison.Ordinal)), Is.True);
-        var items = await language.CompleteAsync(document.Snapshot(), code.IndexOf("Wri", StringComparison.Ordinal) + 3);
+        var items = await language.CompleteAsync(snapshot, code.IndexOf("Wri", StringComparison.Ordinal) + 3);
         Assert.That(items.Any(i => i.Label == "WriteLine"), Is.True);
     }
     [Test]
@@ -86,9 +89,10 @@ public sealed class LanguageTests
     public async Task JsonOutliningAndFormattingComeFromParsedStructure()
     {
         using var document = new EditorDocument("{\n\"x\": [\n1,2\n]\n}"); var language = new JsonLanguage();
-        var analysis = await language.AnalyzeAsync(document.Snapshot()); Assert.That(analysis.Foldings.Length, Is.EqualTo(2));
+        var snapshot = document.Snapshot();
+        var analysis = await language.AnalyzeAsync(snapshot); Assert.That(analysis.Foldings.Length, Is.EqualTo(2));
         Assert.That(Flatten(analysis.Symbols).Any(s => s.Name == "x"), Is.True);
-        var edits = await language.FormatAsync(document.Snapshot()); Assert.That(edits[0].NewText, Does.Contain("  \"x\""));
+        var edits = await language.FormatAsync(snapshot); Assert.That(edits[0].NewText, Does.Contain("  \"x\""));
     }
     [TestCase("<root><child name=\"a\" /></root>", 0)]
     [TestCase("<root><child></root>", 1)]
@@ -103,8 +107,9 @@ public sealed class LanguageTests
     public async Task XmlProvidesHierarchyAndPreservesDeclaredEncodingDuringFormatting()
     {
         using var document = new EditorDocument("<?xml version=\"1.0\" encoding=\"utf-8\"?><root>\n<child value=\"🙂\"/>\n</root>"); var language = new XmlLanguage();
-        var analysis = await language.AnalyzeAsync(document.Snapshot()); Assert.That(analysis.Symbols.Single().Children.Single().Name, Is.EqualTo("child")); Assert.That(analysis.Foldings.Length, Is.EqualTo(1));
-        var edits = await language.FormatAsync(document.Snapshot()); Assert.That(edits[0].NewText, Does.Contain("encoding=\"utf-8\""));
+        var snapshot = document.Snapshot();
+        var analysis = await language.AnalyzeAsync(snapshot); Assert.That(analysis.Symbols.Single().Children.Single().Name, Is.EqualTo("child")); Assert.That(analysis.Foldings.Length, Is.EqualTo(1));
+        var edits = await language.FormatAsync(snapshot); Assert.That(edits[0].NewText, Does.Contain("encoding=\"utf-8\""));
     }
     private static IEnumerable<NavigationSymbol> Flatten(IEnumerable<NavigationSymbol> symbols)
     { foreach (var symbol in symbols) { yield return symbol; foreach (var child in Flatten(symbol.Children)) yield return child; } }
