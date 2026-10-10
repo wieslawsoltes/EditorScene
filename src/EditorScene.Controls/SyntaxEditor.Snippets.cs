@@ -8,7 +8,8 @@ namespace EditorScene.Controls;
 public sealed partial class SyntaxEditor
 {
     private InsertionContext? _snippetSession;
-    public SnippetCatalog Snippets { get; } = SnippetCatalog.CreateDefault();
+    private SnippetCatalog _snippets = SnippetCatalog.CreateDefault();
+    public SnippetCatalog Snippets { get => _snippets; set => _snippets = value ?? throw new ArgumentNullException(nameof(value)); }
     public bool IsSnippetActive => _snippetSession is not null;
     public IReadOnlyList<SelectionRange> ActiveSnippetFields => _snippetSession?.ActiveElements.Where(e => e.IsEditable && e.Segment is not null)
         .Select(e => new SelectionRange(e.Segment.Offset, e.Segment.EndOffset)).ToArray() ?? [];

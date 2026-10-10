@@ -204,7 +204,7 @@ public sealed partial class EditorPage : Page
         else if (_current is not null)
         {
             _views.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); _views.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-            _secondary = new SyntaxEditor { Document = _current.Document, SyntaxLanguage = _current.Language, Theme = _theme, Margin = new Thickness(1, 0, 0, 0), FontSize = _primary.FontSize };
+            _secondary = new SyntaxEditor { Snippets = _primary.Snippets, Document = _current.Document, SyntaxLanguage = _current.Language, Theme = _theme, Margin = new Thickness(1, 0, 0, 0), FontSize = _primary.FontSize };
             WireEditor(_secondary); Grid.SetColumn(_secondary, 1); _views.Children.Add(_secondary); _secondary.CaretOffset = _primary.CaretOffset;
         }
         AddEvent(_secondary is null ? "Split closed" : "Split view opened — shared document, independent caret and viewport"); QueueDiagnostics();

@@ -47,6 +47,13 @@ public sealed partial class EditorPage
         Command(prompt, "Complete Word", EditorCommand.CompleteWord, "Ctrl+Space"); Command(prompt, "Quick Info", EditorCommand.QuickInfo); Command(prompt, "Signature Help", EditorCommand.SignatureHelp, "Ctrl+Shift+Space");
         Toggle(prompt, "Automatically Show Completion", () => _active.AutoShowCompletion, () => _active.AutoShowCompletion = !_active.AutoShowCompletion);
         Toggle(prompt, "Automatically Complete Brackets", () => _active.AutoCompleteBrackets, () => _active.AutoCompleteBrackets = !_active.AutoCompleteBrackets);
+        Separator(prompt);
+        Item(prompt, "Insert Snippet…", () => _active.ShowSnippetPickerAsync(), "Ctrl+K, Ctrl+X");
+        Item(prompt, "Surround With…", () => _active.ShowSnippetPickerAsync(true), "Ctrl+K, Ctrl+S");
+        Item(prompt, "Complete Snippet", () => { _active.EndSnippet(); _active.FocusEditor(); return Task.CompletedTask; });
+        Separator(prompt);
+        Item(prompt, "Import Snippets…", ImportSnippetsAsync);
+        Item(prompt, "Export Snippets…", ExportSnippetsAsync);
         var view = Menu("View");
         Toggle(view, "Word Wrap", () => _active.WordWrap, () => _ = _active.ExecuteAsync(EditorCommand.ToggleWordWrap));
         Toggle(view, "Line Numbers", () => _active.ShowLineNumbers, () => _ = _active.ExecuteAsync(EditorCommand.ToggleLineNumbers));

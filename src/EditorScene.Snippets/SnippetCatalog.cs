@@ -13,6 +13,17 @@ public sealed class SnippetCatalog
         if (_entries.Any(e => e.Folder == folder && e.Snippet.Language == snippet.Language && e.Snippet.Title == snippet.Title)) throw new ArgumentException("Duplicate snippet title in the same folder.", nameof(snippet));
         _entries.Add(new(folder, snippet));
     }
+    /// <summary>Validate every entry before changing the catalog, so failed imports are atomic.</summary>
+    public void RegisterRange(IEnumerable<SnippetEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        var additions = entries.Select(e => e is null ? throw new ArgumentException("Null snippet entry.", nameof(entries)) : new SnippetEntry(NormalizeFolder(e.Folder), e.Snippet ?? throw new ArgumentException("Null snippet.", nameof(entries)))).ToArray();
+        var keys = _entries.Select(e => (e.Folder, e.Snippet.Language, e.Snippet.Title)).ToHashSet();
+        foreach (var entry in additions)
+            if (!keys.Add((entry.Folder, entry.Snippet.Language, entry.Snippet.Title)))
+                throw new ArgumentException("Duplicate snippet title in the same folder.", nameof(entries));
+        _entries.AddRange(additions);
+    }
     public CodeSnippet? FindShortcut(string shortcut, string language)
     {
         var id = CodeSnippet.NormalizeLanguage(language); var comparison = id == "vb" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
