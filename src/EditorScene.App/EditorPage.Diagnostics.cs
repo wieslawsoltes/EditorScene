@@ -65,7 +65,7 @@ public sealed partial class EditorPage
         if (_active.Search.IsOpened)
             foreach (var element in Descendants(_active.Search).Where(e => e.Name.StartsWith("PART_", StringComparison.Ordinal))) Add(element.Name, element);
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot))
-            foreach (var element in Descendants(popup))
+            foreach (var element in popup.Child is FrameworkElement child ? Descendants(child).Prepend(child) : Enumerable.Empty<FrameworkElement>())
             {
                 var name = AutomationProperties.GetName(element);
                 if (!string.IsNullOrEmpty(name)) Add("Visible " + name, element);
