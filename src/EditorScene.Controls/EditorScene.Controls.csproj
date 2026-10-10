@@ -10,7 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../EditorScene.Rendering.Skia/EditorScene.Rendering.Skia.csproj" />
+    <ProjectReference Include="../EditorScene.Snippets/EditorScene.Snippets.csproj" />
     <ProjectReference Include="../../external/UnoEdit/src/UnoEdit.Uno/UnoEdit.Uno.csproj" />
-
   </ItemGroup>
 </Project>
