@@ -12,8 +12,26 @@ public sealed partial class SyntaxEditor
     private string? _chord;
     private long _chordTime;
     private static bool IsKeyDown(VirtualKey key) => (InputKeyboardSource.GetKeyStateForCurrentThread(key) & CoreVirtualKeyStates.Down) != 0;
-    private sealed class InputHandler(SyntaxEditor owner) : TextAreaStackedInputHandler(owner._editor.TextArea)
-    { public override void OnPreviewKeyDown(KeyRoutedEventArgs e) => owner.HandleKey(e); }
+    private sealed class InputHandler : TextAreaStackedInputHandler
+    {
+        private readonly SyntaxEditor _owner;
+        public InputHandler(SyntaxEditor owner) : base(owner._editor.TextArea)
+        {
+            _owner = owner;
+            // UnoEdit deliberately removes transient popup/snippet handlers before
+            // DocumentChanged. Our command layer belongs to the control, not the
+            // old document. Reattach once, underneath any later popup handlers.
+            // TextArea.Dispose clears this event along with the complete input stack.
+            TextArea.DocumentChanged += OnDocumentChanged;
+        }
+        private void OnDocumentChanged(object? sender, UnoEdit.Document.DocumentChangedEventArgs e)
+        {
+            _owner._chord = null;
+            if (!_owner._disposed && !TextArea.StackedInputHandlers.Contains(this))
+                TextArea.PushStackedInputHandler(this);
+        }
+        public override void OnPreviewKeyDown(KeyRoutedEventArgs e) => _owner.HandleKey(e);
+    }
     private void HandleKey(KeyRoutedEventArgs e)
     {
         if (_disposed || e.Handled) return;
@@ -45,7 +63,12 @@ public sealed partial class SyntaxEditor
             if (e.Key == VirtualKey.Insert) { IsOverstrike = !IsOverstrike; e.Handled = true; return; }
         }
         if (action is { } selected) { e.Handled = true; _ = ExecuteAsync(selected); return; }
-        if (e.Key == VirtualKey.Escape && Selections.IsActive) { ClearMultiSelection(); e.Handled = true; return; }
+        if (e.Key == VirtualKey.Escape)
+        {
+            _chord = null;
+            if (Selections.IsActive) { ClearMultiSelection(); e.Handled = true; }
+            return;
+        }
         if (Selections.IsActive && e.Key is VirtualKey.Back or VirtualKey.Delete or VirtualKey.Enter or VirtualKey.Tab)
         {
             e.Handled = true; _multiEditing = true;
@@ -86,6 +109,8 @@ public sealed partial class SyntaxEditor
         }
         if (!AutoCompleteBrackets || IsOverstrike || args.Text.Length != 1) return;
         var c = args.Text[0]; var caret = CaretOffset; var buffer = Document.Buffer;
+        // A single quote starts a comment in Visual Basic, not a character literal.
+        if (c == '\'' && SyntaxLanguage.Id == "vb") return;
         if (SelectionLength == 0 && caret < buffer.TextLength && c is ')' or ']' or '}' or '\'' or '"' && buffer.GetCharAt(caret) == c)
         {
             if (caret == 0 || buffer.GetCharAt(caret - 1) != '\\') { args.Handled = true; CaretOffset++; }
@@ -100,6 +125,9 @@ public sealed partial class SyntaxEditor
         args.Handled = true;
         ApplyUserEdits([new(start, SelectionLength, c + selected + close)]);
         _editor.Select(start + 1, selected.Length);
+        // Handled insertion does not raise TextEntered in the native editor.
+        if (AutoShowCompletion && c == '(' && selected.Length == 0)
+            _ = ExecuteAsync(EditorCommand.SignatureHelp);
     }
     private void OnTextEntered(object? sender, TextInputEventArgs args)
     {
