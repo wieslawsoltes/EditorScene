@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -23,6 +24,11 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: editorscene-nuget-${{ runner.os }}-${{ hashFiles('global.json', '**/*.props', '**/*.csproj') }}
+          restore-keys: editorscene-nuget-${{ runner.os }}-
       - name: Run document, language, protocol and rendering regressions
         run: python3 tools/build.py test
       - uses: actions/upload-artifact@v7
@@ -32,6 +38,7 @@ jobs:
           path: artifacts/tests
           retention-days: 14
   native:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -42,10 +49,15 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: editorscene-nuget-${{ runner.os }}-${{ hashFiles('global.json', '**/*.props', '**/*.csproj') }}
+          restore-keys: editorscene-nuget-${{ runner.os }}-
       - name: Build desktop control and application
         run: python3 tools/build.py desktop > desktop-build.log 2>&1 || { tail -100 desktop-build.log; exit 1; }
       - name: Exercise actual Uno-host commands and lifecycle
-        run: python3 tools/build.py native-checks
+        run: python3 tools/build.py native-checks || { tail -150 artifacts/native-checks.log; exit 1; }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -54,7 +66,8 @@ jobs:
             artifacts/native-checks.*
             desktop-build.log
           retention-days: 14
-  browser:
+  packages:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -65,6 +78,43 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: editorscene-nuget-${{ runner.os }}-${{ hashFiles('global.json', '**/*.props', '**/*.csproj') }}
+          restore-keys: editorscene-nuget-${{ runner.os }}-
+      - name: Install browser targeting workload
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Pack all libraries and verify isolated consumers
+        run: |
+          mkdir -p artifacts
+          python3 tools/package.py > artifacts/packages.log 2>&1 || { tail -150 artifacts/packages.log; exit 1; }
+          cat artifacts/packages/validation.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: reusable-packages
+          path: |
+            artifacts/packages
+            artifacts/packages.log
+          retention-days: 14
+  browser:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: editorscene-nuget-${{ runner.os }}-${{ hashFiles('global.json', '**/*.props', '**/*.csproj') }}
+          restore-keys: editorscene-nuget-${{ runner.os }}-
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -78,6 +128,10 @@ jobs:
           tools/node_modules/.bin/playwright install --with-deps chromium > artifacts/playwright-install.log 2>&1
       - name: Exercise the published application through real browser input
         run: node tools/browser-smoke.mjs artifacts/site
+      - name: Retain public sample screenshots with the validated site
+        run: |
+          mkdir -p artifacts/site/validation
+          cp artifacts/browser-tests/*.png artifacts/browser-tests/results.json artifacts/site/validation/
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -93,3 +147,23 @@ jobs:
           name: published-browser
           path: artifacts/site
           retention-days: 14
+      - uses: actions/upload-pages-artifact@v4
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/reusable-uno-editor')
+        with:
+          path: artifacts/site
+  pages:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/reusable-uno-editor')
+    needs: [tests, native, packages, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deployment
