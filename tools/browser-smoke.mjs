@@ -55,11 +55,27 @@ try {
   const state=()=>page.evaluate(()=>globalThis.__editorSceneState);
   const wait=async(predicate,arg)=>{await page.waitForFunction(predicate,arg,{timeout:60000});const s=await state();assert.equal(s.Error,null,s.Error??'Application error');return s;};
   const textIs=text=>wait(t=>globalThis.__editorSceneState?.TextPrefix===t,text);
-  const click=async name=>{
-    await wait(n=>globalThis.__editorSceneState?.Controls?.[n]?.[2]>0,name);
-    const b=(await state()).Controls[name]; await page.mouse.click(b[0]+b[2]/2,b[1]+b[3]/2);
+  const stableBounds=async name=>{
+    // A canvas control cannot use Playwright's DOM bounding-box actionability.
+    // Require unchanged bounds in three distinct native observations, not three
+    // polls of one stale object. Filtering can resize a ContentDialog after the
+    // keyboard API returns. This observer changes no application state.
+    await page.evaluate(()=>{globalThis.__editorScenePointerProbe={lastState:null,key:'',samples:0,since:0};});
+    await wait(n=>{
+      const state=globalThis.__editorSceneState, probe=globalThis.__editorScenePointerProbe;
+      if (!state || probe.lastState===state) return false;
+      probe.lastState=state;
+      const box=state.Controls?.[n];
+      if (!box || box.length!==4 || !box.every(Number.isFinite) || box[2]<=0 || box[3]<=0) {probe.samples=0;probe.key='';return false;}
+      const key=JSON.stringify(box);
+      if (probe.key!==key) {probe.key=key;probe.samples=1;probe.since=performance.now();return false;}
+      probe.samples++;
+      return probe.samples>=3 && performance.now()-probe.since>=200;
+    },name);
+    return (await state()).Controls[name];
   };
-  const focusEditor=async()=>{const b=(await state()).Controls.Editor;await page.mouse.click(b[0]+100,b[1]+10);};
+  const click=async name=>{const b=await stableBounds(name);await page.mouse.click(b[0]+b[2]/2,b[1]+b[3]/2);};
+  const focusEditor=async()=>{const b=await stableBounds('Editor');await page.mouse.click(b[0]+100,b[1]+10);};
   const paste=async text=>{await focusEditor();await page.keyboard.press('Escape');await page.keyboard.press('Control+a');await page.evaluate(t=>navigator.clipboard.writeText(t),text);await page.keyboard.press('Control+v');await textIs(text);};
   const fill=async(name,text)=>{await click(name);await page.keyboard.press('Control+a');await page.keyboard.type(text);};
   const command=async(menu,label)=>{await click('Menu '+menu);await click('Command '+label);};
@@ -93,7 +109,6 @@ try {
   await click('Toolbar Split editor');await wait(()=>globalThis.__editorSceneState?.Split);await focusEditor();await page.keyboard.press('Control+End');await page.keyboard.type('// shared');
   await wait(()=>globalThis.__editorSceneState?.SecondaryTextPrefix===globalThis.__editorSceneState?.TextPrefix && globalThis.__editorSceneState.TextPrefix.endsWith('// shared'));
   checks.push('Shared-document split view and anchored bookmark indicator');await click('Toolbar Split editor');await wait(()=>globalThis.__editorSceneState?.Split===false);
-  // Wait for the actual popup item before input; immediate key presses can precede popup focus.
   await click('Theme');await click('Choice Dark');
   await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');await page.screenshot({path:path.join(output,'dark-editor.png')});checks.push('Theme changes update native editor and application chrome');
   await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly);const before=(await state()).TextPrefix;await focusEditor();await page.keyboard.type('BLOCKED');await textIs(before);await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);checks.push('Read-only user input protection');
@@ -127,7 +142,7 @@ try {
   await wait(()=>globalThis.__editorSceneState?.AnalysisRevision===globalThis.__editorSceneState?.Revision);assert.equal((await state()).Diagnostics.length,0);checks.push('Actual file upload, UTF-8 decoding and automatic JSON language selection');
   const downloaded=page.waitForEvent('download');await click('Toolbar Save');const saved=await downloaded;await saved.saveAs(path.join(output,'saved-input.json'));assert.equal(await readFile(path.join(output,'saved-input.json'),'utf8'),json);checks.push('Actual browser save download preserves document bytes');
   await command('File','100,000-line document');await wait(()=>globalThis.__editorSceneState?.LineCount===100000);
-  const large=performance.now();await focusEditor();await page.keyboard.press('Control+End');await wait(()=>globalThis.__editorSceneState?.CaretOffset===globalThis.__editorSceneState?.TextLength);
+  await focusEditor();const large=performance.now();await page.keyboard.press('Control+End');await wait(()=>globalThis.__editorSceneState?.CaretOffset===globalThis.__editorSceneState?.TextLength);
   s=await state();assert.ok(s.CachedLines<=256);assert.ok(s.VisibleLines>0 && s.VisibleLines<100);metrics.largeDocumentEndNavigationMs=performance.now()-large;
   checks.push('100,000-line Unicode document with bounded layout cache and viewport-only rendering');await page.screenshot({path:path.join(output,'large-document.png')});
   await page.setViewportSize({width:640,height:700});await wait(()=>globalThis.__editorSceneState?.Controls?.Editor?.[2]<650);await page.screenshot({path:path.join(output,'narrow-editor.png')});checks.push('Narrow window resize');

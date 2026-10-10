@@ -1,0 +1,58 @@
+name: Browser input stability
+on:
+  push:
+    branches: [feat/reusable-uno-editor]
+    paths: [tools/browser-smoke.mjs, .github/workflows/browser-stability.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  stability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Confirm compiled application sources match the retained artifact
+        run: git diff --exit-code 51a44687781462bf70a841ddf0a07e96f9072216 HEAD -- src external global.json Directory.Build.props NuGet.Config
+      - uses: actions/download-artifact@v4
+        with:
+          name: published-browser
+          run-id: 38092320435
+          github-token: ${{ github.token }}
+          path: artifacts/site
+      - name: Verify exact artifact provenance
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          build=json.loads(Path('artifacts/site/build.json').read_text())
+          assert build['revision']=='51a44687781462bf70a841ddf0a07e96f9072216', build
+          print(build)
+          PY
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install pinned browser tools
+        run: |
+          node --check tools/browser-smoke.mjs
+          npm install --prefix tools --no-save --package-lock=false playwright@1.64.0
+          tools/node_modules/.bin/playwright install --with-deps chromium > artifacts/playwright-install.log 2>&1
+      - name: Run every scenario three times in fresh browser contexts
+        run: |
+          for iteration in 1 2 3; do
+            echo "=== Stability pass $iteration ==="
+            node tools/browser-smoke.mjs artifacts/site
+            mv artifacts/browser-tests "artifacts/browser-tests-$iteration"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-stability
+          path: |
+            artifacts/browser-tests*
+            artifacts/site/build.json
+          retention-days: 14
