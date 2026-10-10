@@ -32,6 +32,12 @@ public sealed partial class SyntaxEditor
     private void HandleKey(KeyRoutedEventArgs e)
     {
         if (_disposed || e.Handled) return;
+        // A chord may be entered with Ctrl held throughout, or released and
+        // pressed again. Modifier-only keydowns must not consume its prefix.
+        if (e.Key is VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl
+            or VirtualKey.Shift or VirtualKey.LeftShift or VirtualKey.RightShift
+            or VirtualKey.Menu or VirtualKey.LeftMenu or VirtualKey.RightMenu
+            or VirtualKey.LeftWindows or VirtualKey.RightWindows) return;
         var command = IsKeyDown(VirtualKey.Control) || IsKeyDown(VirtualKey.LeftWindows) || IsKeyDown(VirtualKey.RightWindows);
         var shift = IsKeyDown(VirtualKey.Shift); var alt = IsKeyDown(VirtualKey.Menu);
         if (command && !alt && _chord == "K" && Environment.TickCount64 - _chordTime < 2000 && e.Key is VirtualKey.X or VirtualKey.S)
