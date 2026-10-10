@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using EditorScene.Controls;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
@@ -19,9 +20,9 @@ public sealed partial class EditorPage
             foreach (var descendant in Descendants(child)) yield return descendant;
         }
     }
-    #if __WASM__
+#if __WASM__
     private DispatcherTimer? _diagnosticTimer;
-    #endif
+#endif
     private void QueueDiagnostics()
     {
         if (!_diagnostics || _diagnosticsQueued || !_loaded) return;
@@ -41,8 +42,7 @@ public sealed partial class EditorPage
 #if __WASM__
             try
             {
-                var state = CaptureState();
-                var json = JsonSerializer.Serialize(state, BrowserJsonContext.Default.BrowserState);
+                var json = JsonSerializer.Serialize(CaptureState(), BrowserJsonContext.Default.BrowserState);
                 Uno.Foundation.WebAssemblyRuntime.InvokeJS("globalThis.__editorSceneState = " + json + ";");
             }
             catch (Exception error) { Console.Error.WriteLine("Diagnostics: " + error); }
@@ -64,10 +64,11 @@ public sealed partial class EditorPage
         if (_secondary is not null) Add("Secondary editor", _secondary.NativeEditor.TextArea.TextView);
         if (_active.Search.IsOpened)
             foreach (var element in Descendants(_active.Search).Where(e => e.Name.StartsWith("PART_", StringComparison.Ordinal))) Add(element.Name, element);
-        // Flyout and dialog containers have separate roots; enumerate their visible content for input-driven browser tests.
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot))
             foreach (var element in Descendants(popup))
             {
+                var name = AutomationProperties.GetName(element);
+                if (!string.IsNullOrEmpty(name)) Add("Visible " + name, element);
                 if (element is MenuFlyoutItem item) Add("Visible command " + item.Text, item);
                 else if (element is MenuFlyoutSubItem sub) Add("Visible submenu " + sub.Text, sub);
                 else if (element is Button button && button.Content is string caption) Add("Dialog " + caption, button);
@@ -76,7 +77,7 @@ public sealed partial class EditorPage
             }
         return new BrowserState
         {
-            Ready = view.Viewport.RenderCount > 0, FileName = doc.FileName, Language = _active.SyntaxLanguage.Id, Theme = _theme.Name,
+            Ready = view.Viewport.RenderCount > 0, FileName = doc.FileName, Language = _active.SyntaxLanguage.Id, Theme = _theme.Name, Status = _active.Status,
             Revision = doc.Revision, AnalysisRevision = analysis?.Revision ?? -1, TextLength = doc.Buffer.TextLength,
             TextPrefix = doc.Buffer.GetText(0, Math.Min(8192, doc.Buffer.TextLength)), LineCount = doc.Buffer.LineCount,
             CaretOffset = _active.CaretOffset, SelectionStart = _active.SelectionStart, SelectionLength = _active.SelectionLength, Modified = doc.IsModified,
@@ -85,6 +86,7 @@ public sealed partial class EditorPage
             BookmarkCount = _active.Indicators.Items.Count(i => i.Kind == EditorScene.Text.IndicatorKind.Bookmark),
             CompletionOpen = _active.IsCompletionOpen, CompletionLabels = _active.CompletionLabels.ToArray(), QuickInfoOpen = _active.IsQuickInfoOpen,
             SignatureOpen = _active.IsSignatureHelpOpen, Split = _secondary is not null,
+            SnippetActive = _active.IsSnippetActive, SnippetFields = _active.ActiveSnippetFields.Select(r => new[] { r.Start, r.Length }).ToArray(),
             SecondaryTextPrefix = _secondary?.Document.Buffer.GetText(0, Math.Min(8192, doc.Buffer.TextLength)),
             CachedLines = view.Viewport.CachedLineCount, VisibleLines = view.Viewport.LastVisibleLineCount, RenderCount = view.Viewport.RenderCount,
             SearchOpen = _active.Search.IsOpened, SearchPattern = _active.Search.SearchPattern, ReplacePattern = _active.Search.ReplacePattern,
@@ -112,6 +114,7 @@ internal sealed class BrowserState
     public string FileName { get; set; } = "";
     public string Language { get; set; } = "";
     public string Theme { get; set; } = "";
+    public string Status { get; set; } = "";
     public long Revision { get; set; }
     public long AnalysisRevision { get; set; }
     public int TextLength { get; set; }
@@ -130,6 +133,8 @@ internal sealed class BrowserState
     public string[] CompletionLabels { get; set; } = [];
     public bool QuickInfoOpen { get; set; }
     public bool SignatureOpen { get; set; }
+    public bool SnippetActive { get; set; }
+    public int[][] SnippetFields { get; set; } = [];
     public bool Split { get; set; }
     public string? SecondaryTextPrefix { get; set; }
     public int CachedLines { get; set; }

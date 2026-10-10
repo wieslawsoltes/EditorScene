@@ -61,5 +61,6 @@ internal static class NativeEditorChecks
         using var selector = new NavigableSymbolSelector { Editor = editor }; using var outline = new DocumentOutline { Editor = editor };
         selector.Editor = other; outline.Editor = other; selector.Editor = null; outline.Editor = null;
         Check(failure is null, "No unexpected command errors");
+        NativeSnippetChecks.Run(checks);
     }
 }

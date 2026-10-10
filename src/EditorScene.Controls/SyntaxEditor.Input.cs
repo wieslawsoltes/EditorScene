@@ -18,17 +18,14 @@ public sealed partial class SyntaxEditor
         public InputHandler(SyntaxEditor owner) : base(owner._editor.TextArea)
         {
             _owner = owner;
-            // UnoEdit deliberately removes transient popup/snippet handlers before
-            // DocumentChanged. Our command layer belongs to the control, not the
-            // old document. Reattach once, underneath any later popup handlers.
-            // TextArea.Dispose clears this event along with the complete input stack.
+            // Native document changes remove transient popup/snippet handlers. This
+            // command layer belongs to the control and must survive that reset.
             TextArea.DocumentChanged += OnDocumentChanged;
         }
         private void OnDocumentChanged(object? sender, UnoEdit.Document.DocumentChangedEventArgs e)
         {
             _owner._chord = null;
-            if (!_owner._disposed && !TextArea.StackedInputHandlers.Contains(this))
-                TextArea.PushStackedInputHandler(this);
+            if (!_owner._disposed && !TextArea.StackedInputHandlers.Contains(this)) TextArea.PushStackedInputHandler(this);
         }
         public override void OnPreviewKeyDown(KeyRoutedEventArgs e) => _owner.HandleKey(e);
     }
@@ -37,6 +34,15 @@ public sealed partial class SyntaxEditor
         if (_disposed || e.Handled) return;
         var command = IsKeyDown(VirtualKey.Control) || IsKeyDown(VirtualKey.LeftWindows) || IsKeyDown(VirtualKey.RightWindows);
         var shift = IsKeyDown(VirtualKey.Shift); var alt = IsKeyDown(VirtualKey.Menu);
+        if (command && !alt && _chord == "K" && Environment.TickCount64 - _chordTime < 2000 && e.Key is VirtualKey.X or VirtualKey.S)
+        {
+            _chord = null; e.Handled = true; _ = ShowSnippetPickerAsync(e.Key == VirtualKey.S); return;
+        }
+        if (!command && !alt && !shift && e.Key == VirtualKey.Tab && !Selections.IsActive)
+        {
+            try { if (TryExpandSnippetShortcut()) { e.Handled = true; return; } }
+            catch (Exception error) { e.Handled = true; ReportError(error); return; }
+        }
         EditorCommand? action = null;
         if (command && !alt)
         {
@@ -65,9 +71,7 @@ public sealed partial class SyntaxEditor
         if (action is { } selected) { e.Handled = true; _ = ExecuteAsync(selected); return; }
         if (e.Key == VirtualKey.Escape)
         {
-            _chord = null;
-            if (Selections.IsActive) { ClearMultiSelection(); e.Handled = true; }
-            return;
+            _chord = null; if (Selections.IsActive) { ClearMultiSelection(); e.Handled = true; } return;
         }
         if (Selections.IsActive && e.Key is VirtualKey.Back or VirtualKey.Delete or VirtualKey.Enter or VirtualKey.Tab)
         {
@@ -109,7 +113,6 @@ public sealed partial class SyntaxEditor
         }
         if (!AutoCompleteBrackets || IsOverstrike || args.Text.Length != 1) return;
         var c = args.Text[0]; var caret = CaretOffset; var buffer = Document.Buffer;
-        // A single quote starts a comment in Visual Basic, not a character literal.
         if (c == '\'' && SyntaxLanguage.Id == "vb") return;
         if (SelectionLength == 0 && caret < buffer.TextLength && c is ')' or ']' or '}' or '\'' or '"' && buffer.GetCharAt(caret) == c)
         {
@@ -123,11 +126,8 @@ public sealed partial class SyntaxEditor
         var selected = SelectedText; var start = SelectionStart;
         if (!CanEdit(new(start, SelectionLength, c + selected + close))) return;
         args.Handled = true;
-        ApplyUserEdits([new(start, SelectionLength, c + selected + close)]);
-        _editor.Select(start + 1, selected.Length);
-        // Handled insertion does not raise TextEntered in the native editor.
-        if (AutoShowCompletion && c == '(' && selected.Length == 0)
-            _ = ExecuteAsync(EditorCommand.SignatureHelp);
+        ApplyUserEdits([new(start, SelectionLength, c + selected + close)]); _editor.Select(start + 1, selected.Length);
+        if (AutoShowCompletion && c == '(' && selected.Length == 0) _ = ExecuteAsync(EditorCommand.SignatureHelp);
     }
     private void OnTextEntered(object? sender, TextInputEventArgs args)
     {
