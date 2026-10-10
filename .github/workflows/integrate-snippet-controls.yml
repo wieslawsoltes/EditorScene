@@ -1,0 +1,68 @@
+name: Integrate snippet controls
+on:
+  push:
+    branches: [feat/reusable-uno-editor]
+    paths: [.github/workflows/integrate-snippet-controls.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Apply exact source edits and verify every anchor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def replace(path, old, new):
+              p=Path(path); text=p.read_text()
+              if text.count(old)!=1:
+                  raise RuntimeError(f'Expected one integration anchor in {path}')
+              p.write_text(text.replace(old,new))
+          replace('src/EditorScene.Controls/SyntaxEditor.Snippets.cs',
+              '    public SnippetCatalog Snippets { get; } = SnippetCatalog.CreateDefault();',
+              '    private SnippetCatalog _snippets = SnippetCatalog.CreateDefault();\n    public SnippetCatalog Snippets { get => _snippets; set => _snippets = value ?? throw new ArgumentNullException(nameof(value)); }')
+          replace('src/EditorScene.App/EditorPage.cs',
+              '_secondary = new SyntaxEditor { Document = _current.Document,',
+              '_secondary = new SyntaxEditor { Snippets = _primary.Snippets, Document = _current.Document,')
+          replace('src/EditorScene.App/EditorPage.Menus.cs',
+              '        var view = Menu("View");',
+              '''        Separator(prompt);
+                  Item(prompt, "Insert Snippet…", () => _active.ShowSnippetPickerAsync(), "Ctrl+K, Ctrl+X");
+                  Item(prompt, "Surround With…", () => _active.ShowSnippetPickerAsync(true), "Ctrl+K, Ctrl+S");
+                  Item(prompt, "Complete Snippet", () => { _active.EndSnippet(); _active.FocusEditor(); return Task.CompletedTask; });
+                  Separator(prompt);
+                  Item(prompt, "Import Snippets…", ImportSnippetsAsync);
+                  Item(prompt, "Export Snippets…", ExportSnippetsAsync);
+                  var view = Menu("View");''')
+          replace('src/EditorScene.Snippets/SnippetCatalog.cs',
+              '    public CodeSnippet? FindShortcut(string shortcut, string language)',
+              '''    /// <summary>Validate every entry before changing the catalog, so failed imports are atomic.</summary>
+              public void RegisterRange(IEnumerable<SnippetEntry> entries)
+              {
+                  ArgumentNullException.ThrowIfNull(entries);
+                  var additions = entries.Select(e => e is null ? throw new ArgumentException("Null snippet entry.", nameof(entries)) : new SnippetEntry(NormalizeFolder(e.Folder), e.Snippet ?? throw new ArgumentException("Null snippet.", nameof(entries)))).ToArray();
+                  var keys = _entries.Select(e => (e.Folder, e.Snippet.Language, e.Snippet.Title)).ToHashSet();
+                  foreach (var entry in additions)
+                      if (!keys.Add((entry.Folder, entry.Snippet.Language, entry.Snippet.Title)))
+                          throw new ArgumentException("Duplicate snippet title in the same folder.", nameof(entries));
+                  _entries.AddRange(additions);
+              }
+              public CodeSnippet? FindShortcut(string shortcut, string language)''')
+          PY
+          git diff --check
+      - name: Commit the integration without retaining the one-shot workflow
+        env:
+          BRANCH: feat/reusable-uno-editor
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-snippet-controls.yml
+          git add src/EditorScene.Controls/SyntaxEditor.Snippets.cs src/EditorScene.App/EditorPage.cs src/EditorScene.App/EditorPage.Menus.cs src/EditorScene.Snippets/SnippetCatalog.cs
+          git commit -m 'feat(app): integrate snippet menus, atomic catalog import and shared split-view snippets'
+          git push origin HEAD:"$BRANCH"
+          git rev-parse HEAD
