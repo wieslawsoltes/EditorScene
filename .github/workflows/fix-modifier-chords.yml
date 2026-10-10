@@ -1,0 +1,42 @@
+name: Fix modifier chord handling
+on:
+  push:
+    branches: [feat/reusable-uno-editor]
+    paths: [.github/workflows/fix-modifier-chords.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply verified keyboard fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('src/EditorScene.Controls/SyntaxEditor.Input.cs'); text=path.read_text()
+          anchor='        if (_disposed || e.Handled) return;\n        var command = '
+          replacement='''        if (_disposed || e.Handled) return;
+                  // A chord may be entered with Ctrl held throughout, or released and
+                  // pressed again. Modifier-only keydowns must not consume its prefix.
+                  if (e.Key is VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl
+                      or VirtualKey.Shift or VirtualKey.LeftShift or VirtualKey.RightShift
+                      or VirtualKey.Menu or VirtualKey.LeftMenu or VirtualKey.RightMenu
+                      or VirtualKey.LeftWindows or VirtualKey.RightWindows) return;
+                  var command = '''
+          if text.count(anchor)!=1: raise RuntimeError('Input source anchor changed')
+          path.write_text(text.replace(anchor,replacement))
+          PY
+          git diff --check
+      - name: Commit source fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-modifier-chords.yml
+          git add src/EditorScene.Controls/SyntaxEditor.Input.cs
+          git commit -m 'fix(input): do not consume pending two-key chords on modifier keydowns'
+          git push origin HEAD:feat/reusable-uno-editor
+          git rev-parse HEAD
