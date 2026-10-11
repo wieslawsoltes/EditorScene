@@ -13,16 +13,16 @@ namespace EditorScene.Controls;
 public sealed class ResizableSplitView : UserControl
 {
     private readonly Grid _grid = new();
-    private readonly ContentPresenter _first = new();
-    private readonly ContentPresenter _second = new();
-    private readonly Thumb _separator = new() { MinHeight = 0, MinWidth = 0, IsTabStop = true };
+    private readonly ContentPresenter _first = Presenter();
+    private readonly ContentPresenter _second = Presenter();
+    private readonly Thumb _separator = new() { MinHeight = 0, MinWidth = 0, IsTabStop = true, UseSystemFocusVisuals = true };
     private double _ratio = .5;
     private Orientation _orientation = Orientation.Vertical;
     private bool _split;
     public ResizableSplitView()
     {
         IsTabStop = false;
-        _separator.Template = (ControlTemplate)XamlReader.Load("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding Foreground}' BorderThickness='0,1,0,1' /></ControlTemplate>");
+        _separator.Template = (ControlTemplate)XamlReader.Load("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' /></ControlTemplate>");
         AutomationProperties.SetName(_separator, "Resize editor split");
         AutomationProperties.SetHelpText(_separator, "Use arrow keys to resize. Home and End move to an edge. Double-click to center.");
         ToolTipService.SetToolTip(_separator, "Drag to resize · arrows adjust · double-click centers");
@@ -33,15 +33,26 @@ public sealed class ResizableSplitView : UserControl
         SizeChanged += (_, _) => UpdateLengths();
         RebuildLayout();
     }
-    public UIElement? First { get => _first.Content as UIElement; set => _first.Content = value; }
+    private static ContentPresenter Presenter() => new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+    public UIElement? First
+    {
+        get => _first.Content as UIElement;
+        set
+        {
+            if (value is not null && ReferenceEquals(value, Second)) throw new ArgumentException("A UI element cannot occupy both split panes.", nameof(value));
+            if (ReferenceEquals(value, _first.Content)) return;
+            _first.Content = value;
+        }
+    }
     public UIElement? Second
     {
         get => _second.Content as UIElement;
         set
         {
+            if (value is not null && ReferenceEquals(value, First)) throw new ArgumentException("A UI element cannot occupy both split panes.", nameof(value));
             if (ReferenceEquals(value, _second.Content)) return;
             _second.Content = value; var split = value is not null;
-            if (_split != split) { _split = split; RebuildLayout(); }
+            if (_split != split) { _split = split; RebuildLayout(); LayoutChanged?.Invoke(this, EventArgs.Empty); }
         }
     }
     public Orientation Orientation
@@ -70,8 +81,7 @@ public sealed class ResizableSplitView : UserControl
     {
         ArgumentNullException.ThrowIfNull(theme);
         _grid.Background = SyntaxEditor.Brush(theme.Background);
-        _separator.Background = SyntaxEditor.Brush(theme.Chrome);
-        _separator.Foreground = SyntaxEditor.Brush(theme.Border);
+        _separator.Background = SyntaxEditor.Brush(theme.Chrome); _separator.BorderBrush = SyntaxEditor.Brush(theme.Border);
     }
     private void RebuildLayout()
     {
@@ -84,12 +94,12 @@ public sealed class ResizableSplitView : UserControl
         if (_orientation == Orientation.Vertical)
         {
             _grid.RowDefinitions.Add(new()); _grid.RowDefinitions.Add(new() { Height = new GridLength(6) }); _grid.RowDefinitions.Add(new());
-            Grid.SetRow(_separator, 1); Grid.SetRow(_second, 2);
+            Grid.SetRow(_separator, 1); Grid.SetRow(_second, 2); _separator.BorderThickness = new Thickness(0, 1, 0, 1);
         }
         else
         {
             _grid.ColumnDefinitions.Add(new()); _grid.ColumnDefinitions.Add(new() { Width = new GridLength(6) }); _grid.ColumnDefinitions.Add(new());
-            Grid.SetColumn(_separator, 1); Grid.SetColumn(_second, 2);
+            Grid.SetColumn(_separator, 1); Grid.SetColumn(_second, 2); _separator.BorderThickness = new Thickness(1, 0, 1, 0);
         }
         UpdateLengths();
     }
@@ -97,8 +107,7 @@ public sealed class ResizableSplitView : UserControl
     private void UpdateLengths()
     {
         if (!_split) return;
-        var available = Available;
-        var minimum = available > 0 ? Math.Min(.5, 48 / available) : 0;
+        var available = Available; var minimum = available > 0 ? Math.Min(.5, 48 / available) : 0;
         var effective = Math.Clamp(_ratio, minimum, 1 - minimum);
         var first = new GridLength(Math.Max(.0001, effective), GridUnitType.Star);
         var second = new GridLength(Math.Max(.0001, 1 - effective), GridUnitType.Star);
