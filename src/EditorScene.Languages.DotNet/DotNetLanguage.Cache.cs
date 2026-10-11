@@ -9,14 +9,18 @@ using Microsoft.CodeAnalysis.VisualBasic;
 
 namespace EditorScene.Languages.DotNet;
 
-public readonly record struct DotNetCacheStatistics(int CachedDocuments, long ModelBuilds, long CacheHits, long ColdParses, long IncrementalUpdates, long CompilationReuses, long AnalysisBuilds);
+public readonly record struct DotNetCacheStatistics(int CachedDocuments, long ModelBuilds, long CacheHits, long ColdParses, long IncrementalUpdates, long CompilationReuses, long AnalysisBuilds)
+{
+    public long CompilationBuilds { get; init; }
+    public long SemanticModelBuilds { get; init; }
+}
 
 public sealed partial class DotNetLanguage
 {
     private const int MaximumCachedDocuments = 8;
     private readonly object _cacheGate = new();
     private readonly Dictionary<Guid, ModelSlot> _models = [];
-    private long _accessClock, _modelBuilds, _cacheHits, _coldParses, _incrementalUpdates, _compilationReuses, _analysisBuilds;
+    private long _accessClock, _modelBuilds, _cacheHits, _coldParses, _incrementalUpdates, _compilationReuses, _analysisBuilds, _compilationBuilds, _semanticModelBuilds;
     private sealed class ModelSlot
     {
         internal readonly SemaphoreSlim Gate = new(1, 1);
@@ -24,18 +28,33 @@ public sealed partial class DotNetLanguage
         internal long LastAccess;
         internal CachedModel? Model;
     }
-    private sealed record CachedModel(DocumentSnapshot Snapshot, SyntaxTree Tree, Compilation Compilation, SemanticModel SemanticModel)
+    private sealed class CachedModel
     {
+        private readonly Lazy<Compilation> _compilation;
+        private readonly Lazy<SemanticModel> _semanticModel;
+        internal CachedModel(DocumentSnapshot snapshot, SyntaxTree tree, Func<Compilation> compilationFactory, Action semanticModelBuilt)
+        {
+            Snapshot = snapshot; Tree = tree; _compilation = new(compilationFactory);
+            _semanticModel = new(() => { var model = _compilation.Value.GetSemanticModel(tree, ignoreAccessibility: false); semanticModelBuilt(); return model; });
+        }
+        internal DocumentSnapshot Snapshot { get; }
+        internal SyntaxTree Tree { get; }
+        internal Compilation Compilation => _compilation.Value;
+        internal SemanticModel SemanticModel => _semanticModel.Value;
+        // Never force an old lazy compilation merely to create the next syntax
+        // snapshot. That would build unnecessary compiler state and retain chains.
+        internal Compilation? BuiltCompilation => _compilation.IsValueCreated ? _compilation.Value : null;
         internal readonly SemaphoreSlim AnalysisGate = new(1, 1);
         internal LanguageAnalysis? Analysis;
     }
-    /// <summary>Observed cache work, not timing estimates. At most eight idle document models are retained.</summary>
+    /// <summary>Observed cache work, not timing estimates. At most eight document slots are retained.</summary>
     public DotNetCacheStatistics CacheStatistics
     {
         get
         {
             lock (_cacheGate) return new(_models.Count, Interlocked.Read(ref _modelBuilds), Interlocked.Read(ref _cacheHits), Interlocked.Read(ref _coldParses),
-                Interlocked.Read(ref _incrementalUpdates), Interlocked.Read(ref _compilationReuses), Interlocked.Read(ref _analysisBuilds));
+                Interlocked.Read(ref _incrementalUpdates), Interlocked.Read(ref _compilationReuses), Interlocked.Read(ref _analysisBuilds))
+            { CompilationBuilds = Interlocked.Read(ref _compilationBuilds), SemanticModelBuilds = Interlocked.Read(ref _semanticModelBuilds) };
         }
     }
     private ModelSlot Lease(Guid id)
@@ -50,8 +69,8 @@ public sealed partial class DotNetLanguage
                     if (idle.Value is not null) _models.Remove(idle.Key);
                 }
                 slot = new ModelSlot();
-                // Do not evict an active gate and start a second build for the same
-                // document. Overflow work is transient when all eight slots are busy.
+                // Active gates are not evicted. Overflow work is transient when
+                // all eight retained slots are constructing models concurrently.
                 if (_models.Count < MaximumCachedDocuments) _models.Add(id, slot);
             }
             slot.Users++; slot.LastAccess = ++_accessClock; return slot;
@@ -63,16 +82,15 @@ public sealed partial class DotNetLanguage
         var slot = Lease(snapshot.DocumentId); var entered = false;
         try
         {
-            // All provider APIs schedule onto a worker. The gate is per document,
-            // cancellable, and shared by analysis, completion and selection requests.
             slot.Gate.Wait(token); entered = true;
             var previous = slot.Model;
             if (previous is not null && previous.Snapshot.Revision == snapshot.Revision && previous.Snapshot.FileName == snapshot.FileName)
             { Interlocked.Increment(ref _cacheHits); return previous; }
             SourceText source;
-            if (previous is not null && previous.Snapshot.Revision <= snapshot.Revision)
+            var forward = previous is not null && previous.Snapshot.Revision <= snapshot.Revision;
+            if (forward)
             {
-                var edit = SnapshotTextChanges.GetMinimalChange(previous.Snapshot, snapshot, token);
+                var edit = SnapshotTextChanges.GetMinimalChange(previous!.Snapshot, snapshot, token);
                 source = previous.Tree.GetText(token);
                 if (edit.Length != 0 || edit.NewText.Length != 0)
                     source = source.WithChanges(new TextChange(new TextSpan(edit.Offset, edit.Length), edit.NewText));
@@ -84,7 +102,7 @@ public sealed partial class DotNetLanguage
             }
             token.ThrowIfCancellationRequested();
             SyntaxTree tree;
-            if (previous is not null && previous.Snapshot.Revision <= snapshot.Revision && previous.Snapshot.FileName == snapshot.FileName)
+            if (forward && previous!.Snapshot.FileName == snapshot.FileName)
             { tree = previous.Tree.WithChangedText(source); Interlocked.Increment(ref _incrementalUpdates); }
             else
             {
@@ -93,17 +111,9 @@ public sealed partial class DotNetLanguage
                     : CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(Microsoft.CodeAnalysis.CSharp.LanguageVersion.Preview, DocumentationMode.Parse), snapshot.FileName, token);
                 Interlocked.Increment(ref _coldParses);
             }
-            var references = _references ?? ReferenceAssemblyCatalog.Default;
-            Compilation compilation;
-            if (previous is not null && previous.Snapshot.Revision <= snapshot.Revision)
-            { compilation = previous.Compilation.ReplaceSyntaxTree(previous.Tree, tree); Interlocked.Increment(ref _compilationReuses); }
-            else compilation = _visualBasic
-                ? VisualBasicCompilation.Create("EditorScene_" + snapshot.DocumentId.ToString("N"), [tree], references, new VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optionStrict: OptionStrict.On, globalImports: [GlobalImport.Parse("System"), GlobalImport.Parse("System.Collections.Generic"), GlobalImport.Parse("System.Linq")]))
-                : CSharpCompilation.Create("EditorScene_" + snapshot.DocumentId.ToString("N"), [tree], references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
-            var model = new CachedModel(snapshot, tree, compilation, compilation.GetSemanticModel(tree, ignoreAccessibility: false));
+            var reusable = forward ? previous!.BuiltCompilation : null;
+            var model = CreateCachedModel(snapshot, tree, reusable, reusable is null ? null : previous!.Tree);
             token.ThrowIfCancellationRequested(); Interlocked.Increment(ref _modelBuilds);
-            // Older immutable snapshots can still be queried, but cannot evict the
-            // latest revision from a cache slot shared by live views.
             if (previous is null || previous.Snapshot.Revision <= snapshot.Revision) slot.Model = model;
             return model;
         }
@@ -112,6 +122,26 @@ public sealed partial class DotNetLanguage
             if (entered) slot.Gate.Release();
             lock (_cacheGate) slot.Users--;
         }
+    }
+    private CachedModel CreateCachedModel(DocumentSnapshot snapshot, SyntaxTree tree, Compilation? reusable, SyntaxTree? previousTree)
+    {
+        var id = snapshot.DocumentId;
+        // Factories capture only a ready compiler, its tree, the new tree and ID;
+        // no preceding CachedModel or DocumentSnapshot is retained by a lazy chain.
+        return new(snapshot, tree, () =>
+        {
+            Compilation compilation;
+            if (reusable is not null)
+            { compilation = reusable.ReplaceSyntaxTree(previousTree!, tree); Interlocked.Increment(ref _compilationReuses); }
+            else
+            {
+                var references = _references ?? ReferenceAssemblyCatalog.Default;
+                compilation = _visualBasic
+                    ? VisualBasicCompilation.Create("EditorScene_" + id.ToString("N"), [tree], references, new VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optionStrict: OptionStrict.On, globalImports: [GlobalImport.Parse("System"), GlobalImport.Parse("System.Collections.Generic"), GlobalImport.Parse("System.Linq")]))
+                    : CSharpCompilation.Create("EditorScene_" + id.ToString("N"), [tree], references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
+            }
+            Interlocked.Increment(ref _compilationBuilds); return compilation;
+        }, () => Interlocked.Increment(ref _semanticModelBuilds));
     }
     private LanguageAnalysis AnalyzeCached(DocumentSnapshot snapshot, CancellationToken token)
     {
@@ -125,7 +155,7 @@ public sealed partial class DotNetLanguage
         }
         finally { model.AnalysisGate.Release(); }
     }
-    /// <summary>Syntax-token/trivia and enclosing AST ranges for C# and Visual Basic. No source text is materialized here.</summary>
+    /// <summary>Syntax-token/trivia and enclosing AST ranges, without constructing compilation or semantic state.</summary>
     public Task<ImmutableArray<SourceRange>> GetSelectionRangesAsync(DocumentSnapshot snapshot, int offset, CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         SelectionExpansion.ValidateBoundary(snapshot, offset); cancellationToken.ThrowIfCancellationRequested();
@@ -146,11 +176,7 @@ public sealed partial class DotNetLanguage
             cancellationToken.ThrowIfCancellationRequested();
             var first = node.GetFirstToken(); var last = node.GetLastToken();
             if ((first.Text, last.Text) is ("(", ")") or ("[", "]") or ("{", "}"))
-            {
-                // Include content between paired delimiters before the containing
-                // node itself, provided the caret is inside that content.
                 if (last.SpanStart >= first.Span.End) Add(TextSpan.FromBounds(first.Span.End, last.SpanStart));
-            }
             Add(node.Span);
         }
         Add(root.FullSpan);
