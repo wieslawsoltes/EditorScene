@@ -54,7 +54,7 @@ public sealed class SelectionExpansionTests
     public void InvalidOrSplitSequencesAreRejected(int start, int length)
     {
         using var doc = new EditorDocument("A🙂\r\nB");
-        Assert.That(() => new SelectionExpansion(doc.Snapshot(), new(0, 0), [new(start, length)]), Throws.ArgumentException);
+        Assert.That(() => new SelectionExpansion(doc.Snapshot(), new(0, 0), [new(start, length)]), Throws.InstanceOf<ArgumentException>());
     }
     [Test]
     public void EmptyDocumentHasNoExpansionAndHugeCandidateListsFailExplicitly()

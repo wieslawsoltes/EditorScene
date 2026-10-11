@@ -110,7 +110,7 @@ public static class SelectionCandidates
         if (end > start) values.Add(new(start, end - start));
         var line = snapshot.GetLineFromOffset(offset);
         if (line.Length > 0) values.Add(new(line.Offset, line.Length));
-        if (line.DelimiterLength > 0) values.Add(new(line.Offset, line.TotalLength));
+        if (line.DelimiterLength > 0) values.Add(new(line.Offset, line.Length + line.DelimiterLength));
         values.Add(new(0, snapshot.Length)); return values.ToImmutable();
     }
     public static ImmutableArray<SourceRange> FromAnalysis(DocumentSnapshot snapshot, int offset, LanguageAnalysis? analysis, CancellationToken cancellationToken = default)

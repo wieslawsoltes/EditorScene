@@ -4,7 +4,7 @@ using EditorScene.Text;
 namespace EditorScene.LanguageServices;
 
 [Flags]
-public enum LanguageCapabilities { None = 0, Diagnostics = 1, Classification = 2, Outlining = 4, Symbols = 8, Completion = 16, QuickInfo = 32, SignatureHelp = 64, Formatting = 128 }
+public enum LanguageCapabilities { None = 0, Diagnostics = 1, Classification = 2, Outlining = 4, Symbols = 8, Completion = 16, QuickInfo = 32, SignatureHelp = 64, Formatting = 128, SelectionRanges = 256 }
 public enum IssueSeverity { Information, Warning, Error }
 public readonly record struct SourceRange(int Offset, int Length) { public int End => checked(Offset + Length); public bool Contains(int offset) => offset >= Offset && offset <= End; }
 public sealed record EditorDiagnostic(string Code, string Message, IssueSeverity Severity, SourceRange Range);
