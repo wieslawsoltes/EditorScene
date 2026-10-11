@@ -1,0 +1,63 @@
+name: Integrate structural selection validation
+on:
+  push:
+    branches: [feat/structural-selection-incremental-analysis]
+    paths: [.github/workflows/integrate-selection-validation.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Wire native/browser/transport/package coverage and benchmark
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def edit(path,old,new):
+              p=Path(path); t=p.read_text(); assert t.count(old)==1, path+': '+old[:100]; p.write_text(t.replace(old,new))
+          edit('src/EditorScene.App/NativeEditorChecks.cs','        await NativeReviewChecks.RunAsync(checks);','        await NativeReviewChecks.RunAsync(checks);\n        await NativeStructuralSelectionChecks.RunAsync(checks);')
+          edit('tools/build.py','if len(checks) < 104','if len(checks) < 125')
+          p='tools/browser-smoke.mjs'
+          edit(p,"import {checkReview} from './browser-review.mjs';", "import {checkReview} from './browser-review.mjs';\nimport {checkStructuralSelection} from './browser-structural-selection.mjs';")
+          edit(p,'  await checkReview({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});','  await checkReview({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});\n  await checkStructuralSelection({page,state,wait,textIs,paste,command,output,checks});')
+          p='tools/browser-lsp.mjs'
+          edit(p,"import path from 'node:path';", "import path from 'node:path';\nimport {checkLspSelection} from './browser-structural-selection.mjs';")
+          edit(p,"  await focusEditor();await page.keyboard.press('Control+Home');await page.keyboard.press('Enter');", "  await checkLspSelection({page,state,wait,textIs,focusEditor,command,fixture,checks,before});\n  await focusEditor();await page.keyboard.press('Control+Home');await page.keyboard.press('Enter');")
+          p='tools/lsp-fixture.mjs'
+          edit(p,'              documentSymbolProvider:true,foldingRangeProvider:true,documentFormattingProvider:true,','              documentSymbolProvider:true,foldingRangeProvider:true,documentFormattingProvider:true,selectionRangeProvider:true,')
+          edit(p,'            assert.equal(p.capabilities.workspace.applyEdit,false);','            assert.equal(p.capabilities.workspace.applyEdit,false);\n            assert.equal(p.capabilities.textDocument.selectionRange.dynamicRegistration,false);')
+          edit(p,"          case 'textDocument/documentSymbol':{", """          case 'textDocument/selectionRange':{
+                      assert.equal(p.textDocument.uri,session.uri);assert.ok(Array.isArray(p.positions)&&p.positions.length>0);
+                      const selections=p.positions.map(pos=>{
+                        const caret=offset(session.text,pos);let start=caret,end=caret;
+                        while(start>0&&/[\\w]/.test(session.text[start-1]))start--;
+                        while(end<session.text.length&&/[\\w]/.test(session.text[end]))end++;
+                        return {range:range(session.text,start,end),parent:{range:range(session.text,0,session.text.length)}};
+                      });reply(id,selections);break;
+                    }
+                    case 'textDocument/documentSymbol':{""")
+          edit('tools/EditorScene.Benchmarks/Program.cs','ReviewBenchmarks.Add(rows);','ReviewBenchmarks.Add(rows);\nCompilerBenchmarks.Add(rows);')
+          p='tools/package.py'
+          edit(p,'var analysis = await new DotNetLanguage().AnalyzeAsync(snapshot);', '''var selectionRanges = await new DotNetLanguage().GetSelectionRangesAsync(snapshot, 0);
+          var expansion = new EditorScene.LanguageServices.SelectionExpansion(snapshot, new SelectionRange(0, 0), selectionRanges);
+          if (!expansion.TryExpand(snapshot, expansion.Current, out var selected) || selected.Length == 0) throw new Exception("Packaged structural selection failed.");
+          if (!expansion.TryContract(snapshot, selected, out var original) || original != new SelectionRange(0, 0)) throw new Exception("Packaged structural contraction failed.");
+          var analysis = await new DotNetLanguage().AnalyzeAsync(snapshot);''')
+          edit(p,'    public ConsumerControl()','    public Task<bool> ExpandAsync() => Editor.ExpandSelectionAsync();\n    public bool Contract() => Editor.ContractSelection();\n    public ConsumerControl()')
+          PY
+          git diff --check
+          node --check tools/browser-structural-selection.mjs
+          node --check tools/lsp-fixture.mjs
+      - name: Commit coverage and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-selection-validation.yml
+          git add src tools
+          git commit -m 'test(selection): wire 125 native assertions, browser/LSP scenarios, consumers and compiler benchmarks'
+          git push origin HEAD:feat/structural-selection-incremental-analysis
+          git rev-parse HEAD
