@@ -53,6 +53,9 @@ public sealed class AnalysisCoordinator : IDisposable
     private void OnInvalidated(object? sender, LanguageAnalysisInvalidated invalidated) => _dispatch(() =>
     {
         if (_disposed || !ReferenceEquals(sender, _language) || invalidated.DocumentId != _document.Id || invalidated.Revision != _document.Revision) return;
+        // External diagnostics or project context can change without a text edit.
+        // Exact revision equality does not make explicitly invalidated data current.
+        Current = null;
         RequestAnalysis(true);
     });
     private void OnChanged(object? sender, EventArgs e) => RequestAnalysis();
