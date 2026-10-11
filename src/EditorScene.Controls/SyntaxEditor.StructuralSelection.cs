@@ -14,16 +14,15 @@ public sealed partial class SyntaxEditor
     public bool IsSelectionExpansionPending => _selectionRequest is not null;
     public bool CanContractSelection => _selectionExpansion?.CanContract == true;
     public int SelectionExpansionDepth => _selectionExpansion?.Depth ?? 0;
-    // UnoEdit can position the insertion caret independently of the active
-    // selection endpoint. Capture both instead of treating them as equivalent.
+    // The insertion caret and active selection endpoint are independent in UnoEdit.
     private SelectionRange NativeSelection => new(_editor.TextArea.Session.AnchorOffset, _editor.TextArea.Session.SelectionEndOffset);
     private void ResetSelectionExpansion()
     {
         _selectionGeneration++; _selectionExpansion = null;
         var pending = _selectionRequest; _selectionRequest = null;
-        pending?.Cancel(); // The request owns disposal until all provider work has unwound.
+        pending?.Cancel(); // The request owns disposal until provider work unwinds.
     }
-    /// <summary>Expand the active selection through syntax ancestors. Delayed responses never move a newer caret or document.</summary>
+    /// <summary>Expand through syntax ancestors without overwriting a newer caret, document or host callback.</summary>
     public async Task<bool> ExpandSelectionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess(); cancellationToken.ThrowIfCancellationRequested();
@@ -35,7 +34,7 @@ public sealed partial class SyntaxEditor
         if (_selectionExpansion is { } cached && cached.IsCurrent(snapshot, selected) && caret == _selectionCurrentCaret)
         {
             if (!cached.TryExpand(snapshot, selected, out var next)) return false;
-            ApplyStructuralSelection(next); return true;
+            return ApplyStructuralSelection(next);
         }
         ResetSelectionExpansion(); _selectionOriginCaret = _selectionCurrentCaret = caret;
         var generation = _selectionGeneration;
@@ -48,18 +47,18 @@ public sealed partial class SyntaxEditor
             else ranges = SelectionCandidates.FromAnalysis(snapshot, caret, Analysis, request.Token);
             request.Token.ThrowIfCancellationRequested();
             if (_disposed || generation != _selectionGeneration || !ReferenceEquals(Document, document) || !ReferenceEquals(SyntaxLanguage, language)
-                || document.Revision != snapshot.Revision || NativeSelection != selected || CaretOffset != caret) return false;
+                || document.Revision != snapshot.Revision || NativeSelection != selected || CaretOffset != caret || Selections.IsActive) return false;
             if (ranges.IsDefault) throw new InvalidDataException("The selection provider returned an uninitialized range array.");
             if (ranges.IsEmpty) ranges = SelectionCandidates.Basic(snapshot, caret, request.Token);
             var expansion = new SelectionExpansion(snapshot, selected, ranges); _selectionExpansion = expansion;
             if (!expansion.TryExpand(snapshot, selected, out var next)) return false;
-            ApplyStructuralSelection(next); return true;
+            return ApplyStructuralSelection(next);
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested) { return false; }
         catch (Exception) when (_disposed || generation != _selectionGeneration) { return false; }
         finally { if (ReferenceEquals(_selectionRequest, request)) _selectionRequest = null; }
     }
-    /// <summary>Restore the preceding selection, including its original direction and independent insertion caret.</summary>
+    /// <summary>Restore the preceding selection and its independent original insertion caret.</summary>
     public bool ContractSelection()
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess();
@@ -67,23 +66,56 @@ public sealed partial class SyntaxEditor
         if (_selectionRequest is not null) { ResetSelectionExpansion(); return false; }
         if (_selectionExpansion is not { } expansion) return false;
         var snapshot = Document.Snapshot(); var selected = NativeSelection;
-        if (!expansion.IsCurrent(snapshot, selected) || CaretOffset != _selectionCurrentCaret) { ResetSelectionExpansion(); return false; }
+        if (!expansion.IsCurrent(snapshot, selected) || CaretOffset != _selectionCurrentCaret || Selections.IsActive)
+        { ResetSelectionExpansion(); return false; }
         if (!expansion.TryContract(snapshot, selected, out var previous)) return false;
-        ApplyStructuralSelection(previous); return true;
+        return ApplyStructuralSelection(previous);
     }
-    private void ApplyStructuralSelection(SelectionRange range)
+    private bool IsStructuralContextCurrent(EditorDocument document, long revision, ISyntaxLanguage language, SelectionExpansion expansion, long generation)
+        => !_disposed && generation == _selectionGeneration && ReferenceEquals(Document, document) && document.Revision == revision
+            && ReferenceEquals(SyntaxLanguage, language) && ReferenceEquals(_selectionExpansion, expansion) && !Selections.IsActive;
+    private bool AbandonStructuralSelection(SelectionExpansion expansion)
     {
+        // A callback may already have created a new history: never clear that one.
+        if (ReferenceEquals(_selectionExpansion, expansion)) ResetSelectionExpansion();
+        return false;
+    }
+    private bool ApplyStructuralSelection(SelectionRange range)
+    {
+        var expansion = _selectionExpansion ?? throw new InvalidOperationException("No structural selection history is active.");
+        var document = Document; var revision = document.Revision; var language = SyntaxLanguage; var generation = _selectionGeneration;
+        var initial = NativeSelection; var initialCaret = CaretOffset;
+        var targetCaret = expansion.Depth == 0 ? _selectionOriginCaret : range.Active;
         _changingStructuralSelection = true;
         try
         {
-            EndSnippet(false); ClearMultiSelection();
-            _selectionCurrentCaret = _selectionExpansion?.Depth == 0 ? _selectionOriginCaret : range.Active;
+            EndSnippet(false);
+            if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != initial || CaretOffset != initialCaret)
+                return AbandonStructuralSelection(expansion);
+            ClearMultiSelection();
+            if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != initial || CaretOffset != initialCaret)
+                return AbandonStructuralSelection(expansion);
+            _selectionCurrentCaret = targetCaret;
             var session = _editor.TextArea.Session;
-            session.SetCaretOffset(_selectionCurrentCaret);
+            // Each setter notifies native and host listeners synchronously. Check
+            // its expected output before the next setter can overwrite a callback.
+            var afterCaret = initial.Length == 0 ? new SelectionRange(targetCaret, targetCaret) : initial;
+            session.SetCaretOffset(targetCaret);
+            if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != afterCaret || CaretOffset != targetCaret)
+                return AbandonStructuralSelection(expansion);
             session.SetSelection(range.Anchor, range.Active);
+            if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
+                return AbandonStructuralSelection(expansion);
             _editor.TextArea.TextView.EnsureCaretVisible();
         }
         finally { _changingStructuralSelection = false; }
+        if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
+            return AbandonStructuralSelection(expansion);
         StateChanged?.Invoke(this, EventArgs.Empty);
+        // A final observer may redirect selection or start a newer operation. Do
+        // not report success and restore keyboard focus over that interaction.
+        if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
+            return AbandonStructuralSelection(expansion);
+        return true;
     }
 }
