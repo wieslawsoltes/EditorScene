@@ -1,0 +1,52 @@
+name: Integrate incremental compiler model cache
+on:
+  push:
+    branches: [feat/structural-selection-incremental-analysis]
+    paths: [.github/workflows/integrate-incremental-selection.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply checked compiler cache integration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/EditorScene.Languages.DotNet/DotNetLanguage.cs'); t=p.read_text()
+          def replace(old,new):
+              global t
+              assert t.count(old)==1, old[:100]
+              t=t.replace(old,new)
+          replace('public sealed class DotNetLanguage : ISyntaxLanguage','public sealed partial class DotNetLanguage : ISyntaxLanguage, ISelectionRangeProvider')
+          start='    private readonly object _cacheGate = new();'; end='    public DotNetLanguage(bool visualBasic'
+          assert t.count(start)==1 and t.count(end)==1
+          a=t.index(start); b=t.index(end,a); t=t[:a]+t[b:]
+          replace('Task.Run(() => Analyze(snapshot, cancellationToken), cancellationToken);','Task.Run(() => AnalyzeCached(snapshot, cancellationToken), cancellationToken);')
+          start='    private CachedModel GetModel('; end='    private LanguageAnalysis Analyze('
+          assert t.count(start)==1 and t.count(end)==1
+          a=t.index(start); b=t.index(end,a); t=t[:a]+t[b:]
+          replace('    private LanguageAnalysis Analyze(DocumentSnapshot snapshot, CancellationToken token)', '    private LanguageAnalysis AnalyzeCore(DocumentSnapshot snapshot, CachedModel model, CancellationToken token)')
+          replace('        var model = GetModel(snapshot, token); var root = model.Tree.GetRoot(token);','        var root = model.Tree.GetRoot(token);')
+          replace('LanguageCapabilities.SignatureHelp | LanguageCapabilities.Formatting;', 'LanguageCapabilities.SignatureHelp | LanguageCapabilities.Formatting | LanguageCapabilities.SelectionRanges;')
+          p.write_text(t)
+          def edit(path,old,new):
+              p=Path(path); t=p.read_text(); assert t.count(old)==1, path+': '+old; p.write_text(t.replace(old,new))
+          edit('src/EditorScene.LanguageServices/LanguageContracts.cs','SignatureHelp = 64, Formatting = 128','SignatureHelp = 64, Formatting = 128, SelectionRanges = 256')
+          edit('src/EditorScene.LanguageServices/SelectionExpansion.cs','line.TotalLength','line.Length + line.DelimiterLength')
+          edit('tests/EditorScene.Tests/SelectionExpansionTests.cs','Throws.ArgumentException);','Throws.InstanceOf<ArgumentException>());')
+          PY
+          git diff --check
+      - name: Commit and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-incremental-selection.yml
+          git add src tests
+          git commit -m 'perf(dotnet): integrate incremental text changes, compilation reuse and single-build model cache'
+          git push origin HEAD:feat/structural-selection-incremental-analysis
+          git rev-parse HEAD
