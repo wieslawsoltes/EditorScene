@@ -67,6 +67,62 @@ internal static class NativeStructuralSelectionChecks
         pendingProvider = new(); var disposed = new SyntaxEditor { Document = document, SyntaxLanguage = pendingProvider }; disposed.Select(number, 0);
         pending = disposed.ExpandSelectionAsync(); disposed.Dispose(); pendingProvider.Complete([new(0, document.Buffer.TextLength)]);
         Check(!await pending, "Disposing a native view prevents late expansion from touching its controls");
+        await RunReentrancyChecksAsync(Check);
+    }
+    private static async Task RunReentrancyChecksAsync(Action<bool, string> check)
+    {
+        foreach (var scenario in new[] { "move", "range", "edit", "rebind", "provider", "dispose", "multiple" })
+        {
+            using var document = new EditorDocument("alpha beta"); using var other = new EditorDocument("x");
+            using var editor = new SyntaxEditor { Document = document, SyntaxLanguage = new PlainTextLanguage() };
+            editor.Select(2, 0); var fired = false;
+            void Redirect(object? sender, EventArgs args)
+            {
+                if (fired || editor.SelectionExpansionDepth != 1 || editor.CaretOffset != 5) return;
+                if (scenario == "range" && editor.SelectionLength != 5) return;
+                fired = true;
+                switch (scenario)
+                {
+                    case "move": case "range": editor.NativeEditor.TextArea.Session.MoveTo(8); break;
+                    case "edit": editor.Text = "changed"; editor.NativeEditor.TextArea.Session.MoveTo(1); break;
+                    case "rebind": editor.SetDocumentAndLanguage(other, new PlainTextLanguage()); break;
+                    case "provider": editor.SyntaxLanguage = new PlainTextLanguage(); break;
+                    case "dispose": editor.Dispose(); break;
+                    case "multiple": editor.Selections.Set([new(8, 8), new(9, 9)]); break;
+                }
+            }
+            editor.StateChanged += Redirect;
+            var expanded = await editor.ExpandSelectionAsync(); editor.StateChanged -= Redirect;
+            var preserved = scenario switch
+            {
+                "move" or "range" => editor.CaretOffset == 8 && editor.SelectionLength == 0,
+                "edit" => editor.Text == "changed" && editor.CaretOffset == 1,
+                "rebind" => ReferenceEquals(editor.Document, other) && editor.Text == "x",
+                "provider" => editor.SelectionLength == 0,
+                "multiple" => editor.Selections.Ranges.Count == 2,
+                _ => true
+            };
+            check(fired && !expanded && preserved && editor.SelectionExpansionDepth == 0,
+                "Synchronous structural-selection callback preserves host " + scenario + " instead of overwriting it");
+        }
+        using var doc = new EditorDocument("alpha beta");
+        using var contraction = new SyntaxEditor { Document = doc, SyntaxLanguage = new PlainTextLanguage() };
+        contraction.Select(2, 0); await contraction.ExpandSelectionAsync(); await contraction.ExpandSelectionAsync();
+        var redirected = false;
+        void OnContract(object? sender, EventArgs args)
+        {
+            if (redirected || contraction.CaretOffset != 5) return;
+            redirected = true; contraction.NativeEditor.TextArea.Session.MoveTo(8);
+        }
+        contraction.StateChanged += OnContract;
+        var contracted = contraction.ContractSelection(); contraction.StateChanged -= OnContract;
+        check(redirected && !contracted && contraction.CaretOffset == 8 && contraction.SelectionLength == 0 && contraction.SelectionExpansionDepth == 0,
+            "Contraction preserves a synchronous host redirection and discards its obsolete history");
+        var provider = new DeferredSelections(); contraction.SyntaxLanguage = provider; contraction.Select(2, 0);
+        var pending = contraction.ExpandSelectionAsync(); contraction.Selections.Set([new(8, 8), new(9, 9)]);
+        provider.Complete([new(0, 5)]);
+        check(!await pending && contraction.Selections.Ranges.Count == 2 && contraction.CaretOffset == 2,
+            "Late structural ranges cannot discard additional carets created during the request");
     }
     private class FixedSelections(ImmutableArray<SourceRange> ranges) : ISyntaxLanguage, ISelectionRangeProvider
     {
