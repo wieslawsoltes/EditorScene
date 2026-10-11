@@ -30,6 +30,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private BracketMap? _brackets;
     private bool _disposed, _multiEditing;
     private MultiSelection? _selections;
+    private bool _showWhitespace, _showRuler, _showIndentGuides = true;
 
     public static readonly DependencyProperty DocumentProperty = DependencyProperty.Register(nameof(Document), typeof(EditorDocument), typeof(SyntaxEditor), new PropertyMetadata(null, (o, e) => ((SyntaxEditor)o).Rebind((EditorDocument?)e.OldValue, (EditorDocument?)e.NewValue)));
     public static readonly DependencyProperty IsReadOnlyProperty = DependencyProperty.Register(nameof(IsReadOnly), typeof(bool), typeof(SyntaxEditor), new PropertyMetadata(false, (o, e) => ((SyntaxEditor)o)._editor.IsReadOnly = (bool)e.NewValue));
@@ -61,7 +62,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     public bool CanUndo => _editor.CanUndo;
     public bool CanRedo => _editor.CanRedo;
     public SearchPanel Search => SearchPanel.Install(_editor);
-    public LanguageAnalysis? Analysis => _coordinator?.Current;
+    public LanguageAnalysis? Analysis => _coordinator?.Current is { } value && value.DocumentId == Document.Id && value.Revision == Document.Revision ? value : null;
     public IndicatorCollection Indicators => Document.Indicators;
     public MultiSelection Selections => _selections ?? throw new InvalidOperationException("No document is attached.");
     public IReadOnlyList<FoldingSection> Foldings => _folding?.AllFoldings.ToArray() ?? [];
@@ -73,11 +74,11 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     public ISyntaxLanguage SyntaxLanguage
     {
         get => _language;
-        set { _language = value ?? throw new ArgumentNullException(nameof(value)); Document.LanguageId = value.Id; ConfigureLanguage(); }
+        set { ArgumentNullException.ThrowIfNull(value); if (ReferenceEquals(_language, value)) return; _language = value; Document.LanguageId = value.Id; ConfigureLanguage(); }
     }
-    public bool ShowWhitespace { get => _adornments?.ShowWhitespace ?? false; set { if (_adornments is not null) { _adornments.ShowWhitespace = value; Redraw(); } } }
-    public bool ShowIndentGuides { get => _adornments?.ShowIndentGuides ?? true; set { if (_adornments is not null) { _adornments.ShowIndentGuides = value; Redraw(); } } }
-    public bool ShowRuler { get => _adornments?.ShowRuler ?? false; set { if (_adornments is not null) { _adornments.ShowRuler = value; Redraw(); } } }
+    public bool ShowWhitespace { get => _showWhitespace; set { _showWhitespace = value; if (_adornments is not null) { _adornments.ShowWhitespace = value; Redraw(); } } }
+    public bool ShowIndentGuides { get => _showIndentGuides; set { _showIndentGuides = value; if (_adornments is not null) { _adornments.ShowIndentGuides = value; Redraw(); } } }
+    public bool ShowRuler { get => _showRuler; set { _showRuler = value; if (_adornments is not null) { _adornments.ShowRuler = value; Redraw(); } } }
     public event EventHandler? TextChanged;
     public event EventHandler? StateChanged;
     public event EventHandler<LanguageAnalysis>? AnalysisUpdated;
@@ -87,12 +88,13 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void Rebind(EditorDocument? previous, EditorDocument? document)
     {
         if (_disposed || document is null) return;
+        _brackets = null;
         ClosePopups(); _coordinator?.Dispose(); DetachStyles(); _adornments?.Dispose(); _folding?.Dispose();
         if (previous is not null) previous.Changed -= OnDocumentChanged;
         if (_ownedDocument is not null && !ReferenceEquals(_ownedDocument, document)) { _ownedDocument.Dispose(); _ownedDocument = null; }
         _editor.Document = document.Buffer; _selections = new(document);
         _folding = FoldingManager.Install(_editor.TextArea);
-        _adornments = new(document, _editor.TextArea.TextView.Viewport, document.Indicators) { Theme = Theme };
+        _adornments = new(document, _editor.TextArea.TextView.Viewport, document.Indicators) { Theme = Theme, ShowWhitespace = _showWhitespace, ShowIndentGuides = _showIndentGuides, ShowRuler = _showRuler };
         document.Changed += OnDocumentChanged;
         ConfigureLanguage(); ApplyTheme();
     }
@@ -117,6 +119,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
         _folding?.Clear(); _brackets = null;
         _coordinator = new(document, SyntaxLanguage, action => { if (DispatcherQueue.HasThreadAccess) action(); else DispatcherQueue.TryEnqueue(() => { if (!_disposed) action(); }); });
         _coordinator.Published += OnAnalysisPublished; _coordinator.Failed += OnInputError;
+        StateChanged?.Invoke(this, EventArgs.Empty);
         _coordinator.RequestAnalysis(true);
     }
     private void OnAnalysisPublished(object? sender, LanguageAnalysis analysis)
@@ -126,7 +129,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
         {
             _styles?.Update(analysis); _adornments?.Update(analysis);
             _folding?.UpdateFoldings(analysis.Foldings.Where(f => f.Range.Length > 1).Select(f => new NewFolding(f.Range.Offset, f.Range.End) { Name = f.Caption, IsDefinition = f.IsDefinition }), -1);
-            _brackets = new(Document.Snapshot(), analysis.Classifications); UpdateBracketHighlights();
+            PrepareBrackets(analysis); UpdateBracketHighlights();
             AnalysisUpdated?.Invoke(this, analysis); StateChanged?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception exception) { ReportError(exception); }
@@ -140,7 +143,17 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void SetText(string text) { if (GetValue(DocumentProperty) is EditorDocument document && document.Buffer.Text != text) document.ApplyEdits([new(0, document.Buffer.TextLength, text)], document.Revision); }
     private void OnSelectionChanged(object? sender, EventArgs args) { UpdateBracketHighlights(); StateChanged?.Invoke(this, EventArgs.Empty); }
     private void UpdateBracketHighlights()
-    { if (_adornments is not null) { _adornments.BracketHighlights = _brackets?.Revision == Document.Revision ? _brackets.AtCaret(CaretOffset) : []; Redraw(); } }
+    {
+        if (_adornments is null) return;
+        if (_brackets?.DocumentId == Document.Id && _brackets.Revision == Document.Revision && _brackets.TryGetPair(CaretOffset, out var first, out var second))
+        {
+            var old = _adornments.BracketHighlights;
+            if (old.Count == 2 && old[0] == first && old[1] == second) return;
+            _adornments.BracketHighlights = [first, second];
+        }
+        else { if (_adornments.BracketHighlights.Count == 0) return; _adornments.BracketHighlights = []; }
+        Redraw();
+    }
     private void OnInputError(object? sender, Exception exception) => ReportError(exception);
     public void ReportError(Exception exception) { Status = exception.Message; OperationFailed?.Invoke(this, exception); StateChanged?.Invoke(this, EventArgs.Empty); }
     private void SetStatus(string text) { Status = text; StateChanged?.Invoke(this, EventArgs.Empty); }

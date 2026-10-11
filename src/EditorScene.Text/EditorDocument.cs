@@ -101,7 +101,7 @@ public sealed class EditorDocument : IDisposable
         _snapshot = null; Revision++;
     }
     private void OnTextChanged(object? sender, EventArgs e) => Changed?.Invoke(this, e);
-    public void MarkSaved() => Buffer.UndoStack.MarkAsOriginalFile();
+    public void MarkSaved() { VerifyAccess(); Buffer.UndoStack.MarkAsOriginalFile(); }
 
     /// <summary>
     /// Validates all offsets and rejects overlapping edits before mutation.
@@ -132,22 +132,25 @@ public sealed class EditorDocument : IDisposable
     /// <summary>Load only after the stream decodes successfully; the caller owns the stream.</summary>
     public void Load(Stream stream, Encoding? fallback = null)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(stream);
+        VerifyAccess(); ArgumentNullException.ThrowIfNull(stream); var revision = Revision;
         using var reader = new StreamReader(stream, fallback ?? new UTF8Encoding(false, true), true, 8192, true);
         var text = reader.ReadToEnd(); var encoding = reader.CurrentEncoding;
+        VerifyAccess();
+        if (Revision != revision) throw new InvalidOperationException("The document changed during load; the decoded text was not applied.");
         Buffer.Text = text; Encoding = encoding; Buffer.UndoStack.ClearAll(); MarkSaved();
     }
     /// <summary>Do not mark saved until writing and flushing both succeed.</summary>
     public void Save(Stream stream)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(stream);
-        using (var writer = new StreamWriter(stream, Encoding, 8192, true)) { Buffer.WriteTextTo(writer); writer.Flush(); }
-        MarkSaved();
+        VerifyAccess(); ArgumentNullException.ThrowIfNull(stream);
+        var snapshot = Snapshot(); var encoding = (Encoding)Encoding.Clone();
+        using (var writer = new StreamWriter(stream, encoding, 8192, true))
+        { snapshot.TextSource.WriteTextTo(writer); writer.Flush(); }
+        VerifyAccess(); if (Revision == snapshot.Revision) MarkSaved();
     }
     public void ConvertLineEndings(string delimiter)
     {
+        VerifyAccess();
         if (delimiter is not ("\n" or "\r\n" or "\r")) throw new ArgumentException("Choose LF, CRLF or CR.", nameof(delimiter));
         var changes = Buffer.Lines.Where(x => x.DelimiterLength != 0)
             .Select(x => new TextEdit(x.EndOffset, x.DelimiterLength, delimiter)).ToArray();

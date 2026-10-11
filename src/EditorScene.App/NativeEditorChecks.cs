@@ -63,5 +63,6 @@ internal static class NativeEditorChecks
         Check(failure is null, "No unexpected command errors");
         NativeSnippetChecks.Run(checks);
         await NativeMacroChecks.RunAsync(checks);
+        await NativeReviewChecks.RunAsync(checks);
     }
 }

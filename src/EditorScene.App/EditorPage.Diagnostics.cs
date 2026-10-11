@@ -101,6 +101,8 @@ public sealed partial class EditorPage
             SearchResultCount = _active.Search.ResultCount, SearchStatus = _active.Search.StatusText,
             WordWrap = _active.WordWrap, ReadOnly = _active.IsReadOnly, Whitespace = _active.ShowWhitespace,
             SelectionCount = _active.Selections.Ranges.Count, DocumentCount = _documents.Count,
+            BracketPairs = _active.BracketPairCount, IndentGuides = _active.ShowIndentGuides, Ruler = _active.ShowRuler,
+            IconCount = _icons.Count, RegisteredTabCount = _tabControlNames.Count,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
     }
@@ -167,6 +169,11 @@ internal sealed class BrowserState
     public bool Whitespace { get; set; }
     public int SelectionCount { get; set; }
     public int DocumentCount { get; set; }
+    public int BracketPairs { get; set; }
+    public bool IndentGuides { get; set; }
+    public bool Ruler { get; set; }
+    public int IconCount { get; set; }
+    public int RegisteredTabCount { get; set; }
     public Dictionary<string, double[]> Controls { get; set; } = [];
     public string? Error { get; set; }
     public string[] NativeChecks { get; set; } = [];

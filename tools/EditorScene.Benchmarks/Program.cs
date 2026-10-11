@@ -55,6 +55,7 @@ Measure("decode_10000_semantic_tokens", "current", () =>
     var doc = new EditorDocument(tokenText); var snapshot = doc.Snapshot(); _ = snapshot.LineCount;
     return new(() => GC.KeepAlive(LspResultConverter.SemanticTokens(snapshot, new[] { "keyword" }, result)), doc.Dispose);
 });
+ReviewBenchmarks.Add(rows);
 var report = new { sourceRevision = Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "local-working-tree", framework = RuntimeInformation.FrameworkDescription, os = RuntimeInformation.OSDescription, architecture = RuntimeInformation.ProcessArchitecture.ToString(), processors = Environment.ProcessorCount,
     documentCharacters = text.Length, documentLines = 100001, samples = 11, warmups = 3, note = "Single-process Stopwatch and current-thread allocation measurements. Baselines reproduce old hot paths on valid fixtures. LSP diff indexes are warm for both versions. Setup/disposal excluded; no physical-GPU claims or absolute timing gate.", rows };
 var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }); Console.WriteLine(json);
