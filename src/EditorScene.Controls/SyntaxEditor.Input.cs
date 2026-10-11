@@ -112,7 +112,9 @@ public sealed partial class SyntaxEditor
     private void OnTextEntering(object? sender, TextInputEventArgs args)
     {
         if (_disposed || args.Handled || IsReadOnly) return;
-        MacroRecording.NotifyEditAction(MacroStep.InsertText(args.Text));
+        if (MacroRecording.State == MacroRecordingState.Playing && !_replayingText) { args.Handled = true; return; }
+        try { MacroRecording.NotifyEditAction(MacroStep.InsertText(args.Text)); }
+        catch (Exception error) { args.Handled = true; ReportError(error); return; }
         if (Selections.IsActive)
         {
             args.Handled = true; _multiEditing = true;

@@ -86,6 +86,7 @@ public sealed partial class EditorPage
             BookmarkCount = _active.Indicators.Items.Count(i => i.Kind == EditorScene.Text.IndicatorKind.Bookmark),
             CompletionOpen = _active.IsCompletionOpen, CompletionLabels = _active.CompletionLabels.ToArray(), QuickInfoOpen = _active.IsQuickInfoOpen,
             SignatureOpen = _active.IsSignatureHelpOpen, Split = _secondary is not null,
+            MacroState = _active.MacroRecording.State.ToString(), MacroStepCount = _active.MacroRecording.RecordedStepCount, MacroHasLast = _active.MacroRecording.LastMacroAction is not null,
             SnippetActive = _active.IsSnippetActive, SnippetFields = _active.ActiveSnippetFields.Select(r => new[] { r.Start, r.Length }).ToArray(),
             SecondaryTextPrefix = _secondary?.Document.Buffer.GetText(0, Math.Min(8192, doc.Buffer.TextLength)),
             CachedLines = view.Viewport.CachedLineCount, VisibleLines = view.Viewport.LastVisibleLineCount, RenderCount = view.Viewport.RenderCount,
@@ -133,6 +134,9 @@ internal sealed class BrowserState
     public string[] CompletionLabels { get; set; } = [];
     public bool QuickInfoOpen { get; set; }
     public bool SignatureOpen { get; set; }
+    public string MacroState { get; set; } = "Idle";
+    public int MacroStepCount { get; set; }
+    public bool MacroHasLast { get; set; }
     public bool SnippetActive { get; set; }
     public int[][] SnippetFields { get; set; } = [];
     public bool Split { get; set; }

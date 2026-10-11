@@ -3,7 +3,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using UnoEdit;
 using UnoEdit.Editing;
+using UnoEdit.Utils;
 using Windows.System;
 
 namespace EditorScene.Controls;
@@ -14,6 +16,7 @@ public sealed partial class SyntaxEditor
     private Border? _macroPointerShield;
     private bool _macroPopupsSuppressed, _macroAutoCompletion;
     private CancellationTokenSource? _macroPlayback;
+    private bool _replayingText;
     public MacroRecorder MacroRecording => _macroRecording;
     public event EventHandler? MacroRecordingStateChanged;
     private bool MacroSessionActive => MacroRecording.State != MacroRecordingState.Idle;
@@ -32,6 +35,8 @@ public sealed partial class SyntaxEditor
         if (_disposed) return;
         if (MacroSessionActive)
         {
+            if (MacroRecording.State is MacroRecordingState.Recording or MacroRecordingState.Playing)
+            { ClosePopups(); EndSnippet(false); ClearMultiSelection(); }
             if (!_macroPopupsSuppressed)
             { _macroAutoCompletion = AutoShowCompletion; _macroPopupsSuppressed = true; ClosePopups(); EndSnippet(false); ClearMultiSelection(); }
             AutoShowCompletion = false;
@@ -113,6 +118,7 @@ public sealed partial class SyntaxEditor
     {
         ObjectDisposedException.ThrowIf(_disposed, this); ArgumentNullException.ThrowIfNull(text);
         if (IsReadOnly) throw new InvalidOperationException("The document is read only.");
+        if (MacroRecording.State == MacroRecordingState.Playing && !_replayingText) throw new InvalidOperationException("Macro playback is in progress.");
         var args = new TextInputEventArgs(text); OnTextEntering(this, args);
         if (args.Handled) return;
         var session = _editor.TextArea.Session;
@@ -120,6 +126,11 @@ public sealed partial class SyntaxEditor
             session.MoveHorizontal(1, true);
         if (!CanEdit(new(SelectionStart, SelectionLength, text))) throw new InvalidOperationException("The operation intersects read-only text.");
         session.ReplaceSelection(text); OnTextEntered(this, args);
+    }
+    private void InsertMacroText(string text)
+    {
+        _replayingText = true;
+        try { InsertText(text); } finally { _replayingText = false; }
     }
     private static bool IsSupportedMacroStep(MacroStep step)
     {
@@ -149,7 +160,7 @@ public sealed partial class SyntaxEditor
                 cancellation.ThrowIfCancellationRequested();
                 if (_disposed || !ReferenceEquals(Document, document) || !ReferenceEquals(SyntaxLanguage, language) || document.Revision != revision)
                     throw new InvalidOperationException("The macro target changed during playback.");
-                if (step.Command == "text") InsertText(step.Argument);
+                if (step.Command == "text") InsertMacroText(step.Argument);
                 else if (step.Command == "clearSelection") { ClearMultiSelection(); _editor.TextArea.ClearSelection(); }
                 else if (step.Command.StartsWith("editor.", StringComparison.Ordinal)) await ExecuteCommandCoreAsync(Enum.Parse<EditorCommand>(step.Command[7..]));
                 else

@@ -54,6 +54,7 @@ public sealed partial class EditorPage
         Separator(prompt);
         Item(prompt, "Import Snippets…", ImportSnippetsAsync);
         Item(prompt, "Export Snippets…", ExportSnippetsAsync);
+        BuildMacroMenu(Menu("Macros"));
         var view = Menu("View");
         Toggle(view, "Word Wrap", () => _active.WordWrap, () => _ = _active.ExecuteAsync(EditorCommand.ToggleWordWrap));
         Toggle(view, "Line Numbers", () => _active.ShowLineNumbers, () => _ = _active.ExecuteAsync(EditorCommand.ToggleLineNumbers));

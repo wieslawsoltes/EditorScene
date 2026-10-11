@@ -23,6 +23,8 @@ public sealed partial class SyntaxEditor
     private void InsertSnippetCore(CodeSnippet snippet, int shortcutLength)
     {
         ObjectDisposedException.ThrowIf(_disposed, this); ArgumentNullException.ThrowIfNull(snippet);
+        if (MacroRecording.State is EditorScene.Text.Macros.MacroRecordingState.Recording or EditorScene.Text.Macros.MacroRecordingState.Playing)
+            throw new InvalidOperationException("Pause macro recording before inserting an interactive snippet.");
         var document = Document; var snapshot = document.Snapshot(); var language = SyntaxLanguage;
         if (snippet.Language != CodeSnippet.NormalizeLanguage(language.Id)) throw new InvalidOperationException("The snippet language does not match this editor.");
         var start = shortcutLength > 0 ? CaretOffset - shortcutLength : SelectionStart;
@@ -106,6 +108,8 @@ public sealed partial class SyntaxEditor
     {
         try
         {
+            if (MacroRecording.State is EditorScene.Text.Macros.MacroRecordingState.Recording or EditorScene.Text.Macros.MacroRecordingState.Playing)
+                throw new InvalidOperationException("Pause macro recording before selecting an interactive snippet.");
             if (IsReadOnly) throw new InvalidOperationException("The document is read only.");
             if (XamlRoot is null) throw new InvalidOperationException("The editor must be loaded before showing a snippet selector.");
             var document = Document; var revision = document.Revision; var start = SelectionStart; var length = SelectionLength;

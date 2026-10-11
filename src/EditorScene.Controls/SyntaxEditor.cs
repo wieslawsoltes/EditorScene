@@ -46,7 +46,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
         _editor.TextArea.TextView.PointerPressed += OnPointerPressed;
         _fontSizeCallback = RegisterPropertyChangedCallback(FontSizeProperty, (_, _) => { _editor.FontSize = FontSize; ApplyTheme(); });
         _ownedDocument = new EditorDocument(); Document = _ownedDocument;
-        Loaded += OnLoaded;
+        InitializeMacroSupport(); Loaded += OnLoaded;
     }
     public NativeEditor NativeEditor => _editor;
     public EditorDocument Document { get => (EditorDocument)GetValue(DocumentProperty); set => SetValue(DocumentProperty, value ?? throw new ArgumentNullException(nameof(value))); }
@@ -173,7 +173,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     public new void Dispose()
     {
         if (_disposed) return;
-        ClosePopups(); _disposed = true; Loaded -= OnLoaded;
+        DisposeMacroSupport(); ClosePopups(); _disposed = true; Loaded -= OnLoaded;
         _coordinator?.Dispose(); DetachStyles(); _adornments?.Dispose(); _folding?.Dispose();
         Document.Changed -= OnDocumentChanged; _editor.SelectionChanged -= OnSelectionChanged; _editor.InputError -= OnInputError;
         _editor.TextArea.TextEntering -= OnTextEntering; _editor.TextArea.TextEntered -= OnTextEntered; _editor.TextArea.TextView.PointerPressed -= OnPointerPressed;

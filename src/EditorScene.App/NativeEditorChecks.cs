@@ -62,5 +62,6 @@ internal static class NativeEditorChecks
         selector.Editor = other; outline.Editor = other; selector.Editor = null; outline.Editor = null;
         Check(failure is null, "No unexpected command errors");
         NativeSnippetChecks.Run(checks);
+        await NativeMacroChecks.RunAsync(checks);
     }
 }

@@ -8,9 +8,12 @@ public sealed partial class SyntaxEditor
     public async Task ExecuteAsync(EditorCommand command)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        try
-        {
-            switch (command)
+        try { RecordEditorMacroCommand(command); await ExecuteCommandCoreAsync(command); }
+        catch (Exception exception) { ReportError(exception); }
+    }
+    private async Task ExecuteCommandCoreAsync(EditorCommand command)
+    {
+        switch (command)
             {
                 case EditorCommand.Undo: ClearMultiSelection(); _editor.Undo(); break;
                 case EditorCommand.Redo: ClearMultiSelection(); _editor.Redo(); break;
@@ -65,8 +68,6 @@ public sealed partial class SyntaxEditor
                 default: throw new ArgumentOutOfRangeException(nameof(command));
             }
             SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusEditor();
-        }
-        catch (Exception exception) { ReportError(exception); }
     }
     private bool CanEdit(TextEdit edit)
     {
