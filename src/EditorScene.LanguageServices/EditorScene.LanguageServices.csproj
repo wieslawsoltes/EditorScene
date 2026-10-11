@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Reusable EditorScene.LanguageServices component for native and browser code editing.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EditorScene.Text/EditorScene.Text.csproj" />
+
+  </ItemGroup>
+</Project>

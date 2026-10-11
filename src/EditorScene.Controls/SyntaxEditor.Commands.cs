@@ -1,0 +1,194 @@
+using EditorScene.Text;
+using UnoEdit.Document;
+
+namespace EditorScene.Controls;
+
+public sealed partial class SyntaxEditor
+{
+    public async Task ExecuteAsync(EditorCommand command)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        try { RecordEditorMacroCommand(command); await ExecuteCommandCoreAsync(command); }
+        catch (Exception exception) { ReportError(exception); }
+    }
+    private async Task ExecuteCommandCoreAsync(EditorCommand command)
+    {
+        switch (command)
+            {
+                case EditorCommand.Undo: ClearMultiSelection(); _editor.Undo(); break;
+                case EditorCommand.Redo: ClearMultiSelection(); _editor.Redo(); break;
+                case EditorCommand.Cut: _editor.Cut(); break;
+                case EditorCommand.Copy: _editor.Copy(); break;
+                case EditorCommand.Paste: await _editor.PasteAsync(); break;
+                case EditorCommand.Delete: _editor.TextArea.Session.Delete(false); break;
+                case EditorCommand.SelectAll: ClearMultiSelection(); _editor.SelectAll(); break;
+                case EditorCommand.SelectLine: SelectCurrentLine(); break;
+                case EditorCommand.DuplicateLine: DuplicateCurrentLine(); break;
+                case EditorCommand.DeleteLine: DeleteCurrentLine(); break;
+                case EditorCommand.Find: Search.IsReplaceMode = false; Search.Reactivate(); return;
+                case EditorCommand.Replace: Search.IsReplaceMode = true; Search.Reactivate(); return;
+                case EditorCommand.FindNext: Search.FindNext(); break;
+                case EditorCommand.FindPrevious: Search.FindPrevious(); break;
+                case EditorCommand.GoToLine: GoToLineRequested?.Invoke(this, EventArgs.Empty); return;
+                case EditorCommand.Indent: _editor.TextArea.Session.Indent(); break;
+                case EditorCommand.Outdent: _editor.TextArea.Session.Indent(true); break;
+                case EditorCommand.Comment: CommentLines(false); break;
+                case EditorCommand.Uncomment: CommentLines(true); break;
+                case EditorCommand.Uppercase: TransformSelection(s => s.ToUpperInvariant()); break;
+                case EditorCommand.Lowercase: TransformSelection(s => s.ToLowerInvariant()); break;
+                case EditorCommand.TrimTrailingWhitespace: EditSelectedLines(line => line.TrimEnd(' ', '\t'), wholeDocumentWhenEmpty: true); break;
+                case EditorCommand.SortLines: SortSelectedLines(); break;
+                case EditorCommand.TabsToSpaces: ConvertIndentation(false); break;
+                case EditorCommand.SpacesToTabs: ConvertIndentation(true); break;
+                case EditorCommand.CompleteWord: await ShowCompletionAsync(); return;
+                case EditorCommand.QuickInfo: await ShowQuickInfoAsync(); return;
+                case EditorCommand.SignatureHelp: await ShowSignatureHelpAsync(); return;
+                case EditorCommand.FormatDocument: await FormatDocumentAsync(); break;
+                case EditorCommand.ToggleBookmark: Indicators.ToggleLine(Document.Buffer.GetLineByOffset(CaretOffset).LineNumber, IndicatorKind.Bookmark); break;
+                case EditorCommand.ToggleBreakpoint: Indicators.ToggleLine(Document.Buffer.GetLineByOffset(CaretOffset).LineNumber, IndicatorKind.Breakpoint); break;
+                case EditorCommand.NextBookmark: NavigateIndicator(false); break;
+                case EditorCommand.PreviousBookmark: NavigateIndicator(true); break;
+                case EditorCommand.ClearBookmarks: Indicators.Clear(IndicatorKind.Bookmark); break;
+                case EditorCommand.ToggleFold: ToggleFoldAtCaret(); break;
+                case EditorCommand.CollapseAll: foreach (var fold in Foldings) fold.IsFolded = true; break;
+                case EditorCommand.ExpandAll: foreach (var fold in Foldings) fold.IsFolded = false; break;
+                case EditorCommand.ToggleWordWrap: WordWrap = !WordWrap; break;
+                case EditorCommand.ToggleWhitespace: ShowWhitespace = !ShowWhitespace; break;
+                case EditorCommand.ToggleLineNumbers: ShowLineNumbers = !ShowLineNumbers; break;
+                case EditorCommand.ToggleIndentGuides: ShowIndentGuides = !ShowIndentGuides; break;
+                case EditorCommand.ToggleRuler: ShowRuler = !ShowRuler; break;
+                case EditorCommand.ToggleReadOnly: IsReadOnly = !IsReadOnly; break;
+                case EditorCommand.ZoomIn: FontSize = Math.Min(40, FontSize + 1); break;
+                case EditorCommand.ZoomOut: FontSize = Math.Max(8, FontSize - 1); break;
+                case EditorCommand.ResetZoom: FontSize = 13; break;
+                case EditorCommand.SelectNextOccurrence: SelectNextOccurrence(); break;
+                case EditorCommand.ClearExtraSelections: ClearMultiSelection(); break;
+                case EditorCommand.ConvertToLf: ConvertLineEndings("\n"); break;
+                case EditorCommand.ConvertToCrLf: ConvertLineEndings("\r\n"); break;
+                default: throw new ArgumentOutOfRangeException(nameof(command));
+            }
+            SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusEditor();
+    }
+    private bool CanEdit(TextEdit edit)
+    {
+        if (IsReadOnly) return false;
+        if (edit.Length == 0) return _editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset);
+        var ranges = _editor.TextArea.GetDeletableSegments(new SimpleSegment(edit.Offset, edit.Length));
+        return ranges.Length == 1 && ranges[0].Offset == edit.Offset && ranges[0].Length == edit.Length;
+    }
+    private void ApplyUserEdits(IEnumerable<TextEdit> changes, long? expectedRevision = null)
+    {
+        var revision = expectedRevision ?? Document.Revision;
+        var edits = changes.ToArray();
+        if (Document.Revision != revision) throw new InvalidOperationException("The document changed before the operation could be applied.");
+        if (edits.Any(edit => !CanEdit(edit))) throw new InvalidOperationException("The operation intersects read-only text.");
+        Document.ApplyEdits(edits, revision);
+    }
+    private IEnumerable<DocumentLine> SelectedLines(bool wholeDocumentWhenEmpty = false)
+    {
+        if (wholeDocumentWhenEmpty && SelectionLength == 0) return Document.Buffer.Lines;
+        var first = Document.Buffer.GetLineByOffset(SelectionStart); var last = Document.Buffer.GetLineByOffset(SelectionStart + SelectionLength);
+        if (SelectionLength > 0 && last.Offset == SelectionStart + SelectionLength && last.LineNumber > first.LineNumber) last = last.PreviousLine;
+        return Enumerable.Range(first.LineNumber, last.LineNumber - first.LineNumber + 1).Select(Document.Buffer.GetLineByNumber);
+    }
+    private void SelectCurrentLine()
+    { var line = Document.Buffer.GetLineByOffset(CaretOffset); Select(line.Offset, line.TotalLength); }
+    private void DuplicateCurrentLine()
+    {
+        if (SelectionLength > 0) { var start = SelectionStart; var text = SelectedText; ApplyUserEdits([new(start + text.Length, 0, text)]); Select(start + text.Length, text.Length); return; }
+        var line = Document.Buffer.GetLineByOffset(CaretOffset); var offset = line.Offset; var textLine = Document.Buffer.GetText(line.Offset, line.TotalLength);
+        if (line.DelimiterLength == 0) textLine += Document.PreferredLineEnding;
+        ApplyUserEdits([new(offset, 0, textLine)]); CaretOffset = Math.Min(Document.Buffer.TextLength, offset + textLine.Length);
+    }
+    private void DeleteCurrentLine()
+    {
+        var lines = SelectedLines().ToArray(); var start = lines[0].Offset; var end = lines[^1].Offset + lines[^1].TotalLength;
+        if (end == Document.Buffer.TextLength && lines[^1].DelimiterLength == 0 && start > 0) start -= lines[0].PreviousLine.DelimiterLength;
+        ApplyUserEdits([new(start, end - start, "")]); CaretOffset = Math.Min(start, Document.Buffer.TextLength);
+    }
+    private void TransformSelection(Func<string, string> transform)
+    { if (SelectionLength > 0) { var start = SelectionStart; var result = transform(SelectedText); ApplyUserEdits([new(start, SelectionLength, result)]); Select(start, result.Length); } }
+    private void EditSelectedLines(Func<string, string> transform, bool wholeDocumentWhenEmpty = false)
+    {
+        var edits = SelectedLines(wholeDocumentWhenEmpty).Select(line => new TextEdit(line.Offset, line.Length, transform(Document.Buffer.GetText(line.Offset, line.Length)))).Where(edit => Document.Buffer.GetText(edit.Offset, edit.Length) != edit.NewText).ToArray();
+        ApplyUserEdits(edits);
+    }
+    private void CommentLines(bool remove)
+    {
+        if (SyntaxLanguage.Id is "xml" or "xaml")
+        {
+            if (SelectionLength == 0) SelectCurrentLine(); var text = SelectedText;
+            var result = remove && text.StartsWith("<!--", StringComparison.Ordinal) && text.EndsWith("-->", StringComparison.Ordinal) ? text[4..^3] : !remove ? "<!--" + text + "-->" : text;
+            var start = SelectionStart; ApplyUserEdits([new(start, SelectionLength, result)]); Select(start, result.Length); return;
+        }
+        var prefix = SyntaxLanguage.Id == "vb" ? "'" : SyntaxLanguage.Id is "python" or "powershell" or "shell" ? "#" : "//";
+        EditSelectedLines(text =>
+        {
+            var indent = text.Length - text.TrimStart(' ', '\t').Length;
+            if (!remove) return text.Insert(indent, prefix);
+            return text.AsSpan(indent).StartsWith(prefix, StringComparison.Ordinal) ? text.Remove(indent, prefix.Length) : text;
+        });
+    }
+    private void SortSelectedLines()
+    {
+        var lines = SelectedLines().ToArray(); if (lines.Length < 2) return;
+        var sorted = lines.Select(line => Document.Buffer.GetText(line.Offset, line.Length)).Order(StringComparer.Ordinal).ToArray();
+        ApplyUserEdits(lines.Select((line, i) => new TextEdit(line.Offset, line.Length, sorted[i])));
+    }
+    private void ConvertIndentation(bool tabs)
+    {
+        var tabSize = _editor.Options.IndentationSize;
+        EditSelectedLines(text =>
+        {
+            var end = 0; var columns = 0;
+            while (end < text.Length && text[end] is ' ' or '\t') { columns += text[end] == '\t' ? tabSize - columns % tabSize : 1; end++; }
+            var indentation = tabs ? new string('\t', columns / tabSize) + new string(' ', columns % tabSize) : new string(' ', columns);
+            return indentation + text[end..];
+        }, wholeDocumentWhenEmpty: true);
+    }
+    private void ConvertLineEndings(string eol) => ApplyUserEdits(Document.Buffer.Lines.Where(l => l.DelimiterLength > 0).Select(l => new TextEdit(l.EndOffset, l.DelimiterLength, eol)));
+    private async Task FormatDocumentAsync()
+    {
+        if (IsReadOnly) throw new InvalidOperationException("The document is read only.");
+        var document = Document; var snapshot = document.Snapshot(); var caret = CaretOffset; var language = SyntaxLanguage;
+        var edits = await language.FormatAsync(snapshot);
+        if (_disposed || !ReferenceEquals(Document, document) || !ReferenceEquals(SyntaxLanguage, language)) return;
+        ApplyUserEdits(edits, snapshot.Revision); CaretOffset = Math.Min(caret, Document.Buffer.TextLength);
+    }
+    private void NavigateIndicator(bool backwards)
+    { if (Indicators.Next(CaretOffset, IndicatorKind.Bookmark, backwards) is { } indicator) { ClearMultiSelection(); _editor.TextArea.Session.MoveTo(indicator.Offset); _editor.TextArea.TextView.EnsureCaretVisible(); } }
+    private void ToggleFoldAtCaret()
+    {
+        var line = Document.Buffer.GetLineByOffset(CaretOffset);
+        var fold = Foldings.Where(f => f.StartOffset <= line.EndOffset && f.EndOffset >= line.Offset).OrderBy(f => f.Length).FirstOrDefault();
+        if (fold is not null) fold.IsFolded = !fold.IsFolded;
+    }
+    public void ClearMultiSelection()
+    {
+        _selections?.Clear(); if (_adornments is not null) _adornments.ExtraSelections = []; Redraw();
+    }
+    private void SynchronizeMultiSelection()
+    {
+        if (_selections is null || _selections.Ranges.Count == 0) return;
+        var primary = _selections.Ranges[^1]; _editor.TextArea.Session.SetCaretOffset(primary.Active); _editor.TextArea.Session.SetSelection(primary.Anchor, primary.Active);
+        if (_adornments is not null) _adornments.ExtraSelections = _selections.Ranges.Take(_selections.Ranges.Count - 1).ToArray(); Redraw();
+    }
+    public void SelectNextOccurrence()
+    {
+        var source = Document.Buffer;
+        if (SelectionLength == 0)
+        {
+            var start = CaretOffset; var end = start;
+            while (start > 0 && IsWord(source.GetCharAt(start - 1))) start--;
+            while (end < source.TextLength && IsWord(source.GetCharAt(end))) end++;
+            if (start == end) return; _editor.Select(start, end - start); Selections.Set([new(start, end)]); return;
+        }
+        var text = SelectedText; var ranges = Selections.Ranges.ToList();
+        if (ranges.Count == 0) ranges.Add(new(SelectionStart, SelectionStart + SelectionLength));
+        var snapshot = Document.Snapshot(); var offset = ranges.Max(r => r.End); var found = snapshot.Text.IndexOf(text, offset, StringComparison.Ordinal);
+        if (found < 0) found = snapshot.Text.IndexOf(text, StringComparison.Ordinal);
+        if (found < 0 || ranges.Any(r => r.Start == found)) return;
+        ranges.Add(new(found, found + text.Length)); Selections.Set(ranges); SynchronizeMultiSelection();
+    }
+    private static bool IsWord(char c) => char.IsLetterOrDigit(c) || c == '_';
+}

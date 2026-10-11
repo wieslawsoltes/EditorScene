@@ -1,0 +1,29 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="global.json" />
+    <File Path="Directory.Build.props" />
+    <File Path="NuGet.Config" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Libraries/">
+    <Project Path="src/EditorScene.Text/EditorScene.Text.csproj" />
+    <Project Path="src/EditorScene.LanguageServices/EditorScene.LanguageServices.csproj" />
+    <Project Path="src/EditorScene.Languages.DotNet/EditorScene.Languages.DotNet.csproj" />
+    <Project Path="src/EditorScene.Languages.Structured/EditorScene.Languages.Structured.csproj" />
+    <Project Path="src/EditorScene.Protocol/EditorScene.Protocol.csproj" />
+    <Project Path="src/EditorScene.Rendering.Skia/EditorScene.Rendering.Skia.csproj" />
+    <Project Path="src/EditorScene.Snippets/EditorScene.Snippets.csproj" />
+    <Project Path="src/EditorScene.Controls/EditorScene.Controls.csproj" />
+  </Folder>
+  <Folder Name="/Applications/">
+    <Project Path="src/EditorScene.App/EditorScene.App.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/EditorScene.Tests/EditorScene.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Pinned dependencies/">
+    <Project Path="external/UnoEdit/src/UnoEdit.Core/UnoEdit.Core.csproj" />
+    <Project Path="external/UnoEdit/src/UnoEdit.Rendering.Skia/UnoEdit.Rendering.Skia.csproj" />
+    <Project Path="external/UnoEdit/src/UnoEdit.Uno/UnoEdit.Uno.csproj" />
+  </Folder>
+</Solution>
