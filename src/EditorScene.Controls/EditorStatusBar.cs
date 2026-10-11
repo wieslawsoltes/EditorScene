@@ -37,7 +37,7 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         AutomationProperties.SetName(_zoom, "Editor zoom");
         AutomationProperties.SetHelpText(_zoom, "Editor font size, from 8 to 40 points. The adjacent button shows the percentage and resets to 100 percent.");
         AutomationProperties.SetName(_position, "Caret position");
-        _mode.Click += (_, _) => { if (_editor is { } editor) { editor.IsOverstrike = !editor.IsOverstrike; editor.FocusEditor(); } };
+        _mode.Click += (_, _) => { if (_editor is { } editor) { editor.IsOverstrike = !editor.IsOverstrike; if (!_disposed && !editor.IsDisposed && ReferenceEquals(_editor, editor)) editor.FocusEditor(); } };
         _less.Click += (_, _) => { if (_editor is { } editor) _ = editor.ExecuteAsync(EditorCommand.ZoomOut); };
         _more.Click += (_, _) => { if (_editor is { } editor) _ = editor.ExecuteAsync(EditorCommand.ZoomIn); };
         _percent.Click += (_, _) => { if (_editor is { } editor) _ = editor.ExecuteAsync(EditorCommand.ResetZoom); };
@@ -84,7 +84,7 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         if (_disposed) return;
         var editor = _editor;
         if (editor is null) { _message.Text = _position.Text = _encoding.Text = ""; _last = null; IsEnabled = false; return; }
-        IsEnabled = true;
+        if (!IsEnabled) IsEnabled = true;
         var document = editor.Document;
         var key = new StatusKey(document.Id, document.Revision, editor.CaretOffset, editor.IsOverstrike, editor.IsReadOnly, editor.FontSize, editor.Status, document.Encoding.WebName, _prefix);
         if (_last == key) return;

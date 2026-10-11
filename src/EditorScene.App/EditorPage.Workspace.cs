@@ -20,7 +20,8 @@ public sealed partial class EditorPage
     private readonly MenuFlyout _toolbarOverflow = new();
     private ResourceDictionary? _chromeResources;
     private Orientation _splitOrientation = Orientation.Vertical;
-    private string? _shownTitle;
+    private string? _shownTitleFile;
+    private bool _shownTitleModified;
     private long _shownErrorRevision = -2;
     private Guid _shownErrorDocument;
     private int _shownErrorCount = -2;
@@ -143,8 +144,9 @@ public sealed partial class EditorPage
     private void UpdateClassicStatus()
     {
         if (_active is null || _current is null) return;
-        var title = _current.Document.FileName + (_current.Document.IsModified ? " *" : "") + " — EditorScene";
-        if (_shownTitle != title) { _shownTitle = title; _fileTitle.Text = title; }
+        var fileName = _current.Document.FileName; var modified = _current.Document.IsModified;
+        if (_shownTitleFile != fileName || _shownTitleModified != modified)
+        { _shownTitleFile = fileName; _shownTitleModified = modified; _fileTitle.Text = fileName + (modified ? " *" : "") + " — EditorScene"; }
         _editorStatus.MessagePrefix = LspStatusPrefix; _editorStatus.Refresh(); UpdateErrorCaption();
         foreach (var (item, test) in _checks) if (item is ToggleMenuFlyoutItem toggle) { var value = test(); if (toggle.IsChecked != value) toggle.IsChecked = value; }
         RebuildTabCaptions(); QueueDiagnostics();

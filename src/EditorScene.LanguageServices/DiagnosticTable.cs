@@ -11,7 +11,7 @@ public sealed record DiagnosticTableRow(EditorDiagnostic Diagnostic, int Line, i
 {
     public string Code => Diagnostic.Code;
     public string Message => Diagnostic.Message;
-    public string Severity => Diagnostic.Severity.ToString();
+    public string Severity => Diagnostic.Severity switch { IssueSeverity.Error => "Error", IssueSeverity.Warning => "Warning", _ => "Information" };
     public string Glyph => Diagnostic.Severity switch { IssueSeverity.Error => "×", IssueSeverity.Warning => "!", _ => "i" };
     public override string ToString() => $"{Severity} {Code}: {Message} ({Line},{Character})";
 }

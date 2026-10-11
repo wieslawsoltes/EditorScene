@@ -52,7 +52,7 @@ internal static class NativeWorkspaceChecks
         var rejected = false; try { split.Ratio = double.NaN; } catch (ArgumentOutOfRangeException) { rejected = true; }
         Check(rejected && split.Ratio == .3, "Invalid split ratios are rejected without mutating layout state");
         split.Second = null;
-        Check(!split.IsSplit && ReferenceEquals(split.First, editor), "Closing the second pane preserves the first view"); split.First = null;
+        Check(!split.IsSplit && ReferenceEquals(split.First, editor), "Closing the second pane preserves the first view"); split.First = null; split.Dispose();
         foreach (var theme in new[] { EditorTheme.Light, EditorTheme.Dark, EditorTheme.HighContrast })
         {
             status.ApplyTheme(theme); errors.ApplyTheme(theme); split.ApplyTheme(theme);

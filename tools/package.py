@@ -77,6 +77,12 @@ var expansion = new EditorScene.LanguageServices.SelectionExpansion(snapshot, ne
 if (!expansion.TryExpand(snapshot, expansion.Current, out var selected) || selected.Length == 0) throw new Exception("Packaged structural selection failed.");
 if (!expansion.TryContract(snapshot, selected, out var original) || original != new SelectionRange(0, 0)) throw new Exception("Packaged structural contraction failed.");
 var analysis = await new DotNetLanguage().AnalyzeAsync(snapshot);
+var diagnosticTable = new EditorScene.LanguageServices.DiagnosticTable(snapshot, analysis);
+if (diagnosticTable.Filter() != diagnosticTable.Rows || !diagnosticTable.IsCurrent(snapshot)) throw new Exception("Packaged diagnostic table failed.");
+using var glyphBitmap = new SkiaSharp.SKBitmap(16, 16); using var glyphCanvas = new SkiaSharp.SKCanvas(glyphBitmap);
+using var glyphRenderer = new EditorGlyphRenderer();
+glyphRenderer.Draw(glyphCanvas, 16, 16, EditorGlyph.Save); glyphRenderer.Draw(glyphCanvas, 16, 16, EditorGlyph.Save);
+if (glyphRenderer.BuildCount != 1) throw new Exception("Packaged glyph cache failed.");
 if (analysis.Diagnostics.Any(d => d.Severity == EditorScene.LanguageServices.IssueSeverity.Error)) throw new Exception("Packaged compiler references failed.");
 using var jsonDocument = new EditorDocument("{\\"x\\":42}");
 var jsonSnapshot = jsonDocument.Snapshot();
@@ -112,7 +118,12 @@ public sealed class ConsumerControl : UserControl
         var navigation = new NavigableSymbolSelector { Editor = Editor };
         var outline = new DocumentOutline { Editor = Editor };
         var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);
-        Content = new StackPanel { Children = { navigation, Editor, outline, picker, new EditorIcon() } };
+        Editor.CopyViewSettingsFrom(Editor);
+        var diagnostics = new DiagnosticList { Editor = Editor };
+        var status = new EditorStatusBar { Editor = Editor };
+        var split = new ResizableSplitView { First = Editor, Ratio = .4 };
+        Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
+        Content = new StackPanel { Children = { navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };
     }
 }
 ''')

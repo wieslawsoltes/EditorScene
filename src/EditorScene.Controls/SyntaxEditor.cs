@@ -70,7 +70,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     public bool AutoCompleteBrackets { get; set; } = true;
     public bool AutoShowCompletion { get; set; } = true;
     public bool IsOverstrike { get => _editor.TextArea.OverstrikeMode; set { _editor.TextArea.OverstrikeMode = value; StateChanged?.Invoke(this, EventArgs.Empty); } }
-    public EditorTheme Theme { get => _theme; set { _theme = value ?? throw new ArgumentNullException(nameof(value)); ApplyTheme(); } }
+    public EditorTheme Theme { get => _theme; set { ArgumentNullException.ThrowIfNull(value); if (ReferenceEquals(_theme, value)) return; _theme = value; ApplyTheme(); } }
     public ISyntaxLanguage SyntaxLanguage
     {
         get => _language;

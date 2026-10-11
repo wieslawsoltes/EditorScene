@@ -101,7 +101,7 @@ public sealed class DiagnosticList : UserControl, IDisposable
         if (analysis is not null && _editor is not null)
         {
             try { _table = new DiagnosticTable(_editor.Document.Snapshot(), analysis); ProjectionBuildCount++; }
-            catch (ArgumentException) { _analysis = null; }
+            catch (ArgumentException) { /* Reject this immutable result once; a replacement result is retried. */ }
         }
         ApplyFilter(true);
     }
@@ -121,7 +121,9 @@ public sealed class DiagnosticList : UserControl, IDisposable
     {
         var editor = _editor;
         if (editor is null || _table is null || !ReferenceEquals(_analysis, editor.Analysis) || !_table.IsCurrent(editor.Document.Snapshot())) { Refresh(); return; }
-        var range = row.Diagnostic.Range; editor.Select(range.Offset, range.Length); editor.FocusEditor();
+        var document = editor.Document; var analysis = _analysis;
+        var range = row.Diagnostic.Range; editor.Select(range.Offset, range.Length);
+        if (!_disposed && !editor.IsDisposed && ReferenceEquals(_editor, editor) && ReferenceEquals(editor.Document, document) && ReferenceEquals(editor.Analysis, analysis) && editor.SelectionStart == range.Offset && editor.SelectionLength == range.Length) editor.FocusEditor();
     }
     private void Detach()
     { if (_editor is not null) { _editor.AnalysisUpdated -= AnalysisUpdated; _editor.StateChanged -= StateChanged; } }

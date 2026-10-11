@@ -65,5 +65,6 @@ internal static class NativeEditorChecks
         await NativeMacroChecks.RunAsync(checks);
         await NativeReviewChecks.RunAsync(checks);
         await NativeStructuralSelectionChecks.RunAsync(checks);
+        await NativeWorkspaceChecks.RunAsync(checks);
     }
 }
