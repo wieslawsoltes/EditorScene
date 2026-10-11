@@ -10,10 +10,13 @@ public sealed partial class SyntaxEditor
     private CancellationTokenSource? _selectionRequest;
     private long _selectionGeneration;
     private bool _changingStructuralSelection;
+    private int _selectionOriginCaret, _selectionCurrentCaret;
     public bool IsSelectionExpansionPending => _selectionRequest is not null;
     public bool CanContractSelection => _selectionExpansion?.CanContract == true;
     public int SelectionExpansionDepth => _selectionExpansion?.Depth ?? 0;
-    private SelectionRange NativeSelection => new(_editor.TextArea.Session.AnchorOffset, CaretOffset);
+    // UnoEdit can position the insertion caret independently of the active
+    // selection endpoint. Capture both instead of treating them as equivalent.
+    private SelectionRange NativeSelection => new(_editor.TextArea.Session.AnchorOffset, _editor.TextArea.Session.SelectionEndOffset);
     private void ResetSelectionExpansion()
     {
         _selectionGeneration++; _selectionExpansion = null;
@@ -24,30 +27,31 @@ public sealed partial class SyntaxEditor
     public async Task<bool> ExpandSelectionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess(); cancellationToken.ThrowIfCancellationRequested();
+        if (_changingStructuralSelection) return false;
         if (Selections.IsActive) throw new NotSupportedException("Structural selection uses one selection; clear extra carets first.");
         if (_selectionRequest is not null) return false;
-        var document = Document; var language = SyntaxLanguage; var snapshot = document.Snapshot(); var selected = NativeSelection;
-        if (_selectionExpansion is { } cached && cached.IsCurrent(snapshot, selected))
+        var document = Document; var language = SyntaxLanguage; var snapshot = document.Snapshot();
+        var selected = NativeSelection; var caret = CaretOffset;
+        if (_selectionExpansion is { } cached && cached.IsCurrent(snapshot, selected) && caret == _selectionCurrentCaret)
         {
             if (!cached.TryExpand(snapshot, selected, out var next)) return false;
             ApplyStructuralSelection(next); return true;
         }
-        ResetSelectionExpansion();
+        ResetSelectionExpansion(); _selectionOriginCaret = _selectionCurrentCaret = caret;
         var generation = _selectionGeneration;
         using var request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); _selectionRequest = request;
         try
         {
             ImmutableArray<SourceRange> ranges;
             if (language is ISelectionRangeProvider provider && language.Capabilities.HasFlag(LanguageCapabilities.SelectionRanges))
-                ranges = await provider.GetSelectionRangesAsync(snapshot, selected.Active, request.Token);
-            else ranges = SelectionCandidates.FromAnalysis(snapshot, selected.Active, Analysis, request.Token);
+                ranges = await provider.GetSelectionRangesAsync(snapshot, caret, request.Token);
+            else ranges = SelectionCandidates.FromAnalysis(snapshot, caret, Analysis, request.Token);
             request.Token.ThrowIfCancellationRequested();
             if (_disposed || generation != _selectionGeneration || !ReferenceEquals(Document, document) || !ReferenceEquals(SyntaxLanguage, language)
-                || document.Revision != snapshot.Revision || NativeSelection != selected) return false;
+                || document.Revision != snapshot.Revision || NativeSelection != selected || CaretOffset != caret) return false;
             if (ranges.IsDefault) throw new InvalidDataException("The selection provider returned an uninitialized range array.");
-            if (ranges.IsEmpty) ranges = SelectionCandidates.Basic(snapshot, selected.Active, request.Token);
-            var expansion = new SelectionExpansion(snapshot, selected, ranges);
-            _selectionExpansion = expansion;
+            if (ranges.IsEmpty) ranges = SelectionCandidates.Basic(snapshot, caret, request.Token);
+            var expansion = new SelectionExpansion(snapshot, selected, ranges); _selectionExpansion = expansion;
             if (!expansion.TryExpand(snapshot, selected, out var next)) return false;
             ApplyStructuralSelection(next); return true;
         }
@@ -55,14 +59,15 @@ public sealed partial class SyntaxEditor
         catch (Exception) when (_disposed || generation != _selectionGeneration) { return false; }
         finally { if (ReferenceEquals(_selectionRequest, request)) _selectionRequest = null; }
     }
-    /// <summary>Restore the preceding exact selection, including its original direction or empty caret.</summary>
+    /// <summary>Restore the preceding selection, including its original direction and independent insertion caret.</summary>
     public bool ContractSelection()
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess();
+        if (_changingStructuralSelection) return false;
         if (_selectionRequest is not null) { ResetSelectionExpansion(); return false; }
         if (_selectionExpansion is not { } expansion) return false;
         var snapshot = Document.Snapshot(); var selected = NativeSelection;
-        if (!expansion.IsCurrent(snapshot, selected)) { ResetSelectionExpansion(); return false; }
+        if (!expansion.IsCurrent(snapshot, selected) || CaretOffset != _selectionCurrentCaret) { ResetSelectionExpansion(); return false; }
         if (!expansion.TryContract(snapshot, selected, out var previous)) return false;
         ApplyStructuralSelection(previous); return true;
     }
@@ -72,7 +77,10 @@ public sealed partial class SyntaxEditor
         try
         {
             EndSnippet(false); ClearMultiSelection();
-            _editor.TextArea.Session.SetSelection(range.Anchor, range.Active);
+            _selectionCurrentCaret = _selectionExpansion?.Depth == 0 ? _selectionOriginCaret : range.Active;
+            var session = _editor.TextArea.Session;
+            session.SetCaretOffset(_selectionCurrentCaret);
+            session.SetSelection(range.Anchor, range.Active);
             _editor.TextArea.TextView.EnsureCaretVisible();
         }
         finally { _changingStructuralSelection = false; }
