@@ -12,12 +12,16 @@ public sealed class AnalysisReentrancyTests
     public void SynchronousPublicationCannotOverwriteANewerPendingTask()
     {
         using var document = new EditorDocument("text"); var slow = new DeferredLanguage();
-        using var coordinator = new AnalysisCoordinator(document, new PlainTextLanguage(), action => action());
+        var queue = new ConcurrentQueue<Action>(); var owner = Environment.CurrentManagedThreadId;
+        using var coordinator = new AnalysisCoordinator(document, new PlainTextLanguage(), action =>
+        { if (Environment.CurrentManagedThreadId == owner) action(); else queue.Enqueue(action); });
+        Exception? failure = null; coordinator.Failed += (_, error) => failure = error;
         coordinator.Published += (_, _) => coordinator.Language = slow;
         coordinator.RequestAnalysis(true);
         Assert.That(slow.Requests.Count, Is.EqualTo(1)); Assert.That(coordinator.Pending.IsCompleted, Is.False);
         var pending = coordinator.Pending; slow.Requests[0].Source.SetResult(LanguageAnalysis.Empty(slow.Requests[0].Snapshot));
-        pending.GetAwaiter().GetResult(); Assert.That(coordinator.Pending, Is.SameAs(pending));
+        pending.GetAwaiter().GetResult(); while (queue.TryDequeue(out var action)) action();
+        Assert.That(coordinator.Pending, Is.SameAs(pending)); Assert.That(failure, Is.Null);
     }
     [Test]
     public void CancellationCallbackEditKeepsTheLatestSnapshotRequest()
