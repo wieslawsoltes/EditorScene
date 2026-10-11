@@ -71,6 +71,7 @@ public sealed partial class EditorPage : Page
         _languagePicker.SelectionChanged += (_, _) =>
         {
             if (_updatingPickers || _current is null || _languagePicker.SelectedItem is not string name) return;
+            if (_current.Language is EditorScene.Protocol.LspSyntaxLanguage) { UpdateLspPicker(); return; }
             var language = _languages.Languages.First(l => l.DisplayName == name); _current.Language = language;
             _primary.SyntaxLanguage = language; if (_secondary is not null) _secondary.SyntaxLanguage = language;
             AddEvent($"Syntax language: {name}"); UpdateStatus();
@@ -151,7 +152,7 @@ public sealed partial class EditorPage : Page
         _current = entry; _primary.Document = entry.Document; _primary.SyntaxLanguage = entry.Language;
         if (_secondary is not null) { _secondary.Document = entry.Document; _secondary.SyntaxLanguage = entry.Language; }
         _primary.CaretOffset = Math.Clamp(entry.Caret, 0, entry.Document.Buffer.TextLength);
-        SetActive(_primary); _updatingPickers = true; _languagePicker.SelectedItem = entry.Language.DisplayName; _updatingPickers = false;
+        SetActive(_primary); UpdateLspPicker();
         _errors.ItemsSource = null; _errorTab.Content = "Error List (analyzing…)"; RebuildTabCaptions(); UpdateStatus(); _primary.FocusEditor();
     }
     private void RebuildTabs()
@@ -187,7 +188,7 @@ public sealed partial class EditorPage : Page
         var index = _documents.IndexOf(entry); _documents.Remove(entry); _current = null;
         if (_documents.Count == 0) AddDocument(new EditorDocument("", $"Untitled{++_untitled}.cs"), _languages.Get("csharp")!);
         else ActivateDocument(_documents[Math.Min(index, _documents.Count - 1)]);
-        entry.Document.Dispose(); RebuildTabs();
+        await DisconnectLspAsync(entry); entry.Document.Dispose(); RebuildTabs();
     }
     private void NewDocument() => AddDocument(new EditorDocument("", $"Untitled{++_untitled}.cs"), _languages.Get("csharp")!);
     private void OpenSample(string file, string text, string language)
@@ -226,7 +227,7 @@ public sealed partial class EditorPage : Page
         if (_active is null || _current is null) return;
         var location = _active.Document.Buffer.GetLocation(_active.CaretOffset);
         _fileTitle.Text = "EditorScene  /  " + _current.Document.FileName + (_current.Document.IsModified ? " *" : "");
-        _status.Text = _active.IsReadOnly ? "Read only" : _active.Status;
+        _status.Text = LspStatusPrefix + (_active.IsReadOnly ? "Read only" : _active.Status);
         _position.Text = $"Ln {location.Line:N0}   Col {location.Column:N0}   Ch {_active.CaretOffset:N0}     {(_active.IsOverstrike ? "OVR" : "INS")}     {_active.Document.Encoding.WebName.ToUpperInvariant()}     {(_active.Document.PreferredLineEnding == "\r\n" ? "CRLF" : "LF")}     {(int)Math.Round(_active.FontSize / 13 * 100)}%";
         foreach (var (item, test) in _checks) if (item is ToggleMenuFlyoutItem toggle) toggle.IsChecked = test();
         RebuildTabCaptions(); QueueDiagnostics();

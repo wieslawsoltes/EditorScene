@@ -91,6 +91,9 @@ public sealed partial class EditorPage
             SignatureOpen = _active.IsSignatureHelpOpen, Split = _secondary is not null,
             MacroState = _active.MacroRecording.State.ToString(), MacroStepCount = _active.MacroRecording.RecordedStepCount, MacroHasLast = _active.MacroRecording.LastMacroAction is not null,
             MacroInputReady = _active.IsMacroInputReady, FocusedControl = FocusManager.GetFocusedElement(root)?.GetType().FullName ?? "", OpenMenuCount = popups.Count(p => p.Child is MenuFlyoutPresenter),
+            LspConnected = _active.SyntaxLanguage is EditorScene.Protocol.LspSyntaxLanguage,
+            LspVersion = (_active.SyntaxLanguage as EditorScene.Protocol.LspSyntaxLanguage)?.ServerVersion ?? 0,
+            ClassificationCount = analysis?.Classifications.Length ?? 0,
             SnippetActive = _active.IsSnippetActive, SnippetFields = _active.ActiveSnippetFields.Select(r => new[] { r.Start, r.Length }).ToArray(),
             SecondaryTextPrefix = _secondary?.Document.Buffer.GetText(0, Math.Min(8192, doc.Buffer.TextLength)),
             CachedLines = view.Viewport.CachedLineCount, VisibleLines = view.Viewport.LastVisibleLineCount, RenderCount = view.Viewport.RenderCount,
@@ -144,6 +147,9 @@ internal sealed class BrowserState
     public bool MacroInputReady { get; set; }
     public string FocusedControl { get; set; } = "";
     public int OpenMenuCount { get; set; }
+    public bool LspConnected { get; set; }
+    public int LspVersion { get; set; }
+    public int ClassificationCount { get; set; }
     public bool SnippetActive { get; set; }
     public int[][] SnippetFields { get; set; } = [];
     public bool Split { get; set; }

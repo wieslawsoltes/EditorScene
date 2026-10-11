@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Drive the published .NET/Uno app through real input. The diagnostics bridge is read-only.
 import assert from 'node:assert/strict';
+import {createLspFixture} from './lsp-fixture.mjs';
+import {checkLsp} from './browser-lsp.mjs';
 import {createReadStream} from 'node:fs';
 import {mkdir, stat, readFile, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -25,6 +27,7 @@ const server = createServer(async (req,res) => {
     if(req.method==='HEAD') res.end(); else createReadStream(target).on('error',()=>res.destroy()).pipe(res);
   } catch { res.writeHead(404); res.end('Not found'); }
 });
+const lspFixture=createLspFixture(server);
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const checks=[], log=[], exceptions=[], badResponses=[]; const metrics={};
@@ -125,6 +128,7 @@ try {
   await page.keyboard.press('Enter');await wait(()=>globalThis.__editorSceneState?.SnippetActive===false);
   checks.push('Native snippet picker filtering and insertion through the keyboard command');
   await checkMacros({page, state, wait, textIs, paste, click, command, output, checks});
+  await checkLsp({page,command,click,fill,paste,focusEditor,wait,textIs,state,checks,output,fixture:lspFixture,origin});
   const snippetXml='<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet"><CodeSnippet Format="1.0.0"><Header><Title>Browser Imported</Title><Shortcut>custom</Shortcut></Header><Snippet><Declarations><Literal><ID>value</ID><Default>imported</Default></Literal></Declarations><Code Language="CSharp"><![CDATA[$value$-$value$$end$]]></Code></Snippet></CodeSnippet></CodeSnippets>';
   const snippetChooser=page.waitForEvent('filechooser');await command('IntelliPrompt','Import Snippets…');
   await(await snippetChooser).setFiles({name:'browser-custom.snippet',mimeType:'application/xml',buffer:Buffer.from(snippetXml)});
@@ -158,7 +162,7 @@ try {
 } finally {
   await writeFile(path.join(output,'console.log'),log.join('\n'));
   await writeFile(path.join(output,'results.json'),JSON.stringify({passed:!error,checks,metrics,error:error?.stack,browser:browser?.version(),publishRoot:root,base},null,2));
-  await context?.tracing.stop({path:path.join(output,'trace.zip')}).catch(()=>{});await browser?.close();await new Promise(resolve=>server.close(resolve));
+  await context?.tracing.stop({path:path.join(output,'trace.zip')}).catch(()=>{});await browser?.close();await lspFixture.close();await new Promise(resolve=>server.close(resolve));
 }
 console.log(JSON.stringify({passed:!error,checks,metrics,error:error?.stack},null,2));
 if(error){console.error('Failure state: '+JSON.stringify(failureState));console.error(log.slice(-30).join('\n'));process.exitCode=1;}

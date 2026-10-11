@@ -73,6 +73,7 @@ public sealed partial class EditorPage
             var captured = language;
             Toggle(languageMenu, captured.DisplayName, () => _active.SyntaxLanguage.Id == captured.Id, () => _languagePicker.SelectedItem = captured.DisplayName);
         }
+        BuildLspMenu(languageMenu);
         var bookmarks = Menu("Bookmarks");
         Command(bookmarks, "Toggle Bookmark", EditorCommand.ToggleBookmark, "Ctrl+F2"); Command(bookmarks, "Next Bookmark", EditorCommand.NextBookmark, "F2"); Command(bookmarks, "Previous Bookmark", EditorCommand.PreviousBookmark, "Shift+F2"); Command(bookmarks, "Clear All Bookmarks", EditorCommand.ClearBookmarks); Separator(bookmarks); Command(bookmarks, "Toggle Breakpoint Indicator", EditorCommand.ToggleBreakpoint, "F9");
         var window = Menu("Window");
@@ -180,7 +181,7 @@ public sealed partial class EditorPage
         var result = await CachedFileManager.CompleteUpdatesAsync(file);
         if (result is not Windows.Storage.Provider.FileUpdateStatus.Complete and not Windows.Storage.Provider.FileUpdateStatus.CompleteAndRenamed) throw new IOException("The file provider did not complete the save: " + result);
         if (entry.Document.Revision == snapshot.Revision) entry.Document.MarkSaved();
-        entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); return true;
+        entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); await NotifyLspSavedAsync(entry, snapshot); return true;
     }
     private async Task ExportAsync(bool rtf)
     {
