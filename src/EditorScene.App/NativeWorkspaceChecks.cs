@@ -70,6 +70,7 @@ internal static class NativeWorkspaceChecks
         Check(errors.VisibleCount == 0 && status.PositionText.Length == 0, "Unbinding workspace controls releases displayed document state");
         errors.Dispose(); status.Dispose(); editor.IsOverstrike = !editor.IsOverstrike;
         Check(true, "Disposed workspace controls remain detached during subsequent editor events");
+        NativeWorkspaceReviewChecks.Run(checks);
         return Task.CompletedTask;
     }
     private sealed class FixtureLanguage : ISyntaxLanguage

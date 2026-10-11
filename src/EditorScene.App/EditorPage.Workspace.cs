@@ -14,7 +14,7 @@ namespace EditorScene.App;
 public sealed partial class EditorPage
 {
     private readonly EditorStatusBar _editorStatus = new();
-    private readonly ContentPresenter _toolContent = new();
+    private readonly ContentPresenter _toolContent = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     private readonly TextBlock _toolTitle = new() { Text = "Error List", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(7, 0, 7, 0) };
     private readonly List<Border> _toolbarSeparators = [];
     private readonly MenuFlyout _toolbarOverflow = new();

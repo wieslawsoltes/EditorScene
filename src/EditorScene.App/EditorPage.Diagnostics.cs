@@ -58,6 +58,8 @@ public sealed partial class EditorPage
         void Add(string name, FrameworkElement element)
         {
             if (element.XamlRoot is null || element.Visibility != Visibility.Visible || element.ActualWidth <= 0 || element.ActualHeight <= 0) return;
+            for (DependencyObject? parent = element; parent is not null; parent = VisualTreeHelper.GetParent(parent))
+                if (parent is UIElement visual && visual.Visibility != Visibility.Visible) return;
             var origin = element.TransformToVisual(this).TransformPoint(new Point());
             controls[name] = [origin.X, origin.Y, element.ActualWidth, element.ActualHeight];
         }

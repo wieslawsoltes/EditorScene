@@ -51,6 +51,7 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         set
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (value?.IsDisposed == true) throw new ObjectDisposedException(nameof(value));
             if (ReferenceEquals(value, _editor)) return;
             if (_editor is not null) _editor.StateChanged -= StateChanged;
             _editor = value; _last = null;

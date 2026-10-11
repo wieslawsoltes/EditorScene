@@ -33,6 +33,7 @@ public sealed class DiagnosticTable
         cancellationToken.ThrowIfCancellationRequested();
         if (snapshot.DocumentId != analysis.DocumentId || snapshot.Revision != analysis.Revision)
             throw new ArgumentException("Diagnostics must belong to the captured snapshot.", nameof(analysis));
+        if (analysis.Diagnostics.IsDefault) throw new ArgumentException("The diagnostic array is uninitialized.", nameof(analysis));
         DocumentId = snapshot.DocumentId; Revision = snapshot.Revision; FileName = snapshot.FileName;
         var rows = ImmutableArray.CreateBuilder<DiagnosticTableRow>(analysis.Diagnostics.Length);
         foreach (var diagnostic in analysis.Diagnostics)
@@ -75,6 +76,7 @@ public sealed class DiagnosticTable
         }
         return rows.ToImmutable();
     }
-    public bool IsCurrent(DocumentSnapshot snapshot) => snapshot.DocumentId == DocumentId && snapshot.Revision == Revision && snapshot.FileName == FileName;
+    public bool IsCurrent(DocumentSnapshot snapshot)
+    { ArgumentNullException.ThrowIfNull(snapshot); return snapshot.DocumentId == DocumentId && snapshot.Revision == Revision && snapshot.FileName == FileName; }
     private static bool Matches(string value, string query) => value.Contains(query, StringComparison.OrdinalIgnoreCase);
 }

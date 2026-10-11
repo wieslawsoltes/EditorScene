@@ -28,6 +28,7 @@ public sealed class DiagnosticList : UserControl, IDisposable
     private DiagnosticVisibility _lastVisibility;
     private string? _lastQuery;
     private bool _disposed;
+    [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties, typeof(DiagnosticTableRow))]
     public DiagnosticList()
     {
         IsTabStop = false;
@@ -59,6 +60,7 @@ public sealed class DiagnosticList : UserControl, IDisposable
         set
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (value?.IsDisposed == true) throw new ObjectDisposedException(nameof(value));
             if (ReferenceEquals(value, _editor)) return;
             Detach(); _editor = value;
             if (_editor is not null) { _editor.AnalysisUpdated += AnalysisUpdated; _editor.StateChanged += StateChanged; }
