@@ -3,5 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/EditorScene.Protocol/EditorScene.Protocol.csproj" />
     <ProjectReference Include="../../src/EditorScene.Languages.DotNet/EditorScene.Languages.DotNet.csproj" />
+    <ProjectReference Include="../../src/EditorScene.Rendering.Skia/EditorScene.Rendering.Skia.csproj" />
   </ItemGroup>
 </Project>

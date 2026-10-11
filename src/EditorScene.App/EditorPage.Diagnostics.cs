@@ -58,11 +58,13 @@ public sealed partial class EditorPage
         void Add(string name, FrameworkElement element)
         {
             if (element.XamlRoot is null || element.Visibility != Visibility.Visible || element.ActualWidth <= 0 || element.ActualHeight <= 0) return;
+            for (DependencyObject? parent = element; parent is not null; parent = VisualTreeHelper.GetParent(parent))
+                if (parent is UIElement visual && visual.Visibility != Visibility.Visible) return;
             var origin = element.TransformToVisual(this).TransformPoint(new Point());
             controls[name] = [origin.X, origin.Y, element.ActualWidth, element.ActualHeight];
         }
         foreach (var (name, element) in _ui) Add(name, element);
-        Add("Editor", view); Add("Types", _navigator.TypeSelector); Add("Members", _navigator.MemberSelector);
+        Add("Editor", view); Add("Primary editor", _primary.NativeEditor.TextArea.TextView); Add("Types", _navigator.TypeSelector); Add("Members", _navigator.MemberSelector);
         if (_secondary is not null) Add("Secondary editor", _secondary.NativeEditor.TextArea.TextView);
         if (_active.Search.IsOpened)
             foreach (var element in Descendants(_active.Search).Where(e => e.Name.StartsWith("PART_", StringComparison.Ordinal))) Add(element.Name, element);
@@ -104,6 +106,12 @@ public sealed partial class EditorPage
             SelectionExpansionDepth = _active.SelectionExpansionDepth, SelectionExpansionPending = _active.IsSelectionExpansionPending,
             BracketPairs = _active.BracketPairCount, IndentGuides = _active.ShowIndentGuides, Ruler = _active.ShowRuler,
             IconCount = _icons.Count, RegisteredTabCount = _tabControlNames.Count,
+            SplitOrientation = _views.Orientation.ToString(), SplitRatio = _views.Ratio, FontSize = _active.FontSize,
+            SecondaryReadOnly = _secondary?.IsReadOnly ?? false, SecondaryWordWrap = _secondary?.WordWrap ?? false,
+            ToolPaneOpen = _toolPane.Visibility == Visibility.Visible, DiagnosticRowCount = _errors.VisibleCount,
+            DiagnosticProjectionBuilds = _errors.ProjectionBuildCount, DiagnosticFilterBuilds = _errors.FilterBuildCount,
+            DiagnosticRenderedTexts = Descendants(_errors.RowsView).OfType<TextBlock>().Select(t => t.Text).Take(200).ToArray(),
+            StatusPosition = _editorStatus.PositionText, StatusRefreshes = _editorStatus.RefreshCount, OverwriteMode = _active.IsOverstrike,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
     }
@@ -121,6 +129,19 @@ public sealed partial class EditorPage
 }
 internal sealed class BrowserState
 {
+    public string SplitOrientation { get; set; } = "";
+    public double SplitRatio { get; set; }
+    public double FontSize { get; set; }
+    public bool SecondaryReadOnly { get; set; }
+    public bool SecondaryWordWrap { get; set; }
+    public bool ToolPaneOpen { get; set; }
+    public int DiagnosticRowCount { get; set; }
+    public long DiagnosticProjectionBuilds { get; set; }
+    public long DiagnosticFilterBuilds { get; set; }
+    public string[] DiagnosticRenderedTexts { get; set; } = [];
+    public string StatusPosition { get; set; } = "";
+    public long StatusRefreshes { get; set; }
+    public bool OverwriteMode { get; set; }
     public bool Ready { get; set; }
     public string FileName { get; set; } = "";
     public string Language { get; set; } = "";

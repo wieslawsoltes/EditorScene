@@ -14,8 +14,8 @@ public sealed partial class EditorPage
 {
     private MenuBar BuildMenus()
     {
-        var bar = new MenuBar { MinHeight = 26, Height = 28, Padding = new Thickness(2, 0, 2, 0) };
-        MenuBarItem Menu(string title) { var menu = new MenuBarItem { Title = title }; bar.Items.Add(menu); Register("Menu " + title, menu); return menu; }
+        var bar = new MenuBar { MinHeight = 24, Height = 26, Padding = new Thickness(2, 0, 2, 0) };
+        MenuBarItem Menu(string title) { var menu = new MenuBarItem { Title = title, MinHeight = 24, Height = 24, FontSize = 12, Padding = new Thickness(7, 2, 7, 2) }; bar.Items.Add(menu); Register("Menu " + title, menu); return menu; }
         var file = Menu("File");
         Item(file, "New", () => { NewDocument(); return Task.CompletedTask; }, "Ctrl+N");
         Item(file, "Open…", OpenDocumentAsync, "Ctrl+O");
@@ -39,8 +39,8 @@ public sealed partial class EditorPage
         Command(edit, "Select All Occurrences", EditorCommand.SelectAllOccurrences);
         Command(edit, "Go To Matching Bracket", EditorCommand.GoToMatchingBracket);
         Command(edit, "Select To Matching Bracket", EditorCommand.SelectToMatchingBracket);
-        Command(edit, "Expand Selection", EditorCommand.ExpandSelection);
-        Command(edit, "Contract Selection", EditorCommand.ContractSelection);
+        Command(edit, "Expand Selection", EditorCommand.ExpandSelection, "Alt+Shift+Right");
+        Command(edit, "Contract Selection", EditorCommand.ContractSelection, "Alt+Shift+Left");
         var advanced = Menu("Advanced");
         Command(advanced, "Increase Line Indent", EditorCommand.Indent, "Tab"); Command(advanced, "Decrease Line Indent", EditorCommand.Outdent, "Shift+Tab"); Separator(advanced);
         Command(advanced, "Comment Lines", EditorCommand.Comment, "Ctrl+K, Ctrl+C"); Command(advanced, "Uncomment Lines", EditorCommand.Uncomment, "Ctrl+K, Ctrl+U"); Command(advanced, "Format Document", EditorCommand.FormatDocument, "Ctrl+K, Ctrl+D"); Separator(advanced);
@@ -83,6 +83,9 @@ public sealed partial class EditorPage
         Command(bookmarks, "Toggle Bookmark", EditorCommand.ToggleBookmark, "Ctrl+F2"); Command(bookmarks, "Next Bookmark", EditorCommand.NextBookmark, "F2"); Command(bookmarks, "Previous Bookmark", EditorCommand.PreviousBookmark, "Shift+F2"); Command(bookmarks, "Clear All Bookmarks", EditorCommand.ClearBookmarks); Separator(bookmarks); Command(bookmarks, "Toggle Breakpoint Indicator", EditorCommand.ToggleBreakpoint, "F9");
         var window = Menu("Window");
         Toggle(window, "Split Editor", () => _secondary is not null, ToggleSplit);
+        Item(window, "Split Horizontally", () => { SetSplitOrientation(Orientation.Vertical); return Task.CompletedTask; });
+        Item(window, "Split Vertically", () => { SetSplitOrientation(Orientation.Horizontal); return Task.CompletedTask; });
+        Item(window, "Center Split", () => { _views.Ratio = .5; _active.FocusEditor(); return Task.CompletedTask; });
         Item(window, "Focus Other View", () => { (_secondary is not null && ReferenceEquals(_active, _primary) ? _secondary : _primary).FocusEditor(); return Task.CompletedTask; });
         Item(window, "Next Document", () => { if (_current is not null) ActivateDocument(_documents[(_documents.IndexOf(_current) + 1) % _documents.Count]); return Task.CompletedTask; });
         return bar;
@@ -103,25 +106,19 @@ public sealed partial class EditorPage
     {
         var item = new MenuFlyoutItem { Text = label, FontSize = 12 }; item.Click += (_, _) => OpenSample(file, text, language); menu.Items.Add(item); Register("Sample " + language, item);
     }
-    private void BuildToolbar()
-    {
-        Tool("New", EditorIconKind.New, () => { NewDocument(); return Task.CompletedTask; });
-        Tool("Open", EditorIconKind.Open, OpenDocumentAsync); Tool("Save", EditorIconKind.Save, async () => { await SaveDocumentAsync(false); }); ToolSeparator();
-        ToolCommand("Cut", EditorIconKind.Cut, EditorCommand.Cut); ToolCommand("Copy", EditorIconKind.Copy, EditorCommand.Copy); ToolCommand("Paste", EditorIconKind.Paste, EditorCommand.Paste); ToolSeparator();
-        ToolCommand("Undo", EditorIconKind.Undo, EditorCommand.Undo); ToolCommand("Redo", EditorIconKind.Redo, EditorCommand.Redo); ToolSeparator();
-        ToolCommand("Find", EditorIconKind.Search, EditorCommand.Find); ToolCommand("Replace", EditorIconKind.Replace, EditorCommand.Replace); ToolSeparator();
-        ToolCommand("Toggle bookmark", EditorIconKind.Bookmark, EditorCommand.ToggleBookmark); ToolCommand("Previous bookmark", EditorIconKind.Previous, EditorCommand.PreviousBookmark); ToolCommand("Next bookmark", EditorIconKind.Next, EditorCommand.NextBookmark); ToolSeparator();
-        ToolCommand("Complete word", EditorIconKind.Completion, EditorCommand.CompleteWord); ToolCommand("Format document", EditorIconKind.Format, EditorCommand.FormatDocument); ToolSeparator();
-        ToolCommand("Collapse all", EditorIconKind.Fold, EditorCommand.CollapseAll); ToolCommand("Expand all", EditorIconKind.Unfold, EditorCommand.ExpandAll);
-        Tool("Split editor", EditorIconKind.Split, () => { ToggleSplit(); return Task.CompletedTask; });
-    }
     private void ToolCommand(string label, EditorIconKind icon, EditorCommand command) => Tool(label, icon, () => _active.ExecuteAsync(command));
     private void Tool(string label, EditorIconKind icon, Func<Task> action)
     {
         var button = new Button { Content = NewIcon(icon), Width = 26, Height = 25, MinHeight = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         ToolTipService.SetToolTip(button, label); button.Click += (_, _) => _ = GuardAsync(action); _toolbar.Children.Add(button); Register("Toolbar " + label, button);
+        var overflow = new MenuFlyoutItem { Text = label, FontSize = 12 };
+        overflow.Click += (_, _) => _ = GuardAsync(action); AddToolbarOverflow(overflow);
     }
-    private void ToolSeparator() => _toolbar.Children.Add(new Border { Width = 1, Height = 17, Margin = new Thickness(4, 4, 4, 4), Background = SyntaxEditor.Brush(_theme.Border) });
+    private void ToolSeparator()
+    {
+        var border = new Border { Width = 1, Height = 17, Margin = new Thickness(4, 4, 4, 4), Background = SyntaxEditor.Brush(_theme.Border) };
+        _toolbar.Children.Add(border); _toolbarSeparators.Add(border);
+    }
     private void LoadLargeDocument()
     {
         var text = new StringBuilder(5_000_000);
