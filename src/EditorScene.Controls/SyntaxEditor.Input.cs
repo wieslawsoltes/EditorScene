@@ -55,6 +55,8 @@ public sealed partial class SyntaxEditor
             if (TryExpandSnippetShortcut()) { e.Handled = true; return; }
         }
         EditorCommand? action = null;
+        if (alt && shift && !command && e.Key is VirtualKey.Right or VirtualKey.Left)
+        { _chord = null; e.Handled = true; _ = ExecuteAsync(e.Key == VirtualKey.Right ? EditorCommand.ExpandSelection : EditorCommand.ContractSelection); return; }
         if (command && !alt)
         {
             if (_chord is not null && Environment.TickCount64 - _chordTime < 2000)

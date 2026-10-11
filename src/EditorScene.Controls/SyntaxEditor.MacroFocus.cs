@@ -18,7 +18,7 @@ public sealed partial class SyntaxEditor
     public bool IsMacroInputReady => !_disposed && IsLoaded && !_macroFocusPending && XamlRoot is { } root
         && ReferenceEquals(FocusManager.GetFocusedElement(root), _editor.TextArea)
         && !VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Any(p => p.IsOpen && p.Child is MenuFlyoutPresenter);
-    private void OnMacroUnloaded(object sender, RoutedEventArgs args) => CancelPendingMacroFocus();
+    private void OnMacroUnloaded(object sender, RoutedEventArgs args) { CancelPendingMacroFocus(); ResetSelectionExpansion(); }
     private void CancelPendingMacroFocus()
     {
         _macroFocusGeneration++; _macroFocusPending = false;

@@ -39,6 +39,8 @@ public sealed partial class EditorPage
         Command(edit, "Select All Occurrences", EditorCommand.SelectAllOccurrences);
         Command(edit, "Go To Matching Bracket", EditorCommand.GoToMatchingBracket);
         Command(edit, "Select To Matching Bracket", EditorCommand.SelectToMatchingBracket);
+        Command(edit, "Expand Selection", EditorCommand.ExpandSelection);
+        Command(edit, "Contract Selection", EditorCommand.ContractSelection);
         var advanced = Menu("Advanced");
         Command(advanced, "Increase Line Indent", EditorCommand.Indent, "Tab"); Command(advanced, "Decrease Line Indent", EditorCommand.Outdent, "Shift+Tab"); Separator(advanced);
         Command(advanced, "Comment Lines", EditorCommand.Comment, "Ctrl+K, Ctrl+C"); Command(advanced, "Uncomment Lines", EditorCommand.Uncomment, "Ctrl+K, Ctrl+U"); Command(advanced, "Format Document", EditorCommand.FormatDocument, "Ctrl+K, Ctrl+D"); Separator(advanced);

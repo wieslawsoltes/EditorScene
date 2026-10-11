@@ -61,7 +61,7 @@ public sealed partial class SyntaxEditor
         _macroPlayback?.Cancel(); CancelPendingMacroFocus();
     }
     private static bool CanRecordEditorCommand(EditorCommand command) => Enum.IsDefined(command) && command is not
-        (EditorCommand.Find or EditorCommand.Replace or EditorCommand.GoToLine or EditorCommand.CompleteWord or EditorCommand.QuickInfo or EditorCommand.SignatureHelp or EditorCommand.SelectNextOccurrence or EditorCommand.SelectAllOccurrences or EditorCommand.GoToMatchingBracket or EditorCommand.SelectToMatchingBracket);
+        (EditorCommand.Find or EditorCommand.Replace or EditorCommand.GoToLine or EditorCommand.CompleteWord or EditorCommand.QuickInfo or EditorCommand.SignatureHelp or EditorCommand.SelectNextOccurrence or EditorCommand.SelectAllOccurrences or EditorCommand.GoToMatchingBracket or EditorCommand.SelectToMatchingBracket or EditorCommand.ExpandSelection or EditorCommand.ContractSelection);
     private void RecordEditorMacroCommand(EditorCommand command)
     {
         if (MacroRecording.State == MacroRecordingState.Playing) throw new InvalidOperationException("Wait for macro playback to finish or cancel it.");
