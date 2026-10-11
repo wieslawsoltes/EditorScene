@@ -30,6 +30,10 @@ public sealed class ResizableSplitView : UserControl, IDisposable
         _separator.DragDelta += OnDragDelta;
         _separator.KeyDown += OnSeparatorKeyDown;
         _separator.DoubleTapped += OnDoubleTapped;
+        // Thumb handles pointer presses for dragging but does not necessarily take
+        // keyboard focus. Observe handled events without consuming or replacing
+        // its drag handler, so subsequent arrow keys target this divider.
+        _separator.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnSeparatorPointerPressed), handledEventsToo: true);
         SizeChanged += OnSizeChanged;
         RebuildLayout();
     }
@@ -126,6 +130,8 @@ public sealed class ResizableSplitView : UserControl, IDisposable
         var minimum = Math.Min(.5, 48 / available);
         Ratio = Math.Clamp((length + pixels) / available, minimum, 1 - minimum);
     }
+    private void OnSeparatorPointerPressed(object sender, PointerRoutedEventArgs e)
+    { if (!_disposed && _split) _separator.Focus(FocusState.Pointer); }
     private void OnDragDelta(object sender, DragDeltaEventArgs e) => MoveBy(_orientation == Orientation.Vertical ? e.VerticalChange : e.HorizontalChange);
     private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e) { if (_disposed) return; Ratio = .5; e.Handled = true; }
     private void OnSizeChanged(object sender, SizeChangedEventArgs e) => UpdateLengths();
@@ -144,6 +150,7 @@ public sealed class ResizableSplitView : UserControl, IDisposable
         if (_disposed) return;
         _disposed = true; LayoutChanged = null;
         _separator.DragDelta -= OnDragDelta; _separator.KeyDown -= OnSeparatorKeyDown; _separator.DoubleTapped -= OnDoubleTapped; SizeChanged -= OnSizeChanged;
+        _separator.RemoveHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnSeparatorPointerPressed));
         // Pane contents are caller-owned, so detach them before disposing this control.
         _first.Content = null; _second.Content = null; _split = false; base.Dispose();
     }
