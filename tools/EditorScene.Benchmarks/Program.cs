@@ -69,7 +69,7 @@ void Measure(string scenario, string implementation, Func<Probe> setup)
         var probe = setup(); var allocated = GC.GetAllocatedBytesForCurrentThread(); var stamp = Stopwatch.GetTimestamp();
         probe.Run(); times.Add(Stopwatch.GetElapsedTime(stamp).TotalMilliseconds); bytes.Add(GC.GetAllocatedBytesForCurrentThread() - allocated); probe.Dispose();
     }
-    times.Sort(); bytes.Sort(); rows.Add(new { scenario, implementation, p50Milliseconds = times[5], p95Milliseconds = times[10], medianAllocatedBytes = bytes[5] });
+    times.Sort(); bytes.Sort(); rows.Add(new { scenario, implementation, p50Milliseconds = times[5], p95Milliseconds = times[10], medianAllocatedBytes = bytes[5], sortedElapsedMilliseconds = times.ToArray(), sortedAllocatedBytes = bytes.ToArray() });
 }
 static JsonObject LegacyDifference(DocumentSnapshot before, DocumentSnapshot after, LegacySnapshot index)
 {
