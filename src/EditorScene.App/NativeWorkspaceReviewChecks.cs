@@ -62,5 +62,6 @@ internal static class NativeWorkspaceReviewChecks
         try { status.Editor = disposed; } catch (ObjectDisposedException) { statusRejected = true; }
         try { errors.Editor = disposed; } catch (ObjectDisposedException) { errorsRejected = true; }
         Check(statusRejected && errorsRejected, "Workspace controls reject disposed view bindings without subscribing");
+        NativeDiagnosticGridChecks.Run(checks);
     }
 }

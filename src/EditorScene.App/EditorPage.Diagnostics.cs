@@ -4,6 +4,7 @@ using EditorScene.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
@@ -64,6 +65,11 @@ public sealed partial class EditorPage
             controls[name] = [origin.X, origin.Y, element.ActualWidth, element.ActualHeight];
         }
         foreach (var (name, element) in _ui) Add(name, element);
+        foreach (var element in Descendants(_errors).Where(e => e is ButtonBase or Thumb))
+        {
+            var name = AutomationProperties.GetName(element);
+            if (!string.IsNullOrEmpty(name)) Add(name, element);
+        }
         Add("Editor", view); Add("Primary editor", _primary.NativeEditor.TextArea.TextView); Add("Types", _navigator.TypeSelector); Add("Members", _navigator.MemberSelector);
         if (_secondary is not null) Add("Secondary editor", _secondary.NativeEditor.TextArea.TextView);
         if (_active.Search.IsOpened)
@@ -111,6 +117,7 @@ public sealed partial class EditorPage
             ToolPaneOpen = _toolPane.Visibility == Visibility.Visible, DiagnosticRowCount = _errors.VisibleCount,
             DiagnosticProjectionBuilds = _errors.ProjectionBuildCount, DiagnosticFilterBuilds = _errors.FilterBuildCount,
             DiagnosticRenderedTexts = Descendants(_errors.RowsView).OfType<TextBlock>().Select(t => t.Text).Take(200).ToArray(),
+            DiagnosticGrid = CaptureDiagnosticGrid(),
             StatusPosition = _editorStatus.PositionText, StatusRefreshes = _editorStatus.RefreshCount, OverwriteMode = _active.IsOverstrike,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
@@ -129,6 +136,7 @@ public sealed partial class EditorPage
 }
 internal sealed class BrowserState
 {
+    public DiagnosticGridState DiagnosticGrid { get; set; } = new();
     public string SplitOrientation { get; set; } = "";
     public double SplitRatio { get; set; }
     public double FontSize { get; set; }
