@@ -2,11 +2,7 @@ namespace EditorScene.LanguageServices;
 
 public readonly record struct RangeQueryStatistics(int Matches, int VisitedNodes);
 
-/// <summary>
-/// Immutable balanced interval index. Range coordinates are copied at construction;
-/// overlapping/nested ranges and zero-width point tags are supported. Results are
-/// returned in stable document order, not insertion or tree traversal order.
-/// </summary>
+/// <summary>Immutable balanced interval index with stable document ordering and zero-width point tags.</summary>
 public sealed class RangeIndex<T>
 {
     private readonly Entry[] _entries;
@@ -33,14 +29,19 @@ public sealed class RangeIndex<T>
         var middle = first + (end - first) / 2;
         return _maximumEnds[middle] = Math.Max(_entries[middle].Last, Math.Max(Build(first, middle), Build(middle + 1, end)));
     }
-    /// <summary>Append overlaps to a caller-owned buffer. Empty queries test one point; non-empty queries are half-open.</summary>
+    /// <summary>Append overlaps. Empty queries test one point; non-empty queries are half-open.</summary>
     public RangeQueryStatistics CopyOverlaps(SourceRange query, List<T> destination)
     {
-        ArgumentNullException.ThrowIfNull(destination);
         if (query.Offset < 0 || query.Length < 0 || query.Length > int.MaxValue - query.Offset) throw new ArgumentOutOfRangeException(nameof(query));
+        return CopyIntersecting(query.Offset, query.Offset + Math.Max(0, query.Length - 1), destination);
+    }
+    /// <summary>Append tags intersecting inclusive endpoint coordinates, including zero-width EOF diagnostics.</summary>
+    public RangeQueryStatistics CopyIntersecting(int firstOffset, int lastOffsetInclusive, List<T> destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (firstOffset < 0 || lastOffsetInclusive < firstOffset) throw new ArgumentOutOfRangeException(nameof(firstOffset));
         var before = destination.Count; var visited = 0;
-        var last = query.Offset + Math.Max(0, query.Length - 1);
-        Visit(0, _entries.Length, query.Offset, last, destination, ref visited);
+        Visit(0, _entries.Length, firstOffset, lastOffsetInclusive, destination, ref visited);
         return new(destination.Count - before, visited);
     }
     private void Visit(int first, int end, int start, int last, List<T> destination, ref int visited)
