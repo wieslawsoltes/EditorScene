@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Tests the exact published Uno app through real user input; the application state bridge is read-only.
+// Drive the published .NET/Uno app through real input. The diagnostics bridge is read-only.
 import assert from 'node:assert/strict';
 import {createReadStream} from 'node:fs';
 import {mkdir, stat, readFile, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import path from 'node:path';
 import {chromium} from 'playwright';
+import {checkMacros} from './browser-macros.mjs';
 const root = path.resolve(process.argv[2] ?? 'artifacts/site');
 const base = '/EditorScene/';
 const output = path.resolve('artifacts/browser-tests');
@@ -56,10 +57,8 @@ try {
   const wait=async(predicate,arg)=>{await page.waitForFunction(predicate,arg,{timeout:60000});const s=await state();assert.equal(s.Error,null,s.Error??'Application error');return s;};
   const textIs=text=>wait(t=>globalThis.__editorSceneState?.TextPrefix===t,text);
   const stableBounds=async name=>{
-    // A canvas control cannot use Playwright's DOM bounding-box actionability.
-    // Require unchanged bounds in three distinct native observations, not three
-    // polls of one stale object. Filtering can resize a ContentDialog after the
-    // keyboard API returns. This observer changes no application state.
+    // Canvas controls cannot use DOM bounding-box actionability. Require stable
+    // geometry across distinct native observations, not repeated polls of one object.
     await page.evaluate(()=>{globalThis.__editorScenePointerProbe={lastState:null,key:'',samples:0,since:0};});
     await wait(n=>{
       const state=globalThis.__editorSceneState, probe=globalThis.__editorScenePointerProbe;
@@ -120,34 +119,12 @@ try {
   await page.screenshot({path:path.join(output,'snippet.png')});await page.keyboard.press('Enter');await wait(()=>globalThis.__editorSceneState?.SnippetActive===false);
   checks.push('Snippet shortcut, linked fields, Tab/Shift+Tab navigation and Enter completion');
   await paste('for');await page.keyboard.press('Tab');await wait(()=>globalThis.__editorSceneState?.SnippetActive);await page.keyboard.press('Escape');await page.keyboard.press('Control+z');await textIs('for');checks.push('Snippet insertion and shortcut removal undo atomically');
-  await paste('');
-  await page.keyboard.press('Control+k');await page.keyboard.press('Control+x');
-  await click('Visible Filter snippets');await page.keyboard.type('property');
-  await click('Dialog Insert');await wait(()=>globalThis.__editorSceneState?.SnippetActive && globalThis.__editorSceneState.TextPrefix.includes('MyProperty'));
+  await paste('');await page.keyboard.press('Control+k');await page.keyboard.press('Control+x');
+  await click('Visible Filter snippets');await page.keyboard.type('property');await click('Dialog Insert');
+  await wait(()=>globalThis.__editorSceneState?.SnippetActive && globalThis.__editorSceneState.TextPrefix.includes('MyProperty'));
   await page.keyboard.press('Enter');await wait(()=>globalThis.__editorSceneState?.SnippetActive===false);
   checks.push('Native snippet picker filtering and insertion through the keyboard command');
-  await paste('');
-  await command('Macros','Start Recording');await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording');
-  await page.keyboard.type('alpha');await textIs('alpha');
-  const caretBefore=(await state()).CaretOffset;await click('Editor');
-  await wait(()=>globalThis.__editorSceneState?.CaretOffset===caretBefore);
-  await page.keyboard.press('Home');await page.keyboard.press('Shift+End');await page.keyboard.press('Control+Shift+u');await textIs('ALPHA');
-  await command('Macros','Stop Recording');await wait(()=>globalThis.__editorSceneState?.MacroState==='Idle' && globalThis.__editorSceneState.MacroHasLast);
-  await paste('');await command('Macros','Run Last Macro');await textIs('ALPHA');
-  checks.push('Macro records text/navigation/selection/transformation, ignores editor pointer input and replays through native commands');
-  const macroDownload=page.waitForEvent('download');await command('Macros','Export Macro…');
-  const savedMacro=await macroDownload;const macroPath=path.join(output,'recorded.esmacro');await savedMacro.saveAs(macroPath);
-  const macroXml=await readFile(macroPath,'utf8');assert.ok(macroXml.includes('urn:editorscene:macro:1'));
-  const macroChooser=page.waitForEvent('filechooser');await command('Macros','Import Macro…');
-  await(await macroChooser).setFiles({name:'recorded.esmacro',mimeType:'application/xml',buffer:Buffer.from(macroXml)});
-  await paste('');await command('Macros','Run Last Macro');await textIs('ALPHA');
-  checks.push('Macro XML export/import uses real file dialogs and replays the saved command sequence');
-  await command('Macros','Start Recording');await command('Macros','Pause Recording');
-  await wait(()=>globalThis.__editorSceneState?.MacroState==='Paused');await page.keyboard.type('not recorded');
-  await command('Macros','Resume Recording');await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording');
-  await command('Macros','Cancel Recording');await wait(()=>globalThis.__editorSceneState?.MacroState==='Idle');
-  await paste('');await command('Macros','Run Last Macro');await textIs('ALPHA');
-  checks.push('Macro pause/resume/cancel preserves the previously saved macro');
+  await checkMacros({page, state, wait, textIs, paste, click, command, output, checks});
   const snippetXml='<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet"><CodeSnippet Format="1.0.0"><Header><Title>Browser Imported</Title><Shortcut>custom</Shortcut></Header><Snippet><Declarations><Literal><ID>value</ID><Default>imported</Default></Literal></Declarations><Code Language="CSharp"><![CDATA[$value$-$value$$end$]]></Code></Snippet></CodeSnippet></CodeSnippets>';
   const snippetChooser=page.waitForEvent('filechooser');await command('IntelliPrompt','Import Snippets…');
   await(await snippetChooser).setFiles({name:'browser-custom.snippet',mimeType:'application/xml',buffer:Buffer.from(snippetXml)});
