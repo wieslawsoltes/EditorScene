@@ -4,7 +4,7 @@ using EditorScene.Text;
 namespace EditorScene.Protocol;
 
 /// <summary>LSP lifecycle and transport surface. No connection, file, credential or document is opened implicitly.</summary>
-public sealed class LanguageServerClient : IAsyncDisposable
+public sealed partial class LanguageServerClient : IAsyncDisposable
 {
     private readonly JsonRpcConnection _rpc;
     private readonly Dictionary<Uri, OpenDocument> _documents = [];
@@ -44,6 +44,7 @@ public sealed class LanguageServerClient : IAsyncDisposable
                         },
                         ["hover"] = new JsonObject { ["contentFormat"] = new JsonArray("plaintext") },
                         ["signatureHelp"] = new JsonObject { ["signatureInformation"] = new JsonObject { ["documentationFormat"] = new JsonArray("plaintext"), ["parameterInformation"] = new JsonObject { ["labelOffsetSupport"] = true }, ["activeParameterSupport"] = true } },
+                        ["selectionRange"] = new JsonObject { ["dynamicRegistration"] = false },
                         ["documentSymbol"] = new JsonObject { ["hierarchicalDocumentSymbolSupport"] = true },
                         ["foldingRange"] = new JsonObject { ["lineFoldingOnly"] = false, ["rangeLimit"] = 100000 },
                         ["publishDiagnostics"] = new JsonObject { ["versionSupport"] = true },

@@ -1,0 +1,38 @@
+{
+  "sourceRevision": "a186396a4aa15089587b2d60eff9a8ac91325ad5",
+  "baselineRevision": "207d8876955d6feec431f0959484312f534d54d0",
+  "workflowRun": 38154727000,
+  "testJob": 114515286016,
+  "artifactId": 11707967312,
+  "artifactName": "regression-tests",
+  "artifactZipSha256ReportedByCI": "acd0f940e73fd214d017efbcb60c5f358ea54594cf28609744683e7746e4432d",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "documentCharacters": 117792,
+  "fixture": "4,000 C# methods; replace the last method's four-character numeric literal. Prior tree and semantic-model wrapper created, but full diagnostics/bindings not warmed. Setup and final text verification excluded.",
+  "interpretation": "The proposed incremental model-construction path was slower and allocated more in this initial probe. These measurements are retained as regression evidence, not a speedup claim. This run's test/benchmark job passed; its native job found the separately repaired selection-caret defect. Subsequent analysis separates parser, compilation and warm semantic costs.",
+  "rows": [
+    {
+      "scenario": "csharp_small_edit_model",
+      "implementation": "previous",
+      "p50Milliseconds": 6.4099,
+      "p95Milliseconds": 36.5495,
+      "medianAllocatedBytes": 1333776,
+      "sortedElapsedMilliseconds": [4.6177,4.7265,5.5369,6.1244,6.3002,6.4099,6.5456,10.2695,11.3833,14.2979,36.5495],
+      "sortedAllocatedBytes": [1333344,1333352,1333552,1333688,1333704,1333776,1334104,1334160,1334376,1334800,1334872]
+    },
+    {
+      "scenario": "csharp_small_edit_model",
+      "implementation": "current",
+      "p50Milliseconds": 24.0116,
+      "p95Milliseconds": 34.3798,
+      "medianAllocatedBytes": 1948872,
+      "sortedElapsedMilliseconds": [3.9312,4.6133,5.4946,7.4492,23.913,24.0116,24.4951,24.9034,25.8847,30.8827,34.3798],
+      "sortedAllocatedBytes": [1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872]
+    }
+  ]
+}

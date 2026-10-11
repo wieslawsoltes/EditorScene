@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import {checkLspSelection} from './browser-structural-selection.mjs';
 
 export async function checkLsp({page,command,click,fill,paste,focusEditor,wait,textIs,state,checks,output,fixture,origin}) {
   const before='class Demo\n{\n    LisSuffix\n}\n';
@@ -11,6 +12,7 @@ export async function checkLsp({page,command,click,fill,paste,focusEditor,wait,t
   await wait(()=>{const s=globalThis.__editorSceneState;return s?.LspConnected&&s.AnalysisRevision===s.Revision&&s.Symbols.includes('RemoteDemo')&&s.ClassificationCount===2&&s.Foldings>0&&s.Diagnostics.some(d=>d.startsWith('LSP001:'));});
   await fixture.waitFor('textDocument/didOpen');assert.equal(fixture.sessions[0].text,before);
   checks.push('Explicit language-server dialog establishes real WebSocket LSP with remote diagnostics, symbols, semantic colors and folding');
+  await checkLspSelection({page,state,wait,textIs,focusEditor,command,fixture,checks,before});
   await focusEditor();await page.keyboard.press('Control+Home');await page.keyboard.press('Enter');
   await wait(()=>{const s=globalThis.__editorSceneState;return s?.LspConnected&&s.TextPrefix.startsWith('\nclass')&&s.AnalysisRevision===s.Revision&&s.ClassificationCount===2;});
   await fixture.waitFor('textDocument/semanticTokens/full/delta');

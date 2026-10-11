@@ -65,6 +65,8 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.SelectAllOccurrences: SelectAllOccurrences(); break;
                 case EditorCommand.GoToMatchingBracket: NavigateToMatchingBracket(); break;
                 case EditorCommand.SelectToMatchingBracket: NavigateToMatchingBracket(true); break;
+                case EditorCommand.ExpandSelection: if (await ExpandSelectionAsync()) FocusAfterEditCommand(); return;
+                case EditorCommand.ContractSelection: if (ContractSelection()) FocusAfterEditCommand(); return;
                 case EditorCommand.ClearExtraSelections: ClearMultiSelection(); break;
                 case EditorCommand.ConvertToLf: ConvertLineEndings("\n"); break;
                 case EditorCommand.ConvertToCrLf: ConvertLineEndings("\r\n"); break;

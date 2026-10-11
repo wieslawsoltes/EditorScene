@@ -108,6 +108,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void ConfigureLanguage()
     {
         if (_disposed || GetValue(DocumentProperty) is not EditorDocument document) return;
+        ResetSelectionExpansion();
         ClosePopups(); _coordinator?.Dispose();
         var viewport = _editor.TextArea.TextView.Viewport;
         DetachStyles();
@@ -137,11 +138,12 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void OnLoaded(object sender, RoutedEventArgs args) { ApplyTheme(); _coordinator?.RequestAnalysis(true); }
     private void OnDocumentChanged(object? sender, EventArgs e)
     {
+        ResetSelectionExpansion();
         if (!_multiEditing) { Selections.Clear(); if (_adornments is not null) _adornments.ExtraSelections = []; }
         _brackets = null; TextChanged?.Invoke(this, EventArgs.Empty); StateChanged?.Invoke(this, EventArgs.Empty);
     }
     private void SetText(string text) { if (GetValue(DocumentProperty) is EditorDocument document && document.Buffer.Text != text) document.ApplyEdits([new(0, document.Buffer.TextLength, text)], document.Revision); }
-    private void OnSelectionChanged(object? sender, EventArgs args) { UpdateBracketHighlights(); StateChanged?.Invoke(this, EventArgs.Empty); }
+    private void OnSelectionChanged(object? sender, EventArgs args) { if (!_changingStructuralSelection) ResetSelectionExpansion(); UpdateBracketHighlights(); StateChanged?.Invoke(this, EventArgs.Empty); }
     private void UpdateBracketHighlights()
     {
         if (_adornments is null) return;
@@ -186,7 +188,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     public new void Dispose()
     {
         if (_disposed) return;
-        DisposeMacroSupport(); ClosePopups(); _disposed = true; Loaded -= OnLoaded;
+        ResetSelectionExpansion(); DisposeMacroSupport(); ClosePopups(); _disposed = true; Loaded -= OnLoaded;
         _coordinator?.Dispose(); DetachStyles(); _adornments?.Dispose(); _folding?.Dispose();
         Document.Changed -= OnDocumentChanged; _editor.SelectionChanged -= OnSelectionChanged; _editor.InputError -= OnInputError;
         _editor.TextArea.TextEntering -= OnTextEntering; _editor.TextArea.TextEntered -= OnTextEntered; _editor.TextArea.TextView.PointerPressed -= OnPointerPressed;

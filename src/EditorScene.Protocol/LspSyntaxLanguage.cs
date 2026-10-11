@@ -10,7 +10,7 @@ namespace EditorScene.Protocol;
 /// lease until their response arrives; a newer didChange cannot race an older result.
 /// Independent views may share the provider. Different documents need their own session.
 /// </summary>
-public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysisChanged, IAsyncDisposable
+public sealed partial class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysisChanged, IAsyncDisposable
 {
     private readonly LanguageServerClient _client;
     private readonly SemaphoreSlim _requests = new(1, 1);
@@ -82,6 +82,7 @@ public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysis
             ("signatureHelpProvider", LanguageCapabilities.SignatureHelp), ("documentSymbolProvider", LanguageCapabilities.Symbols),
             ("foldingRangeProvider", LanguageCapabilities.Outlining), ("documentFormattingProvider", LanguageCapabilities.Formatting)
         }) if (Enabled(caps[key])) result |= flag;
+        if (Enabled(caps["selectionRangeProvider"])) result |= LanguageCapabilities.SelectionRanges;
         _pullDiagnostics = Enabled(caps["diagnosticProvider"]);
         if (caps["semanticTokensProvider"] is JsonObject semantic && Enabled(semantic["full"]))
         {

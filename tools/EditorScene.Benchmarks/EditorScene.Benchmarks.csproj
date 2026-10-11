@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../src/EditorScene.Protocol/EditorScene.Protocol.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/EditorScene.Protocol/EditorScene.Protocol.csproj" />
+    <ProjectReference Include="../../src/EditorScene.Languages.DotNet/EditorScene.Languages.DotNet.csproj" />
+  </ItemGroup>
 </Project>

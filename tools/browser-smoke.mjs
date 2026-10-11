@@ -10,6 +10,7 @@ import path from 'node:path';
 import {chromium} from 'playwright';
 import {checkMacros} from './browser-macros.mjs';
 import {checkReview} from './browser-review.mjs';
+import {checkStructuralSelection} from './browser-structural-selection.mjs';
 const root = path.resolve(process.argv[2] ?? 'artifacts/site');
 const base = '/EditorScene/';
 const output = path.resolve('artifacts/browser-tests');
@@ -129,6 +130,7 @@ try {
   await page.keyboard.press('Enter');await wait(()=>globalThis.__editorSceneState?.SnippetActive===false);
   checks.push('Native snippet picker filtering and insertion through the keyboard command');
   await checkReview({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
+  await checkStructuralSelection({page,state,wait,textIs,paste,command,output,checks});
   await checkMacros({page, state, wait, textIs, paste, click, command, output, checks});
   await checkLsp({page,command,click,fill,paste,focusEditor,wait,textIs,state,checks,output,fixture:lspFixture,origin});
   const snippetXml='<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet"><CodeSnippet Format="1.0.0"><Header><Title>Browser Imported</Title><Shortcut>custom</Shortcut></Header><Snippet><Declarations><Literal><ID>value</ID><Default>imported</Default></Literal></Declarations><Code Language="CSharp"><![CDATA[$value$-$value$$end$]]></Code></Snippet></CodeSnippet></CodeSnippets>';

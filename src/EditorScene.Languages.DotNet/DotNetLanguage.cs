@@ -18,53 +18,23 @@ namespace EditorScene.Languages.DotNet;
 /// metadata references may be supplied by a host. Project-system/build integration
 /// and Roslyn Features refactorings are deliberately separate concerns.
 /// </summary>
-public sealed class DotNetLanguage : ISyntaxLanguage
+public sealed partial class DotNetLanguage : ISyntaxLanguage, ISelectionRangeProvider
 {
     private readonly bool _visualBasic;
     private readonly ImmutableArray<MetadataReference>? _references;
-    private readonly object _cacheGate = new();
-    private readonly Dictionary<Guid, CachedModel> _models = new();
-    private sealed record CachedModel(long Revision, string FileName, SyntaxTree Tree, Compilation Compilation, SemanticModel SemanticModel);
     public DotNetLanguage(bool visualBasic = false, IEnumerable<MetadataReference>? references = null)
     { _visualBasic = visualBasic; _references = references?.ToImmutableArray(); }
     public string Id => _visualBasic ? "vb" : "csharp";
     public string DisplayName => _visualBasic ? "Visual Basic" : "C#";
     public IReadOnlyList<string> Extensions => _visualBasic ? [".vb"] : [".cs", ".csx"];
-    public LanguageCapabilities Capabilities => LanguageCapabilities.Diagnostics | LanguageCapabilities.Classification | LanguageCapabilities.Outlining | LanguageCapabilities.Symbols | LanguageCapabilities.Completion | LanguageCapabilities.QuickInfo | LanguageCapabilities.SignatureHelp | LanguageCapabilities.Formatting;
-    public Task<LanguageAnalysis> AnalyzeAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => Task.Run(() => Analyze(snapshot, cancellationToken), cancellationToken);
+    public LanguageCapabilities Capabilities => LanguageCapabilities.Diagnostics | LanguageCapabilities.Classification | LanguageCapabilities.Outlining | LanguageCapabilities.Symbols | LanguageCapabilities.Completion | LanguageCapabilities.QuickInfo | LanguageCapabilities.SignatureHelp | LanguageCapabilities.Formatting | LanguageCapabilities.SelectionRanges;
+    public Task<LanguageAnalysis> AnalyzeAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => cancellationToken.IsCancellationRequested
+        ? Task.FromCanceled<LanguageAnalysis>(cancellationToken)
+        : TryGetCompletedAnalysis(snapshot) ?? AnalyzeOnWorkerAsync(snapshot, cancellationToken);
 
-    private CachedModel GetModel(DocumentSnapshot snapshot, CancellationToken token)
+    private LanguageAnalysis AnalyzeCore(DocumentSnapshot snapshot, CachedModel model, CancellationToken token)
     {
-        token.ThrowIfCancellationRequested();
-        CachedModel? previous;
-        lock (_cacheGate)
-        {
-            _models.TryGetValue(snapshot.DocumentId, out previous);
-            if (previous?.Revision == snapshot.Revision && previous.FileName == snapshot.FileName) return previous;
-        }
-        var source = SourceText.From(snapshot.Text, Encoding.UTF8);
-        var tree = previous is not null && previous.FileName == snapshot.FileName
-            ? previous.Tree.WithChangedText(source)
-            : _visualBasic
-                ? VisualBasicSyntaxTree.ParseText(source, new VisualBasicParseOptions(Microsoft.CodeAnalysis.VisualBasic.LanguageVersion.Latest), snapshot.FileName, token)
-                : CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(Microsoft.CodeAnalysis.CSharp.LanguageVersion.Preview, DocumentationMode.Parse), snapshot.FileName, token);
-        var references = _references ?? ReferenceAssemblyCatalog.Default;
-        Compilation compilation = _visualBasic
-            ? VisualBasicCompilation.Create("EditorScene_" + snapshot.DocumentId.ToString("N"), [tree], references, new VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optionStrict: OptionStrict.On, globalImports: [GlobalImport.Parse("System"), GlobalImport.Parse("System.Collections.Generic"), GlobalImport.Parse("System.Linq")]))
-            : CSharpCompilation.Create("EditorScene_" + snapshot.DocumentId.ToString("N"), [tree], references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
-        var model = new CachedModel(snapshot.Revision, snapshot.FileName, tree, compilation, compilation.GetSemanticModel(tree, ignoreAccessibility: false));
-        token.ThrowIfCancellationRequested();
-        lock (_cacheGate)
-        {
-            // Bound retained semantic graphs. Never replace a newer cached revision.
-            if (_models.Count >= 8 && !_models.ContainsKey(snapshot.DocumentId)) _models.Remove(_models.Keys.First());
-            if (!_models.TryGetValue(snapshot.DocumentId, out var current) || current.Revision <= snapshot.Revision) _models[snapshot.DocumentId] = model;
-        }
-        return model;
-    }
-    private LanguageAnalysis Analyze(DocumentSnapshot snapshot, CancellationToken token)
-    {
-        var model = GetModel(snapshot, token); var root = model.Tree.GetRoot(token);
+        var root = model.Tree.GetRoot(token);
         var diagnostics = model.Compilation.GetDiagnostics(token).Where(d => d.Location.IsInSource && d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning or DiagnosticSeverity.Info)
             .Select(d => new EditorDiagnostic(d.Id, d.GetMessage(System.Globalization.CultureInfo.InvariantCulture), d.Severity == DiagnosticSeverity.Error ? IssueSeverity.Error : d.Severity == DiagnosticSeverity.Warning ? IssueSeverity.Warning : IssueSeverity.Information, ToRange(d.Location.SourceSpan))).ToImmutableArray();
         var styles = ImmutableArray.CreateBuilder<ClassificationSpan>();
