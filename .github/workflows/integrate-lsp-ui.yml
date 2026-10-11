@@ -1,0 +1,61 @@
+name: Integrate LSP application hooks
+on:
+  push:
+    branches: [feat/lsp-editor-integration]
+    paths: [.github/workflows/integrate-lsp-ui.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply checked application and browser integration edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def replace(path,old,new):
+              p=Path(path);text=p.read_text()
+              if text.count(old)!=1: raise RuntimeError(f'Expected one anchor in {path}: {old[:90]}')
+              p.write_text(text.replace(old,new))
+          app='src/EditorScene.App/'
+          replace(app+'EditorPage.cs','            var language = _languages.Languages.First(l => l.DisplayName == name);',
+              '            if (_current.Language is EditorScene.Protocol.LspSyntaxLanguage) { UpdateLspPicker(); return; }\n            var language = _languages.Languages.First(l => l.DisplayName == name);')
+          replace(app+'EditorPage.cs','SetActive(_primary); _updatingPickers = true; _languagePicker.SelectedItem = entry.Language.DisplayName; _updatingPickers = false;',
+              'SetActive(_primary); UpdateLspPicker();')
+          replace(app+'EditorPage.cs','        entry.Document.Dispose(); RebuildTabs();','        await DisconnectLspAsync(entry); entry.Document.Dispose(); RebuildTabs();')
+          replace(app+'EditorPage.cs','        _status.Text = _active.IsReadOnly ? "Read only" : _active.Status;',
+              '        _status.Text = LspStatusPrefix + (_active.IsReadOnly ? "Read only" : _active.Status);')
+          replace(app+'EditorPage.Menus.cs','        var bookmarks = Menu("Bookmarks");','        BuildLspMenu(languageMenu);\n        var bookmarks = Menu("Bookmarks");')
+          replace(app+'EditorPage.Menus.cs','AddEvent("Saved " + file.Name); return true;','AddEvent("Saved " + file.Name); await NotifyLspSavedAsync(entry, snapshot); return true;')
+          replace(app+'EditorPage.Diagnostics.cs','            SnippetActive = _active.IsSnippetActive,',
+              '''            LspConnected = _active.SyntaxLanguage is EditorScene.Protocol.LspSyntaxLanguage,
+                      LspVersion = (_active.SyntaxLanguage as EditorScene.Protocol.LspSyntaxLanguage)?.ServerVersion ?? 0,
+                      ClassificationCount = analysis?.Classifications.Length ?? 0,
+                      SnippetActive = _active.IsSnippetActive,''')
+          replace(app+'EditorPage.Diagnostics.cs','    public bool SnippetActive { get; set; }',
+              '    public bool LspConnected { get; set; }\n    public int LspVersion { get; set; }\n    public int ClassificationCount { get; set; }\n    public bool SnippetActive { get; set; }')
+          replace('tools/browser-smoke.mjs',"import assert from 'node:assert/strict';",
+              "import assert from 'node:assert/strict';\nimport {createLspFixture} from './lsp-fixture.mjs';\nimport {checkLsp} from './browser-lsp.mjs';")
+          replace('tools/browser-smoke.mjs',"await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));",
+              "const lspFixture=createLspFixture(server);\nawait new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));")
+          replace('tools/browser-smoke.mjs','  const snippetXml=',
+              '  await checkLsp({page,command,click,fill,paste,focusEditor,wait,textIs,state,checks,output,fixture:lspFixture,origin});\n  const snippetXml=')
+          replace('tools/browser-smoke.mjs','await browser?.close();await new Promise(resolve=>server.close(resolve));',
+              'await browser?.close();await lspFixture.close();await new Promise(resolve=>server.close(resolve));')
+          PY
+          git diff --check
+          node --check tools/browser-smoke.mjs
+          node --check tools/lsp-fixture.mjs
+          node --check tools/browser-lsp.mjs
+      - name: Commit source-only changes on the feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/EditorScene.App/EditorPage.cs src/EditorScene.App/EditorPage.Menus.cs src/EditorScene.App/EditorPage.Diagnostics.cs tools/browser-smoke.mjs
+          git commit -m 'feat(app): wire explicit LSP connections, document lifecycle and browser protocol scenarios'
+          git push origin HEAD:feat/lsp-editor-integration
+          git rev-parse HEAD

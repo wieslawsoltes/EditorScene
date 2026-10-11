@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+
+export async function checkLsp({page,command,click,fill,paste,focusEditor,wait,textIs,state,checks,output,fixture,origin}) {
+  const before='class Demo\n{\n    LisSuffix\n}\n';
+  await paste(before);await command('Language','Connect Language Server…');
+  await fill('LSP endpoint',origin.replace('http:','ws:')+'/EditorScene/lsp-test');
+  await fill('LSP document URI','file:///workspace/LspDemo.cs');await fill('LSP language ID','csharp');
+  await click('Dialog Connect');
+  await wait(()=>{const s=globalThis.__editorSceneState;return s?.LspConnected&&s.AnalysisRevision===s.Revision&&s.Symbols.includes('RemoteDemo')&&s.ClassificationCount===2&&s.Foldings>0&&s.Diagnostics.some(d=>d.startsWith('LSP001:'));});
+  await fixture.waitFor('textDocument/didOpen');assert.equal(fixture.sessions[0].text,before);
+  checks.push('Explicit language-server dialog establishes real WebSocket LSP with remote diagnostics, symbols, semantic colors and folding');
+  fixture.rejectWorkspaceEdit();await fixture.waitFor('serverRequestResult');await textIs(before);
+  checks.push('Unadvertised server workspace edits are rejected without changing documents');
+  await focusEditor();await page.keyboard.press('Control+Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('End');
+  for(let i=0;i<6;i++)await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Control+Space');await wait(()=>globalThis.__editorSceneState?.CompletionOpen&&globalThis.__editorSceneState.CompletionLabels.includes('List'));
+  await page.screenshot({path:path.join(output,'lsp-completion.png')});await page.keyboard.type('t');await page.keyboard.press('Tab');
+  const completed='using System.Collections.Generic;\nclass Demo\n{\n    List<int>\n}\n';await textIs(completed);
+  await page.keyboard.press('Control+z');await textIs(before.replace('LisSuffix','ListSuffix'));
+  await page.keyboard.press('Control+y');await textIs(completed);
+  checks.push('Remote completion replaces the complete suffix after filtering, adds an import and undoes both edits atomically');
+  await command('IntelliPrompt','Quick Info');await wait(()=>globalThis.__editorSceneState?.QuickInfoOpen);await page.keyboard.press('Escape');
+  await focusEditor();await page.keyboard.press('Control+Shift+Space');await wait(()=>globalThis.__editorSceneState?.SignatureOpen);await page.keyboard.press('Escape');
+  checks.push('Remote hover and signature-help results appear in native IntelliPrompt controls');
+  await click('Toolbar Format document');const formatted=completed.replace('List<int>','List<int> values;');await textIs(formatted);
+  const download=page.waitForEvent('download');await click('Toolbar Save');const saved=await download;const savedPath=path.join(output,'lsp-saved.cs');await saved.saveAs(savedPath);
+  assert.equal(await readFile(savedPath,'utf8'),formatted);await fixture.waitFor('textDocument/didSave');
+  assert.ok(fixture.journal.some(x=>x.method==='textDocument/didChange'&&x.params.contentChanges[0].range));
+  checks.push('Remote formatting, incremental UTF-16 synchronization and negotiated save match the downloaded file');
+  await page.screenshot({path:path.join(output,'lsp-editor.png')});
+  await command('Language','Disconnect Language Server');await wait(()=>globalThis.__editorSceneState?.LspConnected===false);await fixture.waitFor('sessionEnded');
+  assert.equal(fixture.sessions[0].closed,true);assert.deepEqual(fixture.errors,[]);
+  assert.equal(fixture.journal.filter(x=>x.method==='textDocument/didOpen').length,1);
+  await writeFile(path.join(output,'lsp-protocol.json'),JSON.stringify({passed:true,journal:fixture.journal,errors:fixture.errors},null,2));
+  checks.push('Disconnect closes the document and language server and restores the built-in language provider');
+}
