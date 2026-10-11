@@ -1,0 +1,79 @@
+{
+  "sourceRevision": "1fdac57e1152cc67710f873245a5f911b1c1a2ef",
+  "baselineRevision": "dd8b5650a3d9620fe6d4c926406153664f459d32",
+  "workflowRun": 38147121258,
+  "testJob": 114492749039,
+  "artifactId": 11705292811,
+  "artifactName": "regression-tests",
+  "fullReportPathInArtifact": "performance.json",
+  "artifactZipSha256": "3fd8867ab0072efb82267777c63511e3e5812fc6fa413388a5146f18d78ae3f0",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "description": "Exact review-scenario rows extracted from the completed CI benchmark log. Earlier PR #3 scenarios are intentionally omitted; the complete report is in the identified artifact. The browser job on this run subsequently found a menu-focus bug, fixed in a later commit; this file records CPU/managed-allocation measurements, not an all-tests-pass claim.",
+  "methodology": "Single-process Stopwatch and current-thread managed allocations. Three warmups, then eleven measurements. Fresh document/snapshot setup and disposal excluded. Previous paths reproduced from the specified baseline. Pooled buffers and interval index are warm. No absolute timing gate, physical GPU, FPS, battery or input-latency claims.",
+  "fixtures": {
+    "tail_literal_search": "4,200,006 UTF-16 characters; search begins at offset 4,200,000 for the final six-character needle. Measures avoiding unnecessary full-document materialization, not whole-document throughput.",
+    "bracket_scan_sparse": "4,200,002 UTF-16 characters with one matched bracket pair. Both implementations scan the entire snapshot. Pair-storage costs for dense code are not represented.",
+    "deep_diagnostic_queries_1000": "100,000 one-character ranges ten characters apart; 1,000 queries of offsets 999,950 through 999,999 per sample. Both return five matches per query. Index construction and caller-buffer capacity are excluded."
+  },
+  "rows": [
+    {
+      "scenario": "tail_literal_search",
+      "implementation": "previous",
+      "p50Milliseconds": 0.9065,
+      "p95Milliseconds": 2.4909,
+      "medianAllocatedBytes": 8400040,
+      "sortedElapsedMilliseconds": [0.8172, 0.8298, 0.844, 0.8824, 0.8903, 0.9065, 1.0108, 1.6592, 2.255, 2.3135, 2.4909],
+      "sortedAllocatedBytes": [8400040, 8400040, 8400040, 8400040, 8400040, 8400040, 8400040, 8400040, 8400040, 8400040, 8400040]
+    },
+    {
+      "scenario": "tail_literal_search",
+      "implementation": "current",
+      "p50Milliseconds": 0.0207,
+      "p95Milliseconds": 0.0275,
+      "medianAllocatedBytes": 1552,
+      "sortedElapsedMilliseconds": [0.0152, 0.0161, 0.0178, 0.0202, 0.0203, 0.0207, 0.021, 0.0211, 0.0212, 0.0263, 0.0275],
+      "sortedAllocatedBytes": [1552, 1552, 1552, 1552, 1552, 1552, 1552, 1552, 1552, 1552, 1552]
+    },
+    {
+      "scenario": "bracket_scan_sparse",
+      "implementation": "previous",
+      "p50Milliseconds": 8.9493,
+      "p95Milliseconds": 9.737,
+      "medianAllocatedBytes": 8400312,
+      "sortedElapsedMilliseconds": [8.8351, 8.8744, 8.8774, 8.9216, 8.9281, 8.9493, 8.9697, 9.034, 9.5698, 9.6516, 9.737],
+      "sortedAllocatedBytes": [8400312, 8400312, 8400312, 8400312, 8400312, 8400312, 8400312, 8400312, 8400312, 8400312, 8400312]
+    },
+    {
+      "scenario": "bracket_scan_sparse",
+      "implementation": "current",
+      "p50Milliseconds": 7.4976,
+      "p95Milliseconds": 7.703,
+      "medianAllocatedBytes": 792,
+      "sortedElapsedMilliseconds": [7.3842, 7.4324, 7.4335, 7.4339, 7.4502, 7.4976, 7.5119, 7.5603, 7.5636, 7.6552, 7.703],
+      "sortedAllocatedBytes": [792, 792, 792, 792, 792, 792, 792, 792, 792, 792, 792]
+    },
+    {
+      "scenario": "deep_diagnostic_queries_1000",
+      "implementation": "previous",
+      "p50Milliseconds": 93.9764,
+      "p95Milliseconds": 94.3926,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [93.7623, 93.8143, 93.8213, 93.8597, 93.9335, 93.9764, 93.9873, 94.0049, 94.1239, 94.2918, 94.3926],
+      "sortedAllocatedBytes": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "scenario": "deep_diagnostic_queries_1000",
+      "implementation": "current",
+      "p50Milliseconds": 0.7133,
+      "p95Milliseconds": 1.2816,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0.6881, 0.6928, 0.6929, 0.7027, 0.7113, 0.7133, 0.714, 0.727, 0.7296, 0.736, 1.2816],
+      "sortedAllocatedBytes": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+  ]
+}
