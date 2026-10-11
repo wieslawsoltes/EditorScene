@@ -1,27 +1,52 @@
+using EditorScene.Rendering.Skia;
+
 namespace EditorScene.Controls;
 
 public sealed partial class SyntaxEditor
 {
+    private bool _copyingViewSettings;
     /// <summary>Whether this control has released its native view. The host still owns external documents/providers.</summary>
     public bool IsDisposed => _disposed;
 
-    /// <summary>Copy view-owned settings, not text, carets, selection, undo history, services or event handlers.
-    /// Use before attaching a new split to the visual tree. Subsequent changes remain independent.</summary>
+    /// <summary>Copy a captured set of view-owned settings, not text, carets, services or event handlers.
+    /// Stops if a synchronous host callback changes the target binding/settings or disposes the view.
+    /// Already completed settings are not rolled back. Subsequent edits remain independent.</summary>
     public void CopyViewSettingsFrom(SyntaxEditor source)
     {
         ObjectDisposedException.ThrowIf(_disposed, this); ArgumentNullException.ThrowIfNull(source);
         ObjectDisposedException.ThrowIf(source._disposed, source);
         Document.VerifyAccess(); source.Document.VerifyAccess();
-        if (ReferenceEquals(source, this)) return;
-        // Read all settings before applying any that can raise host callbacks.
-        var readOnly = source.IsReadOnly; var wrap = source.WordWrap; var numbers = source.ShowLineNumbers;
-        var whitespace = source.ShowWhitespace; var guides = source.ShowIndentGuides; var ruler = source.ShowRuler;
-        var brackets = source.AutoCompleteBrackets; var completion = source.AutoShowCompletion;
-        var fontSize = source.FontSize; var theme = source.Theme;
-        IsReadOnly = readOnly; WordWrap = wrap; ShowLineNumbers = numbers;
-        ShowWhitespace = whitespace; ShowIndentGuides = guides; ShowRuler = ruler;
-        AutoCompleteBrackets = brackets; AutoShowCompletion = completion;
-        FontSize = fontSize;
-        if (!_disposed) Theme = theme;
+        if (ReferenceEquals(source, this) || _copyingViewSettings) return;
+        var desired = CaptureViewSettings(source); var expected = CaptureViewSettings(this);
+        var document = Document; var language = SyntaxLanguage;
+        bool Current() => !_disposed && ReferenceEquals(Document, document) && ReferenceEquals(SyntaxLanguage, language) && CaptureViewSettings(this) == expected;
+        _copyingViewSettings = true;
+        try
+        {
+            // Each setter can synchronously invoke host code. Compare the entire
+            // previously observed settings between stages, not merely this property.
+            for (var step = 0; step < 10; step++)
+            {
+                if (!Current()) return;
+                switch (step)
+                {
+                    case 0: expected = expected with { ReadOnly = desired.ReadOnly }; IsReadOnly = desired.ReadOnly; break;
+                    case 1: expected = expected with { Wrap = desired.Wrap }; WordWrap = desired.Wrap; break;
+                    case 2: expected = expected with { Numbers = desired.Numbers }; ShowLineNumbers = desired.Numbers; break;
+                    case 3: expected = expected with { Whitespace = desired.Whitespace }; ShowWhitespace = desired.Whitespace; break;
+                    case 4: expected = expected with { Guides = desired.Guides }; ShowIndentGuides = desired.Guides; break;
+                    case 5: expected = expected with { Ruler = desired.Ruler }; ShowRuler = desired.Ruler; break;
+                    case 6: expected = expected with { Brackets = desired.Brackets }; AutoCompleteBrackets = desired.Brackets; break;
+                    case 7: expected = expected with { Completion = desired.Completion }; AutoShowCompletion = desired.Completion; break;
+                    case 8: expected = expected with { FontSize = desired.FontSize }; FontSize = desired.FontSize; break;
+                    case 9: expected = expected with { Theme = desired.Theme }; Theme = desired.Theme; break;
+                }
+            }
+        }
+        finally { _copyingViewSettings = false; }
     }
+    private static CopiedViewSettings CaptureViewSettings(SyntaxEditor editor) => new(editor.IsReadOnly, editor.WordWrap, editor.ShowLineNumbers,
+        editor.ShowWhitespace, editor.ShowIndentGuides, editor.ShowRuler, editor.AutoCompleteBrackets, editor.AutoShowCompletion, editor.FontSize, editor.Theme);
+    private readonly record struct CopiedViewSettings(bool ReadOnly, bool Wrap, bool Numbers, bool Whitespace, bool Guides, bool Ruler,
+        bool Brackets, bool Completion, double FontSize, EditorTheme Theme);
 }
