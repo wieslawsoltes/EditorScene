@@ -68,7 +68,18 @@ export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,co
   if((await state()).WordWrap)await command('View','Word Wrap');
   await click('Theme');await click('Choice Dark');await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');
   await page.screenshot({path:path.join(output,'classic-editor-dark.png')});
-  await click('Toolbar commands');await click('Visible command Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
+  await click('Toolbar commands');
+  await wait(()=>!!globalThis.__editorSceneState?.Controls?.['Visible submenu Search']);
+  const viewport=page.viewportSize();
+  const groups=Object.entries((await state()).Controls).filter(([name])=>name.startsWith('Visible submenu '));
+  assert.equal(groups.length,7,'Toolbar overflow must contain seven bounded command groups');
+  for(const [name,b] of groups) assert.ok(b[0]>=0&&b[1]>=0&&b[0]+b[2]<=viewport.width+1&&b[1]+b[3]<=viewport.height+1,`${name} must be inside the viewport`);
+  await click('Visible submenu Search');
+  await wait(()=>!!globalThis.__editorSceneState?.Controls?.['Visible command Find']);
+  const findBounds=(await state()).Controls['Visible command Find'];
+  assert.ok(findBounds[0]>=0&&findBounds[1]>=0&&findBounds[0]+findBounds[2]<=viewport.width+1&&findBounds[1]+findBounds[3]<=viewport.height+1,'Find must be on screen before actual pointer input');
+  await page.screenshot({path:path.join(output,'classic-toolbar-overflow.png')});
+  await click('Visible command Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
   await click('PART_close');await focusEditor();await textIs(sample);
   checks.push('Toolbar overflow exposes real commands while the compact workspace retains the current editor document');
 }

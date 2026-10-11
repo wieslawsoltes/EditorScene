@@ -112,12 +112,12 @@ public sealed partial class EditorPage
         var button = new Button { Content = NewIcon(icon), Width = 26, Height = 25, MinHeight = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         ToolTipService.SetToolTip(button, label); button.Click += (_, _) => _ = GuardAsync(action); _toolbar.Children.Add(button); Register("Toolbar " + label, button);
         var overflow = new MenuFlyoutItem { Text = label, FontSize = 12 };
-        overflow.Click += (_, _) => _ = GuardAsync(action); _toolbarOverflow.Items.Add(overflow);
+        overflow.Click += (_, _) => _ = GuardAsync(action); AddToolbarOverflow(overflow);
     }
     private void ToolSeparator()
     {
         var border = new Border { Width = 1, Height = 17, Margin = new Thickness(4, 4, 4, 4), Background = SyntaxEditor.Brush(_theme.Border) };
-        _toolbar.Children.Add(border); _toolbarSeparators.Add(border); _toolbarOverflow.Items.Add(new MenuFlyoutSeparator());
+        _toolbar.Children.Add(border); _toolbarSeparators.Add(border);
     }
     private void LoadLargeDocument()
     {
