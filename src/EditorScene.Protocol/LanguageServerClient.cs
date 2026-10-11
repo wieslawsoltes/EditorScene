@@ -50,7 +50,7 @@ public sealed class LanguageServerClient : IAsyncDisposable
                         ["diagnostic"] = new JsonObject { ["dynamicRegistration"] = false, ["relatedDocumentSupport"] = false },
                         ["semanticTokens"] = new JsonObject
                         {
-                            ["requests"] = new JsonObject { ["full"] = true }, ["formats"] = new JsonArray("relative"),
+                            ["requests"] = new JsonObject { ["full"] = new JsonObject { ["delta"] = true } }, ["formats"] = new JsonArray("relative"),
                             ["tokenTypes"] = new JsonArray("namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property", "enumMember", "event", "function", "method", "macro", "keyword", "modifier", "comment", "string", "number", "regexp", "operator", "decorator"),
                             ["tokenModifiers"] = new JsonArray("declaration", "definition", "readonly", "static", "deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary"),
                             ["multilineTokenSupport"] = false, ["overlappingTokenSupport"] = false
@@ -92,7 +92,7 @@ public sealed class LanguageServerClient : IAsyncDisposable
             if (snapshot.Revision == current.Snapshot.Revision) return;
             if (Synchronization.Change == LspTextSyncKind.None) throw new NotSupportedException("The server did not negotiate document changes.");
             var version = checked(current.Version + 1);
-            var change = Synchronization.Change == LspTextSyncKind.Incremental ? LspTextChange.Create(current.Snapshot, snapshot) : new JsonObject { ["text"] = snapshot.Text };
+            var change = Synchronization.Change == LspTextSyncKind.Incremental ? LspTextChange.Create(current.Snapshot, snapshot, cancellationToken) : new JsonObject { ["text"] = snapshot.Text };
             await _rpc.NotifyAsync("textDocument/didChange", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = uri.AbsoluteUri, ["version"] = version }, ["contentChanges"] = new JsonArray(change) }, cancellationToken).ConfigureAwait(false);
             _documents[uri] = new(version, snapshot);
         }
@@ -129,6 +129,12 @@ public sealed class LanguageServerClient : IAsyncDisposable
     public Task<JsonNode?> SymbolsAsync(Uri uri, CancellationToken cancellationToken = default) => Request("textDocument/documentSymbol", DocumentParameters(uri), cancellationToken);
     public Task<JsonNode?> FoldingAsync(Uri uri, CancellationToken cancellationToken = default) => Request("textDocument/foldingRange", DocumentParameters(uri), cancellationToken);
     public Task<JsonNode?> SemanticTokensAsync(Uri uri, CancellationToken cancellationToken = default) => Request("textDocument/semanticTokens/full", DocumentParameters(uri), cancellationToken);
+    public Task<JsonNode?> SemanticTokensDeltaAsync(Uri uri, string previousResultId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(previousResultId);
+        var parameters = DocumentParameters(uri); parameters["previousResultId"] = previousResultId;
+        return Request("textDocument/semanticTokens/full/delta", parameters, cancellationToken);
+    }
     public Task<JsonNode?> DiagnosticsAsync(Uri uri, string? previousResultId = null, CancellationToken cancellationToken = default)
     {
         var parameters = DocumentParameters(uri);

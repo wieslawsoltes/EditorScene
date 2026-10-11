@@ -178,23 +178,39 @@ public static class LspResultConverter
         return resultList.ToImmutable();
     }
     public static ImmutableArray<ClassificationSpan> SemanticTokens(DocumentSnapshot snapshot, IReadOnlyList<string> legend, JsonNode? result)
+        => DecodeSemanticTokens(snapshot, legend, SemanticTokenData.FromFull(result).Data.AsSpan());
+
+    /// <summary>Decode without temporary JSON positions or repeated lookups for tokens on the same line.</summary>
+    public static ImmutableArray<ClassificationSpan> DecodeSemanticTokens(DocumentSnapshot snapshot, IReadOnlyList<string> legend,
+        ReadOnlySpan<int> values, CancellationToken cancellationToken = default)
     {
-        if (result is null) return [];
-        var values = Object(result)["data"] as JsonArray ?? throw new InvalidDataException("Missing semantic-token data.");
-        if (values.Count % 5 != 0 || values.Count / 5 > MaxItems) throw new InvalidDataException("Invalid semantic-token data length.");
-        var items = ImmutableArray.CreateBuilder<ClassificationSpan>(); var line = 0; var character = 0; var previousEnd = 0;
-        for (var i = 0; i < values.Count; i += 5)
+        ArgumentNullException.ThrowIfNull(snapshot); ArgumentNullException.ThrowIfNull(legend);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (values.Length % 5 != 0 || values.Length > SemanticTokenData.MaximumIntegers) throw new InvalidDataException("Invalid semantic-token data length.");
+        var items = ImmutableArray.CreateBuilder<ClassificationSpan>(values.Length / 5);
+        var line = 0; var character = 0; var previousEnd = 0; var currentLine = -1; SnapshotLine lineInfo = default;
+        for (var i = 0; i < values.Length; i += 5)
         {
-            var delta = values[i]!.GetValue<int>(); var column = values[i + 1]!.GetValue<int>(); var length = values[i + 2]!.GetValue<int>(); var type = values[i + 3]!.GetValue<int>();
-            if (delta < 0 || column < 0 || length <= 0 || type < 0 || type >= legend.Count || values[i + 4]!.GetValue<long>() < 0) throw new InvalidDataException("Invalid semantic token.");
-            line = checked(line + delta); character = delta == 0 ? checked(character + column) : column;
-            var start = Offset(snapshot, LspTextChange.Position(new(line, character))); var end = Offset(snapshot, LspTextChange.Position(new(line, checked(character + length))));
-            if (start < previousEnd) throw new InvalidDataException("Overlapping semantic tokens.");
-            previousEnd = end; var kind = legend[type] switch
-            { "class" or "interface" or "struct" or "enum" or "typeParameter" => "type", "function" => "method", "regexp" => "string", "modifier" => "keyword", var name => name };
-            items.Add(new(new(start, end - start), kind));
+            if (i % 1280 == 0) cancellationToken.ThrowIfCancellationRequested();
+            var delta = values[i]; var column = values[i + 1]; var length = values[i + 2]; var type = values[i + 3];
+            if (delta < 0 || column < 0 || length <= 0 || type < 0 || type >= legend.Count || values[i + 4] < 0 || delta > int.MaxValue - line)
+                throw new InvalidDataException("Invalid semantic token.");
+            line += delta;
+            if (delta == 0 && column > int.MaxValue - character) throw new InvalidDataException("Semantic-token column overflow.");
+            character = delta == 0 ? character + column : column;
+            if (line >= snapshot.LineCount) throw new InvalidDataException("Semantic token is outside the snapshot.");
+            if (line != currentLine) { lineInfo = snapshot.GetLine(line); currentLine = line; }
+            if (character > lineInfo.Length || length > lineInfo.Length - character) throw new InvalidDataException("Semantic token is outside its line.");
+            var start = lineInfo.Offset + character; var end = start + length;
+            if (start < previousEnd || SplitsSurrogate(start) || SplitsSurrogate(end)) throw new InvalidDataException("Overlapping semantic tokens or split surrogate pair.");
+            previousEnd = end;
+            var kind = legend[type] switch
+            { "class" or "interface" or "struct" or "enum" or "typeParameter" => "type", "method" => "function", "regexp" => "string", "modifier" => "keyword", var name => name };
+            items.Add(new(new(start, length), kind));
         }
-        return items.ToImmutable();
+        return items.MoveToImmutable();
+        bool SplitsSurrogate(int offset) => offset > 0 && offset < snapshot.Length &&
+            char.IsHighSurrogate(snapshot.TextSource.GetCharAt(offset - 1)) && char.IsLowSurrogate(snapshot.TextSource.GetCharAt(offset));
     }
     private static string Kind(int value) => value switch { 2 or 3 or 4 => "method", 5 or 10 => "property", 7 or 8 or 9 or 13 or 22 or 25 => "type", 14 => "keyword", 21 => "constant", _ => "symbol" };
     private static string SymbolKind(int value) => value switch { 2 or 3 or 4 => "namespace", 5 or 11 or 23 or 26 => "type", 6 or 9 or 12 => "method", 7 or 8 or 22 => "property", 10 => "enum", _ => "variable" };
