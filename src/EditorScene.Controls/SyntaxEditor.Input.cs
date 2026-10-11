@@ -1,4 +1,5 @@
 using EditorScene.Text;
+using EditorScene.Text.Macros;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Input;
 using UnoEdit.Editing;
@@ -27,13 +28,18 @@ public sealed partial class SyntaxEditor
             _owner._chord = null;
             if (!_owner._disposed && !TextArea.StackedInputHandlers.Contains(this)) TextArea.PushStackedInputHandler(this);
         }
-        public override void OnPreviewKeyDown(KeyRoutedEventArgs e) => _owner.HandleKey(e);
+        public override void OnPreviewKeyDown(KeyRoutedEventArgs e)
+        {
+            try { _owner.HandleKey(e); _owner.RecordNativeMacroKey(e); }
+            catch (Exception error) { e.Handled = true; _owner.ReportError(error); }
+        }
     }
     private void HandleKey(KeyRoutedEventArgs e)
     {
         if (_disposed || e.Handled) return;
-        // A chord may be entered with Ctrl held throughout, or released and
-        // pressed again. Modifier-only keydowns must not consume its prefix.
+        if (MacroRecording.State == MacroRecordingState.Playing)
+        { if (e.Key == VirtualKey.Escape) CancelMacroPlayback(); e.Handled = true; return; }
+        // Modifier-only keydowns must not consume a pending chord prefix.
         if (e.Key is VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl
             or VirtualKey.Shift or VirtualKey.LeftShift or VirtualKey.RightShift
             or VirtualKey.Menu or VirtualKey.LeftMenu or VirtualKey.RightMenu
@@ -44,10 +50,9 @@ public sealed partial class SyntaxEditor
         {
             _chord = null; e.Handled = true; _ = ShowSnippetPickerAsync(e.Key == VirtualKey.S); return;
         }
-        if (!command && !alt && !shift && e.Key == VirtualKey.Tab && !Selections.IsActive)
+        if (!command && !alt && !shift && e.Key == VirtualKey.Tab && !Selections.IsActive && !MacroSessionActive)
         {
-            try { if (TryExpandSnippetShortcut()) { e.Handled = true; return; } }
-            catch (Exception error) { e.Handled = true; ReportError(error); return; }
+            if (TryExpandSnippetShortcut()) { e.Handled = true; return; }
         }
         EditorCommand? action = null;
         if (command && !alt)
@@ -72,13 +77,11 @@ public sealed partial class SyntaxEditor
         else if (!command && !alt)
         {
             action = e.Key switch { VirtualKey.F2 => shift ? EditorCommand.PreviousBookmark : EditorCommand.NextBookmark, VirtualKey.F9 => EditorCommand.ToggleBreakpoint, _ => null };
-            if (e.Key == VirtualKey.Insert) { IsOverstrike = !IsOverstrike; e.Handled = true; return; }
+            if (e.Key == VirtualKey.Insert) { MacroRecording.NotifyEditAction(new("native.Overstrike")); IsOverstrike = !IsOverstrike; e.Handled = true; return; }
         }
         if (action is { } selected) { e.Handled = true; _ = ExecuteAsync(selected); return; }
         if (e.Key == VirtualKey.Escape)
-        {
-            _chord = null; if (Selections.IsActive) { ClearMultiSelection(); e.Handled = true; } return;
-        }
+        { _chord = null; if (Selections.IsActive) { ClearMultiSelection(); e.Handled = true; } return; }
         if (Selections.IsActive && e.Key is VirtualKey.Back or VirtualKey.Delete or VirtualKey.Enter or VirtualKey.Tab)
         {
             e.Handled = true; _multiEditing = true;
@@ -88,13 +91,13 @@ public sealed partial class SyntaxEditor
                 else Selections.Replace(e.Key == VirtualKey.Enter ? Document.PreferredLineEnding : new string(' ', _editor.Options.IndentationSize), CanEdit);
                 SynchronizeMultiSelection();
             }
-            catch (Exception exception) { ReportError(exception); }
             finally { _multiEditing = false; }
         }
         else if (e.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Up or VirtualKey.Down or VirtualKey.Home or VirtualKey.End or VirtualKey.PageDown or VirtualKey.PageUp) ClearMultiSelection();
     }
     private void OnPointerPressed(object sender, PointerRoutedEventArgs args)
     {
+        if (MacroSessionActive) { args.Handled = true; return; }
         var point = args.GetCurrentPoint(_editor.TextArea.TextView);
         if (!point.Properties.IsLeftButtonPressed) return;
         if ((args.KeyModifiers & VirtualKeyModifiers.Menu) != 0)
@@ -109,6 +112,7 @@ public sealed partial class SyntaxEditor
     private void OnTextEntering(object? sender, TextInputEventArgs args)
     {
         if (_disposed || args.Handled || IsReadOnly) return;
+        MacroRecording.NotifyEditAction(MacroStep.InsertText(args.Text));
         if (Selections.IsActive)
         {
             args.Handled = true; _multiEditing = true;
@@ -133,11 +137,11 @@ public sealed partial class SyntaxEditor
         if (!CanEdit(new(start, SelectionLength, c + selected + close))) return;
         args.Handled = true;
         ApplyUserEdits([new(start, SelectionLength, c + selected + close)]); _editor.Select(start + 1, selected.Length);
-        if (AutoShowCompletion && c == '(' && selected.Length == 0) _ = ExecuteAsync(EditorCommand.SignatureHelp);
+        if (AutoShowCompletion && !MacroSessionActive && c == '(' && selected.Length == 0) _ = ExecuteAsync(EditorCommand.SignatureHelp);
     }
     private void OnTextEntered(object? sender, TextInputEventArgs args)
     {
-        if (_disposed || !AutoShowCompletion) return;
+        if (_disposed || !AutoShowCompletion || MacroSessionActive) return;
         if (args.Text == ".") _ = ExecuteAsync(EditorCommand.CompleteWord);
         else if (args.Text is "(" or ",") _ = ExecuteAsync(EditorCommand.SignatureHelp);
     }
