@@ -1,0 +1,56 @@
+{
+  "sourceRevision": "e09ade78311b7a4fe2320e7561439b4586a5488e",
+  "workflowRun": 38169626929,
+  "testJob": 114559319159,
+  "artifactId": 11713657025,
+  "artifactName": "regression-tests",
+  "fullReportPath": "performance.json",
+  "artifactZipSha256ReportedByCI": "edd4890b61f7d4a256a034dc2ea7032ea1f7e5e34fbebfb20ee240ae45de2e85",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "status": "These exact workspace rows were read from the successful test/benchmark job. The same workflow's native host later exposed an asynchronous TextChanged observation error in the new test; that test was corrected in a subsequent commit. Benchmark success is not a claim that this entire historical workflow passed.",
+  "methodology": "Current-thread managed allocations and CPU Stopwatch measurements. Diagnostic projection rebuilding versus returning a retained immutable array measures avoiding repeated work, not faster construction. Glyph comparison records and replays the same NEW geometry per draw versus reusing a picture; it is NOT a reproduction of the preceding EditorIcon implementation. Bitmap is CPU 16x16, 1000 draws per sample. Cached warmup/recording excluded; retained native picture memory, other-thread allocations, layout/UI/compositor, physical GPU and end-to-end latency are not measured.",
+  "rows": [
+    {
+      "scenario": "diagnostic_rows_10000",
+      "implementation": "rebuild_projection",
+      "p50Milliseconds": 1.0649,
+      "p95Milliseconds": 1.119,
+      "medianAllocatedBytes": 480128,
+      "sortedElapsedMilliseconds": [1.0574,1.058,1.062,1.0634,1.0643,1.0649,1.065,1.0722,1.0791,1.0836,1.119],
+      "sortedAllocatedBytes": [480128,480128,480128,480128,480128,480128,480128,480128,480128,480128,480128]
+    },
+    {
+      "scenario": "diagnostic_rows_10000",
+      "implementation": "reuse_unfiltered_projection",
+      "p50Milliseconds": 0,
+      "p95Milliseconds": 0.0001,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0,0,0,0,0,0,0,0,0,0.0001,0.0001],
+      "sortedAllocatedBytes": [0,0,0,0,0,0,0,0,0,0,0],
+      "note": "Zero rounded elapsed samples are below timer/report resolution, not literally zero execution time. Fresh projection construction and filtered queries still cost work."
+    },
+    {
+      "scenario": "glyph_draws_1000",
+      "implementation": "record_each_draw",
+      "p50Milliseconds": 17.0039,
+      "p95Milliseconds": 22.7338,
+      "medianAllocatedBytes": 1872000,
+      "sortedElapsedMilliseconds": [16.2955,16.2977,16.8124,16.8466,16.8609,17.0039,18.3157,18.3943,21.4646,21.7666,22.7338],
+      "sortedAllocatedBytes": [1872000,1872000,1872000,1872000,1872000,1872000,1872000,1872000,1872000,1872048,1872376]
+    },
+    {
+      "scenario": "glyph_draws_1000",
+      "implementation": "cached_picture_replay",
+      "p50Milliseconds": 8.2783,
+      "p95Milliseconds": 13.1649,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [8.2604,8.2653,8.2672,8.2742,8.2775,8.2783,8.2943,8.2988,8.3409,8.4127,13.1649],
+      "sortedAllocatedBytes": [0,0,0,0,0,0,0,0,0,0,0]
+    }
+  ]
+}
