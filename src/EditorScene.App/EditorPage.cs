@@ -40,6 +40,8 @@ public sealed partial class EditorPage : Page
     private readonly Dictionary<string, FrameworkElement> _ui = new(StringComparer.Ordinal);
     private readonly Dictionary<MenuFlyoutItem, Func<bool>> _checks = [];
     private readonly List<EditorIcon> _icons = [];
+    private readonly HashSet<string> _tabControlNames = [];
+    private Button? _closeTabButton;
     private readonly List<Border> _chromeBorders = [];
     private readonly List<Panel> _chromePanels = [];
     private readonly SyntaxEditor _primary = new();
@@ -66,7 +68,7 @@ public sealed partial class EditorPage : Page
         _diagnostics |= Environment.GetEnvironmentVariable("EDITORSCENE_NATIVE_CHECKS") == "1";
         BuildLayout(); WireEditor(_primary); SetActive(_primary);
         _events.ItemsSource = _eventItems;
-        _errors.ItemClick += (_, e) => { if (e.ClickedItem is DiagnosticRow row) { _active.Select(row.Diagnostic.Range.Offset, row.Diagnostic.Range.Length); _active.FocusEditor(); } };
+        _errors.ItemClick += (_, e) => { if (e.ClickedItem is DiagnosticRow row && row.DocumentId == _active.Document.Id && row.Revision == _active.Document.Revision) { _active.Select(row.Diagnostic.Range.Offset, row.Diagnostic.Range.Length); _active.FocusEditor(); } };
         _languagePicker.ItemsSource = _languages.Languages.Select(l => l.DisplayName).ToArray();
         _languagePicker.SelectionChanged += (_, _) =>
         {
@@ -149,31 +151,48 @@ public sealed partial class EditorPage : Page
     private void ActivateDocument(WorkspaceDocument entry)
     {
         if (_current is not null) _current.Caret = _primary.CaretOffset;
-        _current = entry; _primary.Document = entry.Document; _primary.SyntaxLanguage = entry.Language;
-        if (_secondary is not null) { _secondary.Document = entry.Document; _secondary.SyntaxLanguage = entry.Language; }
+        _current = entry; _primary.SetDocumentAndLanguage(entry.Document, entry.Language);
+        if (_secondary is not null) { _secondary.SetDocumentAndLanguage(entry.Document, entry.Language); }
         _primary.CaretOffset = Math.Clamp(entry.Caret, 0, entry.Document.Buffer.TextLength);
         SetActive(_primary); UpdateLspPicker();
         _errors.ItemsSource = null; _errorTab.Content = "Error List (analyzing…)"; RebuildTabCaptions(); UpdateStatus(); _primary.FocusEditor();
     }
     private void RebuildTabs()
     {
-        _tabs.Children.Clear();
+        foreach (var name in _tabControlNames) _ui.Remove(name);
+        _tabControlNames.Clear(); _tabs.Children.Clear();
         foreach (var entry in _documents)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
             panel.Children.Add(new TextBlock { Text = entry.Document.FileName, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
             var button = new Button { Content = panel, Height = 27, MinHeight = 27, Padding = new Thickness(9, 2, 9, 2), BorderThickness = new Thickness(0, 0, 0, 2) };
-            button.Click += (_, _) => ActivateDocument(entry); entry.Tab = button; Register("Document " + entry.Document.FileName, button); _tabs.Children.Add(button);
+            button.Click += (_, _) => ActivateDocument(entry); entry.Tab = button; entry.TabTheme = null;
+            var name = "Document " + entry.Document.FileName; Register(name, button); _tabControlNames.Add(name); _tabs.Children.Add(button);
         }
-        var close = new Button { Content = NewIcon(EditorIconKind.Close), Height = 26, MinHeight = 26, Width = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0) };
-        close.Click += (_, _) => _ = GuardAsync(CloseDocumentAsync); Register("Close document", close); _tabs.Children.Add(close); RebuildTabCaptions();
+        if (_closeTabButton is null)
+        {
+            _closeTabButton = new Button { Content = NewIcon(EditorIconKind.Close), Height = 26, MinHeight = 26, Width = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0) };
+            _closeTabButton.Click += (_, _) => _ = GuardAsync(CloseDocumentAsync); Register("Close document", _closeTabButton);
+        }
+        _tabs.Children.Add(_closeTabButton); RebuildTabCaptions();
     }
     private void RebuildTabCaptions()
     {
         foreach (var entry in _documents)
         {
-            if (entry.Tab?.Content is StackPanel panel && panel.Children[0] is TextBlock text) text.Text = entry.Document.FileName + (entry.Document.IsModified ? " *" : "");
-            if (entry.Tab is { } tab) { tab.Background = SyntaxEditor.Brush(ReferenceEquals(entry, _current) ? _theme.Background : _theme.Chrome); tab.BorderBrush = SyntaxEditor.Brush(ReferenceEquals(entry, _current) ? _theme.Accent : _theme.Chrome); }
+            var active = ReferenceEquals(entry, _current); var modified = entry.Document.IsModified; var name = entry.Document.FileName;
+            if (entry.Tab is not { } tab) continue;
+            if (entry.CaptionName != name || entry.CaptionModified != modified || entry.TabTheme is null)
+            {
+                if (tab.Content is StackPanel panel && panel.Children[0] is TextBlock text) text.Text = name + (modified ? " *" : "");
+                entry.CaptionName = name; entry.CaptionModified = modified;
+            }
+            if (!ReferenceEquals(entry.TabTheme, _theme) || entry.TabActive != active)
+            {
+                tab.Background = SyntaxEditor.Brush(active ? _theme.Background : _theme.Chrome);
+                tab.BorderBrush = SyntaxEditor.Brush(active ? _theme.Accent : _theme.Chrome);
+                entry.TabTheme = _theme; entry.TabActive = active;
+            }
         }
     }
     private async Task CloseDocumentAsync()
@@ -219,7 +238,7 @@ public sealed partial class EditorPage : Page
     private void RefreshDiagnostics(LanguageAnalysis analysis)
     {
         if (_active is null || analysis.DocumentId != _active.Document.Id || analysis.Revision != _active.Document.Revision) return;
-        _errors.ItemsSource = analysis.Diagnostics.Select(d => new DiagnosticRow(d, _active.Document.Buffer.GetLocation(Math.Clamp(d.Range.Offset, 0, _active.Document.Buffer.TextLength)).Line)).ToArray();
+        _errors.ItemsSource = analysis.Diagnostics.Select(d => new DiagnosticRow(d, _active.Document.Buffer.GetLocation(Math.Clamp(d.Range.Offset, 0, _active.Document.Buffer.TextLength)).Line, analysis.DocumentId, analysis.Revision)).ToArray();
         _errorTab.Content = $"Error List ({analysis.Diagnostics.Length})"; QueueDiagnostics();
     }
     private void UpdateStatus()
@@ -268,7 +287,11 @@ public sealed partial class EditorPage : Page
         internal StorageFile? File { get; set; } = file;
         internal int Caret { get; set; }
         internal Button? Tab { get; set; }
+        internal EditorTheme? TabTheme { get; set; }
+        internal bool TabActive { get; set; }
+        internal string? CaptionName { get; set; }
+        internal bool CaptionModified { get; set; }
     }
-    private sealed record DiagnosticRow(EditorDiagnostic Diagnostic, int Line)
+    private sealed record DiagnosticRow(EditorDiagnostic Diagnostic, int Line, Guid DocumentId, long Revision)
     { public override string ToString() => $"{Diagnostic.Severity}  {Diagnostic.Code}    Line {Line}    {Diagnostic.Message}"; }
 }

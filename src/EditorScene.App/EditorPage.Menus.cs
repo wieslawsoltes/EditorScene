@@ -36,6 +36,9 @@ public sealed partial class EditorPage
         Command(edit, "Cut", EditorCommand.Cut, "Ctrl+X"); Command(edit, "Copy", EditorCommand.Copy, "Ctrl+C"); Command(edit, "Paste", EditorCommand.Paste, "Ctrl+V"); Command(edit, "Delete", EditorCommand.Delete, "Del"); Separator(edit);
         Command(edit, "Select All", EditorCommand.SelectAll, "Ctrl+A"); Command(edit, "Select Line", EditorCommand.SelectLine, "Ctrl+L"); Command(edit, "Select Next Occurrence", EditorCommand.SelectNextOccurrence, "Ctrl+D"); Command(edit, "Clear Extra Selections", EditorCommand.ClearExtraSelections, "Esc"); Separator(edit);
         Command(edit, "Find…", EditorCommand.Find, "Ctrl+F"); Command(edit, "Replace…", EditorCommand.Replace, "Ctrl+H"); Command(edit, "Find Next", EditorCommand.FindNext, "F3"); Command(edit, "Find Previous", EditorCommand.FindPrevious, "Shift+F3"); Command(edit, "Go To Line…", EditorCommand.GoToLine, "Ctrl+G");
+        Command(edit, "Select All Occurrences", EditorCommand.SelectAllOccurrences);
+        Command(edit, "Go To Matching Bracket", EditorCommand.GoToMatchingBracket);
+        Command(edit, "Select To Matching Bracket", EditorCommand.SelectToMatchingBracket);
         var advanced = Menu("Advanced");
         Command(advanced, "Increase Line Indent", EditorCommand.Indent, "Tab"); Command(advanced, "Decrease Line Indent", EditorCommand.Outdent, "Shift+Tab"); Separator(advanced);
         Command(advanced, "Comment Lines", EditorCommand.Comment, "Ctrl+K, Ctrl+C"); Command(advanced, "Uncomment Lines", EditorCommand.Uncomment, "Ctrl+K, Ctrl+U"); Command(advanced, "Format Document", EditorCommand.FormatDocument, "Ctrl+K, Ctrl+D"); Separator(advanced);
@@ -181,7 +184,7 @@ public sealed partial class EditorPage
         var result = await CachedFileManager.CompleteUpdatesAsync(file);
         if (result is not Windows.Storage.Provider.FileUpdateStatus.Complete and not Windows.Storage.Provider.FileUpdateStatus.CompleteAndRenamed) throw new IOException("The file provider did not complete the save: " + result);
         if (entry.Document.Revision == snapshot.Revision) entry.Document.MarkSaved();
-        entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); await NotifyLspSavedAsync(entry, snapshot); return true;
+        entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); await NotifyLspSavedAsync(entry, snapshot); return !entry.Document.IsModified;
     }
     private async Task ExportAsync(bool rtf)
     {

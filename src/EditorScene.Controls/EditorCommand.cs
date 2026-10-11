@@ -9,5 +9,6 @@ public enum EditorCommand
     ToggleBookmark, NextBookmark, PreviousBookmark, ClearBookmarks, ToggleBreakpoint,
     ToggleFold, CollapseAll, ExpandAll, ToggleWordWrap, ToggleWhitespace, ToggleLineNumbers,
     ToggleIndentGuides, ToggleRuler, ToggleReadOnly, ZoomIn, ZoomOut, ResetZoom,
-    SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf
+    SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf,
+    SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket
 }

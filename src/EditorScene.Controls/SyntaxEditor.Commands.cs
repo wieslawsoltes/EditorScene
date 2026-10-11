@@ -62,6 +62,9 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.ZoomOut: FontSize = Math.Max(8, FontSize - 1); break;
                 case EditorCommand.ResetZoom: FontSize = 13; break;
                 case EditorCommand.SelectNextOccurrence: SelectNextOccurrence(); break;
+                case EditorCommand.SelectAllOccurrences: SelectAllOccurrences(); break;
+                case EditorCommand.GoToMatchingBracket: NavigateToMatchingBracket(); break;
+                case EditorCommand.SelectToMatchingBracket: NavigateToMatchingBracket(true); break;
                 case EditorCommand.ClearExtraSelections: ClearMultiSelection(); break;
                 case EditorCommand.ConvertToLf: ConvertLineEndings("\n"); break;
                 case EditorCommand.ConvertToCrLf: ConvertLineEndings("\r\n"); break;
@@ -71,18 +74,19 @@ public sealed partial class SyntaxEditor
     }
     private bool CanEdit(TextEdit edit)
     {
-        if (IsReadOnly) return false;
+        if (IsReadOnly || (edit.NewText.Length > 0 && !_editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset))) return false;
         if (edit.Length == 0) return _editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset);
         var ranges = _editor.TextArea.GetDeletableSegments(new SimpleSegment(edit.Offset, edit.Length));
         return ranges.Length == 1 && ranges[0].Offset == edit.Offset && ranges[0].Length == edit.Length;
     }
     private void ApplyUserEdits(IEnumerable<TextEdit> changes, long? expectedRevision = null)
     {
-        var revision = expectedRevision ?? Document.Revision;
+        var document = Document; var revision = expectedRevision ?? document.Revision;
         var edits = changes.ToArray();
         if (Document.Revision != revision) throw new InvalidOperationException("The document changed before the operation could be applied.");
         if (edits.Any(edit => !CanEdit(edit))) throw new InvalidOperationException("The operation intersects read-only text.");
-        Document.ApplyEdits(edits, revision);
+        if (!ReferenceEquals(document, Document)) throw new InvalidOperationException("The edit target changed during preflight.");
+        document.ApplyEdits(edits, revision);
     }
     private IEnumerable<DocumentLine> SelectedLines(bool wholeDocumentWhenEmpty = false)
     {
@@ -170,25 +174,9 @@ public sealed partial class SyntaxEditor
     private void SynchronizeMultiSelection()
     {
         if (_selections is null || _selections.Ranges.Count == 0) return;
-        var primary = _selections.Ranges[^1]; _editor.TextArea.Session.SetCaretOffset(primary.Active); _editor.TextArea.Session.SetSelection(primary.Anchor, primary.Active);
-        if (_adornments is not null) _adornments.ExtraSelections = _selections.Ranges.Take(_selections.Ranges.Count - 1).ToArray(); Redraw();
+        var primary = _selections.PrimaryRange!.Value; _editor.TextArea.Session.SetCaretOffset(primary.Active); _editor.TextArea.Session.SetSelection(primary.Anchor, primary.Active);
+        if (_adornments is not null) _adornments.ExtraSelections = _selections.Ranges.Where((_, index) => index != _selections.PrimaryIndex).ToArray(); Redraw();
     }
-    public void SelectNextOccurrence()
-    {
-        var source = Document.Buffer;
-        if (SelectionLength == 0)
-        {
-            var start = CaretOffset; var end = start;
-            while (start > 0 && IsWord(source.GetCharAt(start - 1))) start--;
-            while (end < source.TextLength && IsWord(source.GetCharAt(end))) end++;
-            if (start == end) return; _editor.Select(start, end - start); Selections.Set([new(start, end)]); return;
-        }
-        var text = SelectedText; var ranges = Selections.Ranges.ToList();
-        if (ranges.Count == 0) ranges.Add(new(SelectionStart, SelectionStart + SelectionLength));
-        var snapshot = Document.Snapshot(); var offset = ranges.Max(r => r.End); var found = snapshot.Text.IndexOf(text, offset, StringComparison.Ordinal);
-        if (found < 0) found = snapshot.Text.IndexOf(text, StringComparison.Ordinal);
-        if (found < 0 || ranges.Any(r => r.Start == found)) return;
-        ranges.Add(new(found, found + text.Length)); Selections.Set(ranges); SynchronizeMultiSelection();
-    }
+    public void SelectNextOccurrence() => SelectNextOccurrenceCore();
     private static bool IsWord(char c) => char.IsLetterOrDigit(c) || c == '_';
 }
