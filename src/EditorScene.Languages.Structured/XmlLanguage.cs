@@ -55,7 +55,10 @@ public sealed class XmlLanguage(bool xaml = false) : ISyntaxLanguage
             }
             if (i + 1 < text.Length && text[i + 1] is '?' or '!')
             {
-                var end = text.IndexOf('>', i + 1); i = end < 0 ? text.Length : end + 1;
+                // A processing instruction may contain '>'; only '?>' ends it.
+                var processing = text[i + 1] == '?';
+                var end = processing ? text.IndexOf("?>", i + 2, StringComparison.Ordinal) : text.IndexOf('>', i + 1);
+                i = end < 0 ? text.Length : end + (processing ? 2 : 1);
                 styles.Add(new(new(start, i - start), "preprocessor")); continue;
             }
             i++; var closing = i < text.Length && text[i] == '/'; if (closing) i++;
@@ -104,13 +107,27 @@ public sealed class XmlLanguage(bool xaml = false) : ISyntaxLanguage
     public Task<ImmutableArray<TextEdit>> FormatAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         using var reader = XmlReader.Create(new StringReader(snapshot.Text), Settings);
-        var document = XDocument.Load(reader, LoadOptions.None);
+        // Whitespace between child elements can be meaningful (e.g. inline runs in XAML).
+        // Without a schema it is unsafe to discard these text nodes to reindent them.
+        var document = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
+        var declaration = document.Declaration?.ToString();
         cancellationToken.ThrowIfCancellationRequested();
         var builder = new StringBuilder();
-        using (var writer = XmlWriter.Create(builder, new XmlWriterSettings { Indent = true, IndentChars = "    ", OmitXmlDeclaration = document.Declaration is null, NewLineChars = snapshot.Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n" })) document.Save(writer);
+        using (var writer = XmlWriter.Create(builder, new XmlWriterSettings
+        {
+            Indent = true, IndentChars = "    ", OmitXmlDeclaration = declaration is null,
+            NewLineChars = snapshot.Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
+            NewLineHandling = NewLineHandling.Entitize
+        })) document.Save(writer);
         var formatted = builder.ToString();
-        // StringBuilder's UTF-16 writer must not silently alter the declared file encoding.
-        if (document.Declaration?.Encoding is { Length: > 0 } encoding) formatted = formatted.Replace("encoding=\"utf-16\"", $"encoding=\"{encoding}\"", StringComparison.Ordinal);
+        // StringBuilder reports UTF-16 to XmlWriter. Restore only the declaration,
+        // never identically named attributes, CDATA, comments or text elsewhere.
+        if (declaration is not null)
+        {
+            var end = formatted.IndexOf("?>", StringComparison.Ordinal);
+            if (!formatted.StartsWith("<?xml", StringComparison.Ordinal) || end < 0) throw new InvalidDataException("The XML writer did not emit the expected declaration.");
+            formatted = declaration + formatted[(end + 2)..];
+        }
         cancellationToken.ThrowIfCancellationRequested();
         return formatted == snapshot.Text ? ImmutableArray<TextEdit>.Empty : [new TextEdit(0, snapshot.Length, formatted)];
     }, cancellationToken);
