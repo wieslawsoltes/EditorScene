@@ -1,0 +1,95 @@
+{
+  "sourceRevision": "faf780dc0aefcf512efd3b1ec01f9cc5c814f7b9",
+  "compilerBaselineRevision": "207d8876955d6feec431f0959484312f534d54d0",
+  "workflowRun": 38161404748,
+  "testJob": 114534913276,
+  "artifactId": 11710892250,
+  "artifactName": "regression-tests",
+  "fullReportPath": "performance.json",
+  "artifactZipSha256ReportedByGitHub": "490f83bbb38aa84fb53b4955021a9125cb37a94a96e6931c826ce743ceb14ae6",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "provenance": "Exact selected rows read from the completed GitHub Actions test/benchmark job. Other existing benchmark rows remain in the full artifact. The artifact digest is reported by GitHub, not an independent local verification. A successful test job does not itself establish that the browser/deployment jobs passed.",
+  "methodology": "Stopwatch and current-thread managed allocations. Setup, prior-model warmup, disposal and final output verification excluded. Compiler fixtures contain 117,792 UTF-16 units, 4,000 methods and one four-character numeric edit. Warm semantic rows force full diagnostics before the edit during setup and for the updated model during measurement. Model-only rows do not warm diagnostics. Source-only rows exclude parsing and compilation. Cache rows measure 10,000 calls/cycles on already completed data. No UI, complete EditorScene semantic/classification pipeline, worker-scheduling, physical GPU, FPS, power or input-latency claim. Separately measured phases are not additive.",
+  "interpretation": "Benefits are lower source-copy allocations, zero-allocation completed-analysis task reuse, and zero-allocation cached structural navigation. Compiler model-only construction remains slower and allocates more. The warm-semantic median improvement in this run is small and its p95 worsens; there is no universal compiler speedup or improved-tail-latency claim. Earlier unfavorable measurements are retained separately in compiler-initial-a186.json.",
+  "rows": [
+    {
+      "scenario": "csharp_small_edit_model",
+      "implementation": "previous",
+      "p50Milliseconds": 5.6044,
+      "p95Milliseconds": 34.4787,
+      "medianAllocatedBytes": 1333776,
+      "sortedElapsedMilliseconds": [4.9582,4.976,4.9933,5.0329,5.0703,5.6044,7.5874,9.0432,11.317,14.138,34.4787],
+      "sortedAllocatedBytes": [1333344,1333352,1333568,1333688,1333704,1333776,1334104,1334160,1334376,1334800,1334872]
+    },
+    {
+      "scenario": "csharp_small_edit_model",
+      "implementation": "current",
+      "p50Milliseconds": 23.9012,
+      "p95Milliseconds": 29.6043,
+      "medianAllocatedBytes": 1948872,
+      "sortedElapsedMilliseconds": [23.0057,23.0632,23.2007,23.392,23.532,23.9012,24.0773,24.1209,24.1949,24.8047,29.6043],
+      "sortedAllocatedBytes": [1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872,1948872]
+    },
+    {
+      "scenario": "csharp_small_edit_bound_model",
+      "implementation": "previous",
+      "p50Milliseconds": 59.0153,
+      "p95Milliseconds": 117.7120,
+      "medianAllocatedBytes": 5240624,
+      "sortedElapsedMilliseconds": [46.9314,47.0222,48.7504,55.874,55.9017,59.0153,59.3713,75.6668,83.2096,87.9027,117.712],
+      "sortedAllocatedBytes": [5238016,5239376,5239992,5240240,5240496,5240624,5240672,5241472,5241816,5241904,5250360]
+    },
+    {
+      "scenario": "csharp_small_edit_bound_model",
+      "implementation": "current",
+      "p50Milliseconds": 57.7311,
+      "p95Milliseconds": 151.6433,
+      "medianAllocatedBytes": 4676800,
+      "sortedElapsedMilliseconds": [44.0703,45.5406,48.7277,50.5733,53.2236,57.7311,58.0542,59.5918,67.1439,90.4805,151.6433],
+      "sortedAllocatedBytes": [4676248,4676248,4676296,4676560,4676680,4676800,4677064,4677496,4677688,4678888,4685848]
+    },
+    {
+      "scenario": "csharp_phase_source_change",
+      "implementation": "previous",
+      "p50Milliseconds": 0.0253,
+      "p95Milliseconds": 0.0317,
+      "medianAllocatedBytes": 235688,
+      "sortedElapsedMilliseconds": [0.0244,0.0246,0.0249,0.0251,0.0253,0.0253,0.0255,0.0264,0.0275,0.0283,0.0317],
+      "sortedAllocatedBytes": [235688,235688,235688,235688,235688,235688,235688,235688,235688,235688,235688]
+    },
+    {
+      "scenario": "csharp_phase_source_change",
+      "implementation": "current",
+      "p50Milliseconds": 0.0159,
+      "p95Milliseconds": 0.0491,
+      "medianAllocatedBytes": 3664,
+      "sortedElapsedMilliseconds": [0.0123,0.013,0.0135,0.0138,0.0156,0.0159,0.0169,0.018,0.0212,0.0312,0.0491],
+      "sortedAllocatedBytes": [3664,3664,3664,3664,3664,3664,3664,3664,3664,3664,3664]
+    },
+    {
+      "scenario": "structural_selection_cycles_10000",
+      "implementation": "current",
+      "p50Milliseconds": 0.1172,
+      "p95Milliseconds": 0.1358,
+      "medianAllocatedBytes": 0,
+      "documentCharacters": 12,
+      "sortedElapsedMilliseconds": [0.1167,0.117,0.117,0.1172,0.1172,0.1172,0.1203,0.1205,0.1205,0.1206,0.1358],
+      "sortedAllocatedBytes": [0,0,0,0,0,0,0,0,0,0,0]
+    },
+    {
+      "scenario": "completed_analysis_requests_10000",
+      "implementation": "current",
+      "p50Milliseconds": 0.5919,
+      "p95Milliseconds": 0.6012,
+      "medianAllocatedBytes": 0,
+      "documentCharacters": 29,
+      "sortedElapsedMilliseconds": [0.5741,0.5785,0.5815,0.5816,0.5912,0.5919,0.5923,0.5976,0.5992,0.6007,0.6012],
+      "sortedAllocatedBytes": [0,0,0,0,0,0,0,0,0,0,0]
+    }
+  ]
+}
