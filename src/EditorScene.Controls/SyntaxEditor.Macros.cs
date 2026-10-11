@@ -17,15 +17,18 @@ public sealed partial class SyntaxEditor
     private bool _macroPopupsSuppressed, _macroAutoCompletion;
     private CancellationTokenSource? _macroPlayback;
     private bool _replayingText;
+    private int _macroFocusGeneration;
+    private readonly List<Action> _macroFocusUnsubscribe = [];
     public MacroRecorder MacroRecording => _macroRecording;
     public event EventHandler? MacroRecordingStateChanged;
     private bool MacroSessionActive => MacroRecording.State != MacroRecordingState.Idle;
     private void InitializeMacroSupport()
     {
-        // The overlay receives pointer input before native mouse-selection handlers.
-        // Toolbars/menus outside this editor remain usable for pause/stop/cancel.
+        // Cover pointer selection, not keyboard input. Clicking the shield returns
+        // keyboard focus without forwarding a hit test that would move the caret.
         Content = null;
         _macroPointerShield = new Border { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Visibility = Visibility.Collapsed };
+        _macroPointerShield.PointerPressed += (_, args) => { args.Handled = true; if (!_disposed) FocusEditor(); };
         var layout = new Grid(); layout.Children.Add(_editor); layout.Children.Add(_macroPointerShield); Content = layout;
         MacroRecording.StateChanged += OnMacroStateChanged;
         _editor.TextArea.DocumentChanged += OnMacroDocumentChanged;
@@ -51,11 +54,54 @@ public sealed partial class SyntaxEditor
             _ => "Macro ready"
         });
         MacroRecordingStateChanged?.Invoke(this, EventArgs.Empty); FocusEditor();
+        RestoreMacroFocusAfterMenusClose();
+    }
+    private void CancelPendingMacroFocus()
+    {
+        _macroFocusGeneration++;
+        foreach (var unsubscribe in _macroFocusUnsubscribe) unsubscribe();
+        _macroFocusUnsubscribe.Clear();
+    }
+    private void RestoreMacroFocusAfterMenusClose()
+    {
+        CancelPendingMacroFocus();
+        if (_disposed || !IsLoaded || XamlRoot is null) return;
+        var generation = _macroFocusGeneration; var document = Document;
+        void Restore()
+        {
+            // MenuFlyout restores its old focus after invoking the item's Click
+            // handler. Defer until Closed has finished instead of racing that
+            // restoration or teaching the test to click the editor again.
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (!_disposed && IsLoaded && generation == _macroFocusGeneration && ReferenceEquals(Document, document)) FocusEditor();
+            });
+        }
+        var menus = VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot)
+            .Where(p => p.IsOpen && p.Child is MenuFlyoutPresenter).ToArray();
+        if (menus.Length == 0) { Restore(); return; }
+        var remaining = menus.Length;
+        foreach (var popup in menus)
+        {
+            EventHandler<object>? closed = null;
+            closed = (_, _) =>
+            {
+                popup.Closed -= closed;
+                if (generation != _macroFocusGeneration) return;
+                if (--remaining == 0)
+                {
+                    foreach (var unsubscribe in _macroFocusUnsubscribe) unsubscribe();
+                    _macroFocusUnsubscribe.Clear(); Restore();
+                }
+            };
+            popup.Closed += closed;
+            _macroFocusUnsubscribe.Add(() => popup.Closed -= closed);
+        }
     }
     private void OnMacroDocumentChanged(object? sender, UnoEdit.Document.DocumentChangedEventArgs e)
     {
         if (MacroRecording.State is MacroRecordingState.Recording or MacroRecordingState.Paused) MacroRecording.Cancel();
-        _macroPlayback?.Cancel();
+        _macroPlayback?.Cancel(); CancelPendingMacroFocus();
     }
     private static bool CanRecordEditorCommand(EditorCommand command) => Enum.IsDefined(command) && command is not
         (EditorCommand.Find or EditorCommand.Replace or EditorCommand.GoToLine or EditorCommand.CompleteWord or EditorCommand.QuickInfo or EditorCommand.SignatureHelp or EditorCommand.SelectNextOccurrence);
@@ -172,7 +218,6 @@ public sealed partial class SyntaxEditor
                 cancellation.ThrowIfCancellationRequested();
                 if (_disposed || !ReferenceEquals(Document, document)) throw new InvalidOperationException("The macro document was replaced.");
                 revision = document.Revision;
-                // Yield between bounded batches without leaving an open document update/undo scope.
                 if (++completed % 64 == 0) await Task.Yield();
             }, repeat, token.Token);
         }
@@ -180,7 +225,7 @@ public sealed partial class SyntaxEditor
     }
     private void DisposeMacroSupport()
     {
-        _macroPlayback?.Cancel();
+        _macroPlayback?.Cancel(); CancelPendingMacroFocus();
         MacroRecording.StateChanged -= OnMacroStateChanged; _editor.TextArea.DocumentChanged -= OnMacroDocumentChanged;
         if (MacroRecording.State is MacroRecordingState.Recording or MacroRecordingState.Paused) MacroRecording.Cancel();
         MacroRecordingStateChanged = null;
