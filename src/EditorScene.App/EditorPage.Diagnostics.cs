@@ -52,6 +52,7 @@ public sealed partial class EditorPage
     }
     private BrowserState CaptureState()
     {
+        var root = XamlRoot ?? throw new InvalidOperationException("Diagnostics require a loaded XAML root.");
         var area = _active.NativeEditor.TextArea; var view = area.TextView; var doc = _active.Document; var analysis = _active.Analysis;
         var controls = new Dictionary<string, double[]>(StringComparer.Ordinal);
         void Add(string name, FrameworkElement element)
@@ -65,7 +66,7 @@ public sealed partial class EditorPage
         if (_secondary is not null) Add("Secondary editor", _secondary.NativeEditor.TextArea.TextView);
         if (_active.Search.IsOpened)
             foreach (var element in Descendants(_active.Search).Where(e => e.Name.StartsWith("PART_", StringComparison.Ordinal))) Add(element.Name, element);
-        var popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot).Where(p => p.IsOpen).ToArray();
+        var popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Where(p => p.IsOpen).ToArray();
         foreach (var popup in popups)
             foreach (var element in popup.Child is FrameworkElement child ? Descendants(child).Prepend(child) : Enumerable.Empty<FrameworkElement>())
             {
@@ -89,7 +90,7 @@ public sealed partial class EditorPage
             CompletionOpen = _active.IsCompletionOpen, CompletionLabels = _active.CompletionLabels.ToArray(), QuickInfoOpen = _active.IsQuickInfoOpen,
             SignatureOpen = _active.IsSignatureHelpOpen, Split = _secondary is not null,
             MacroState = _active.MacroRecording.State.ToString(), MacroStepCount = _active.MacroRecording.RecordedStepCount, MacroHasLast = _active.MacroRecording.LastMacroAction is not null,
-            MacroInputReady = _active.IsMacroInputReady, FocusedControl = FocusManager.GetFocusedElement(XamlRoot)?.GetType().FullName ?? "", OpenMenuCount = popups.Count(p => p.Child is MenuFlyoutPresenter),
+            MacroInputReady = _active.IsMacroInputReady, FocusedControl = FocusManager.GetFocusedElement(root)?.GetType().FullName ?? "", OpenMenuCount = popups.Count(p => p.Child is MenuFlyoutPresenter),
             SnippetActive = _active.IsSnippetActive, SnippetFields = _active.ActiveSnippetFields.Select(r => new[] { r.Start, r.Length }).ToArray(),
             SecondaryTextPrefix = _secondary?.Document.Buffer.GetText(0, Math.Min(8192, doc.Buffer.TextLength)),
             CachedLines = view.Viewport.CachedLineCount, VisibleLines = view.Viewport.LastVisibleLineCount, RenderCount = view.Viewport.RenderCount,
