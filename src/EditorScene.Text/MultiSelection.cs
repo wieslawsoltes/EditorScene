@@ -1,75 +1,141 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
-using UnoEdit.Document;
 
 namespace EditorScene.Text;
 
 public readonly record struct SelectionRange(int Anchor, int Active)
 {
     public int Start => Math.Min(Anchor, Active);
-    public int Length => Math.Abs(Anchor - Active);
+    public int Length => checked(End - Start);
     public int End => Math.Max(Anchor, Active);
 }
 
-/// <summary>Disjoint multi-caret edits in one undo group, independently reusable from the UI.</summary>
+/// <summary>Disjoint multi-caret edits in one undo group. The last supplied range is the primary selection.</summary>
 public sealed class MultiSelection
 {
     private readonly EditorDocument _document;
     private SelectionRange[] _ranges = [];
-    public MultiSelection(EditorDocument document) => _document = document;
-    public IReadOnlyList<SelectionRange> Ranges => Array.AsReadOnly(_ranges);
+    private ReadOnlyCollection<SelectionRange> _view = Array.AsReadOnly(Array.Empty<SelectionRange>());
+    private long _generation;
+    public MultiSelection(EditorDocument document) => _document = document ?? throw new ArgumentNullException(nameof(document));
+    public IReadOnlyList<SelectionRange> Ranges => _view;
+    public int PrimaryIndex { get; private set; } = -1;
+    public SelectionRange? PrimaryRange => PrimaryIndex >= 0 ? _ranges[PrimaryIndex] : null;
     public bool IsActive => _ranges.Length > 1;
     public void Set(IEnumerable<SelectionRange> ranges)
     {
-        var ordered = ranges.OrderBy(x => x.Start).ThenBy(x => x.End).ToArray();
-        var merged = new List<SelectionRange>();
-        foreach (var range in ordered)
-        {
-            if (range.Start < 0 || range.End > _document.Buffer.TextLength) throw new ArgumentOutOfRangeException(nameof(ranges));
-            if (merged.Count != 0 && range.Start <= merged[^1].End)
-                merged[^1] = new SelectionRange(merged[^1].Start, Math.Max(merged[^1].End, range.End));
-            else merged.Add(range);
-        }
-        _ranges = merged.ToArray();
+        _document.VerifyAccess(); ArgumentNullException.ThrowIfNull(ranges);
+        var revision = _document.Revision; var generation = _generation; var source = ranges.ToArray();
+        EnsureUnchanged(revision, generation);
+        var normalized = Normalize(source, source.Length - 1, _document.Buffer.TextLength);
+        Publish(normalized.Ranges, normalized.Primary);
     }
-    public void Clear() => _ranges = [];
+    public void Clear()
+    {
+        _document.VerifyAccess();
+        if (_ranges.Length == 0) return;
+        Publish([], -1);
+    }
     public void Replace(string text, Func<TextEdit, bool>? canEdit = null)
     {
-        ArgumentNullException.ThrowIfNull(text);
-        var revision = _document.Revision;
-        var edits = _ranges.Select(r => new TextEdit(r.Start, r.Length, text)).ToArray();
-        if (canEdit is not null && edits.Any(e => !canEdit(e))) throw new InvalidOperationException("A selection intersects protected text.");
-        var next = new List<SelectionRange>(); var delta = 0;
-        foreach (var edit in edits)
+        _document.VerifyAccess(); ArgumentNullException.ThrowIfNull(text);
+        ReplaceCore(_ranges, PrimaryIndex, text, canEdit, _document.Revision, _generation);
+    }
+    private void ReplaceCore(SelectionRange[] ranges, int primary, string text, Func<TextEdit, bool>? canEdit, long revision, long generation)
+    {
+        var edits = ranges.Select(r => new TextEdit(r.Start, r.Length, text)).Where(e => e.Length != 0 || e.NewText.Length != 0).ToArray();
+        if (canEdit is not null)
+            foreach (var edit in edits)
+            {
+                var allowed = canEdit(edit);
+                EnsureUnchanged(revision, generation);
+                if (!allowed) throw new InvalidOperationException("A selection intersects protected text.");
+            }
+        var next = new SelectionRange[ranges.Length]; var delta = 0;
+        for (var i = 0; i < ranges.Length; i++)
         {
-            var caret = edit.Offset + delta + edit.NewText.Length;
-            next.Add(new SelectionRange(caret, caret)); delta += edit.NewText.Length - edit.Length;
+            var caret = checked(ranges[i].Start + delta + text.Length);
+            next[i] = new(caret, caret); delta = checked(delta + text.Length - ranges[i].Length);
         }
-        _document.ApplyEdits(edits, revision); _ranges = next.ToArray();
+        var nextLength = checked(_document.Buffer.TextLength + delta);
+        var normalized = Normalize(next, primary, nextLength);
+        EnsureUnchanged(revision, generation);
+        _document.ApplyEdits(edits, revision);
+        Publish(normalized.Ranges, normalized.Primary);
     }
     public void Delete(bool backwards, Func<TextEdit, bool>? canEdit = null)
     {
+        _document.VerifyAccess();
+        var revision = _document.Revision; var generation = _generation;
         var doc = _document.Buffer;
-        Set(_ranges.Select(range =>
+        // Several carets commonly share a line. Segment its graphemes once per
+        // operation, not once per caret. Delimiters are handled separately.
+        var lines = new Dictionary<int, (string Text, int[] Starts)>();
+        var candidates = new SelectionRange[_ranges.Length];
+        for (var i = 0; i < _ranges.Length; i++)
         {
-            if (range.Length != 0) return range;
-            var offset = range.Start;
-            if (backwards && offset == 0 || !backwards && offset == doc.TextLength) return range;
-            // Read at most the two affected lines, not the whole document.
-            var line = doc.GetLineByOffset(offset);
-            if (backwards && offset == line.Offset)
+            var range = _ranges[i]; var offset = range.Start;
+            if (range.Length != 0 || (backwards && offset == 0) || (!backwards && offset == doc.TextLength)) { candidates[i] = range; continue; }
+            var line = doc.GetLineByOffset(offset); var local = offset - line.Offset;
+            if (backwards && local == 0)
+            { candidates[i] = new(line.PreviousLine.EndOffset, offset); continue; }
+            if (local > line.Length || (!backwards && local == line.Length && line.DelimiterLength > 0))
+            { candidates[i] = new(line.EndOffset, line.Offset + line.TotalLength); continue; }
+            if (!lines.TryGetValue(line.LineNumber, out var data))
             {
-                var previous = line.PreviousLine; return new SelectionRange(previous.EndOffset, offset);
+                var text = doc.GetText(line.Offset, line.Length);
+                data = (text, StringInfo.ParseCombiningCharacters(text)); lines.Add(line.LineNumber, data);
             }
-            if (!backwards && offset == line.EndOffset)
-                return new SelectionRange(offset, offset + line.DelimiterLength);
-            var text = doc.GetText(line.Offset, line.Length);
-            var starts = StringInfo.ParseCombiningCharacters(text); var local = offset - line.Offset;
-            if (backwards)
+            var index = Array.BinarySearch(data.Starts, local);
+            int start, end;
+            if (index >= 0)
             {
-                var start = starts.LastOrDefault(x => x < local); return new SelectionRange(line.Offset + start, offset);
+                start = backwards ? data.Starts[Math.Max(0, index - 1)] : local;
+                end = backwards ? local : index + 1 < data.Starts.Length ? data.Starts[index + 1] : data.Text.Length;
             }
-            var end = starts.FirstOrDefault(x => x > local, text.Length); return new SelectionRange(offset, line.Offset + end);
-        }));
-        Replace("", canEdit);
+            else
+            {
+                var next = ~index;
+                start = next == 0 ? 0 : data.Starts[next - 1];
+                end = next < data.Starts.Length ? data.Starts[next] : data.Text.Length;
+            }
+            candidates[i] = new(line.Offset + start, line.Offset + end);
+        }
+        // Do not publish expanded deletion ranges before the read-only preflight.
+        var normalized = Normalize(candidates, PrimaryIndex, doc.TextLength);
+        ReplaceCore(normalized.Ranges, normalized.Primary, "", canEdit, revision, generation);
+    }
+    private void EnsureUnchanged(long revision, long generation)
+    {
+        _document.VerifyAccess();
+        if (_document.Revision != revision || _generation != generation)
+            throw new InvalidOperationException("The document or selections changed during edit preflight.");
+    }
+    private void Publish(SelectionRange[] ranges, int primary)
+    { _ranges = ranges; _view = Array.AsReadOnly(ranges); PrimaryIndex = primary; _generation++; }
+    private static (SelectionRange[] Ranges, int Primary) Normalize(SelectionRange[] source, int primary, int textLength)
+    {
+        foreach (var range in source)
+            if (range.Start < 0 || range.End > textLength) throw new ArgumentOutOfRangeException(nameof(source));
+        var ordered = source.Select((range, index) => (Range: range, Index: index)).OrderBy(x => x.Range.Start).ThenBy(x => x.Range.End);
+        var result = new List<SelectionRange>(source.Length); var primaryIndex = -1;
+        foreach (var item in ordered)
+        {
+            var range = item.Range;
+            // Adjacency is not overlap. Duplicate carets and shared starts must
+            // merge, but two neighboring word selections remain independent.
+            if (result.Count > 0 && (range.Start < result[^1].End || range.Start == result[^1].Start))
+            {
+                var start = result[^1].Start; var end = Math.Max(result[^1].End, range.End);
+                var reverse = item.Index == primary ? range.Active < range.Anchor : result[^1].Active < result[^1].Anchor;
+                result[^1] = reverse ? new(end, start) : new(start, end);
+                if (item.Index == primary) primaryIndex = result.Count - 1;
+            }
+            else
+            {
+                result.Add(range); if (item.Index == primary) primaryIndex = result.Count - 1;
+            }
+        }
+        return (result.ToArray(), primaryIndex);
     }
 }
