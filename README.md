@@ -67,7 +67,7 @@ The host owns externally supplied documents and should dispose views and documen
 
 **Language → Connect Language Server…** connects the selected document to an explicitly supplied trusted WebSocket endpoint. The dialog explains that the document and subsequent edits will be sent to that server. The sample accepts `wss://`, or loopback-only `ws://` for development, subject to browser security policies. It does not launch processes, persist connection settings, reconnect automatically or send other files. **Disconnect Language Server** restores the built-in provider.
 
-`LspSyntaxLanguage` adapts the remote server to the existing language contract: completion, hover, signatures, symbols, folding, full semantic tokens, formatting and diagnostics. It negotiates UTF-16 full/incremental synchronization and save behavior. Per-document request leases prevent new changes from racing older responses; result conversion validates ranges before native controls consume them. Completion replacement and additional edits, including imports, are committed in a single undo group.
+`LspSyntaxLanguage` adapts the remote server to the existing language contract: completion, hover, signatures, symbols, folding, full/delta semantic tokens, formatting and diagnostics. It negotiates UTF-16 full/incremental synchronization and save behavior. Per-document request leases prevent new changes from racing older responses; result conversion validates ranges before native controls consume them. Completion replacement and additional edits, including imports, are committed in a single undo group.
 
 The adapter supports pull diagnostics and exact-version push diagnostics. Unversioned pushes are deliberately ignored. Remote commands, workspace edits, completion snippets/resolve, rename/refactoring, dynamic registration and full protocol parity are not implemented. GitHub Pages hosts only the client; a real language server must be provided separately. See [connection examples, supported capabilities and limitations](docs/lsp.md).
 
@@ -120,6 +120,12 @@ string text = reader.ReadToEnd();
 Point and span tracking have explicit insertion affinity, handle reverse history and undo/redo, and reject snapshots from different documents. Tracking tokens keep version checkpoints rather than the mutable control.
 
 `SnapshotReader` is a bounded, seekable `TextReader` over a snapshot or span. It supports forward/backward UTF-16 and Unicode-scalar reads, CR/LF/CRLF lines, buffer reads, lookahead, checkpoints and independent clones. Sequential reads use a single 4,096-character rope window and do not flatten the snapshot. Readers remain valid after the live document changes or is disposed. See [snapshot reader semantics](docs/snapshot-reader.md) and [architecture](docs/architecture.md).
+
+## Performance and immutable line queries
+
+Snapshot position and line queries now use a persistent, bounded-chunk AVL line index without flattening the snapshot. `GetLine` and `GetLineFromOffset` expose immutable zero-based line descriptors. Unchanged snapshot capture reuses the same object, and edits reuse completed indexes. `SnapshotTextChanges.GetMinimalChange` uses bounded edit history to avoid comparing unchanged multi-megabyte text for small LSP changes.
+
+LSP semantic-token deltas retain validated result IDs and immutable data, recover once from an invalid base, and use allocation-light typed decoding. Timing/allocation comparisons run in the regression job and are retained as `performance.json`. See [performance architecture, reproducible benchmarks and limits](docs/performance.md); these CPU measurements do not claim physical-GPU or end-to-end frame-rate improvements.
 
 ## Validation and rendering
 
