@@ -11,6 +11,18 @@ export async function checkLsp({page,command,click,fill,paste,focusEditor,wait,t
   await wait(()=>{const s=globalThis.__editorSceneState;return s?.LspConnected&&s.AnalysisRevision===s.Revision&&s.Symbols.includes('RemoteDemo')&&s.ClassificationCount===2&&s.Foldings>0&&s.Diagnostics.some(d=>d.startsWith('LSP001:'));});
   await fixture.waitFor('textDocument/didOpen');assert.equal(fixture.sessions[0].text,before);
   checks.push('Explicit language-server dialog establishes real WebSocket LSP with remote diagnostics, symbols, semantic colors and folding');
+  await focusEditor();await page.keyboard.press('Control+Home');await page.keyboard.press('Enter');
+  await wait(()=>{const s=globalThis.__editorSceneState;return s?.LspConnected&&s.TextPrefix.startsWith('\nclass')&&s.AnalysisRevision===s.Revision&&s.ClassificationCount===2;});
+  await fixture.waitFor('textDocument/semanticTokens/full/delta');
+  assert.ok(fixture.journal.some(e=>e.method==='semanticTokenResponse'&&e.params.kind==='delta'&&e.params.integers<e.params.fullIntegers));
+  checks.push('Negotiated semantic-token deltas transfer only changed integers after an editor keystroke');
+  fixture.corruptNextDelta();const fullBefore=fixture.journal.filter(e=>e.method==='textDocument/semanticTokens/full').length;
+  await page.keyboard.type(' ');
+  await wait(()=>{const s=globalThis.__editorSceneState;return s?.TextPrefix.startsWith('\n class')&&s.AnalysisRevision===s.Revision&&s.ClassificationCount===2;});
+  assert.equal(fixture.journal.filter(e=>e.method==='textDocument/semanticTokens/full').length,fullBefore+1);
+  checks.push('Malformed semantic delta recovers once through a validated full replacement without losing editor state');
+  await page.keyboard.press('Control+z');await page.keyboard.press('Control+z');await textIs(before);
+  await wait(()=>globalThis.__editorSceneState?.AnalysisRevision===globalThis.__editorSceneState?.Revision);
   fixture.rejectWorkspaceEdit();await fixture.waitFor('serverRequestResult');await textIs(before);
   checks.push('Unadvertised server workspace edits are rejected without changing documents');
   await focusEditor();await page.keyboard.press('Control+Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('End');

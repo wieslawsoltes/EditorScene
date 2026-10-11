@@ -36,11 +36,13 @@ editor.SyntaxLanguage = provider;
 
 Initialization advertises supported capabilities and accepts UTF-16 positions only. The client negotiates full or incremental text synchronization, open/close and save behavior. Incremental changes preserve surrogate-pair and CRLF boundaries. A live provider requires both open/close and text changes; it refuses a server that cannot receive the edited document.
 
-Only advertised requests are made. Supported results are plain-text completion (arrays or CompletionList, edit-range defaults, insert/replace edits, and additional text edits), hover, signature help including parameter label offsets, hierarchical/flat document symbols, nested folding regions, full relative semantic tokens and document formatting. Full and unchanged pull-diagnostic reports retain result IDs. Versioned push diagnostics invalidate only the matching document revision and are routed through the existing analysis coordinator.
+Only advertised requests are made. Supported results are plain-text completion (arrays or CompletionList, edit-range defaults, insert/replace edits, and additional text edits), hover, signature help including parameter label offsets, hierarchical/flat document symbols, nested folding regions, full and delta relative semantic tokens and document formatting. Full and unchanged pull-diagnostic reports retain result IDs. Versioned push diagnostics invalidate only the matching document revision and are routed through the existing analysis coordinator.
 
 A document snapshot lease is held through each response. Newer didChange messages cannot race an older request. Cancellation releases the lease; late RPC replies are discarded by request ID. Results are validated before reaching the editor: malformed UTF-16 positions, overlapping edits, crossing folds, oversized arrays, excessive symbol depth, invalid semantic tokens and foreign-document symbols are rejected or filtered as documented in the converter.
 
 Completion commits use the reusable `CompletionEditPlan`. It honors the entire server replacement range, including suffix text after the caret, and applies imports/additional edits in one undo group. Typing inside the completion span is translated through version history. An unrelated document edit invalidates the plan, even when that edit is subsequently undone. All edits are checked against read-only protection before mutation.
+
+Incremental text changes use bounded snapshot history and persistent line indexes instead of scanning unchanged prefixes. Semantic-token decoding avoids per-token JSON position allocations. See [performance details](performance.md) for algorithms, size limits, cancellation/recovery behavior and benchmark methodology.
 
 ## Deliberate boundaries
 
@@ -48,7 +50,7 @@ Completion commits use the reusable `CompletionEditPlan`. It honors the entire s
 - Server completion snippets, indentation adjustment and executable completion commands are not advertised. Such completion items are skipped with a protocol warning, never executed or silently flattened into misleading text. Completion resolve, retriggering incomplete lists, full filter/commit-character parity and per-item UI matching behavior remain future work.
 - Remote text and documentation are displayed as text, not interpreted as HTML or executed.
 - Server requests to apply workspace edits or execute commands have no handler and receive method-not-found. No other file is opened or changed. Rename/refactoring, code actions, references, cross-document navigation, workspace folders, file watching and dynamic registration are not integrated.
-- Full semantic tokens are supported; token deltas/range requests and multiline/overlapping tokens are not advertised. Server token modifiers are validated but not yet styled individually.
+- Full and negotiated delta semantic tokens are supported with validated immutable caching and a single full replacement on an invalid delta base. Cancellation never retries; malformed full recovery fails. Token range requests and multiline/overlapping tokens are not advertised. Server token modifiers are validated but not yet styled individually.
 - Native UI interaction coverage does not establish universal compatibility with third-party language servers. A test peer is intentionally synthetic and identified as such.
 
 ## Validation

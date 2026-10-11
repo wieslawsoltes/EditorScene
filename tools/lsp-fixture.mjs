@@ -30,7 +30,7 @@ export function createLspFixture(server) {
   };
   const range=(text,start,end)=>({start:position(text,start),end:position(text,end)});
   websocket.on('connection',socket=>{
-    const session={uri:null,text:'',version:0,closed:false};sessions.push(session);
+    const session={uri:null,text:'',version:0,closed:false,semantic:null,semanticSerial:0,corruptDelta:false};sessions.push(session);
     const reply=(id,result)=>socket.send(JSON.stringify({jsonrpc:'2.0',id,result}));
     socket.on('message',bytes=>{
       let message;
@@ -43,11 +43,12 @@ export function createLspFixture(server) {
           case 'initialize':
             assert.deepEqual(p.capabilities.general.positionEncodings,['utf-16']);
             assert.equal(p.capabilities.workspace.applyEdit,false);
+            assert.equal(p.capabilities.textDocument.semanticTokens.requests.full.delta,true);
             reply(id,{capabilities:{positionEncoding:'utf-16',textDocumentSync:{openClose:true,change:2,save:{includeText:true}},
               completionProvider:{triggerCharacters:['.']},hoverProvider:true,signatureHelpProvider:{triggerCharacters:['(']},
               documentSymbolProvider:true,foldingRangeProvider:true,documentFormattingProvider:true,
               diagnosticProvider:{identifier:'fixture',interFileDependencies:false,workspaceDiagnostics:false},
-              semanticTokensProvider:{full:true,legend:{tokenTypes:['keyword','class'],tokenModifiers:[]}}}});break;
+              semanticTokensProvider:{full:{delta:true},legend:{tokenTypes:['keyword','class'],tokenModifiers:[]}}}});break;
           case 'initialized':break;
           case 'textDocument/didOpen':
             assert.equal(session.uri,null);session.uri=p.textDocument.uri;session.text=p.textDocument.text;session.version=p.textDocument.version;assert.equal(session.version,1);break;
@@ -61,10 +62,25 @@ export function createLspFixture(server) {
           case 'textDocument/foldingRange':{
             const first=session.text.indexOf('{'),last=session.text.lastIndexOf('}');reply(id,first<0||last<first?[]:[{startLine:position(session.text,first).line,endLine:position(session.text,last).line,kind:'region'}]);break;
           }
-          case 'textDocument/semanticTokens/full':{
+          case 'textDocument/semanticTokens/full':
+          case 'textDocument/semanticTokens/full/delta':{
             const tokens=[];const keyword=session.text.indexOf('class'),name=session.text.indexOf('Demo');if(keyword>=0)tokens.push([keyword,5,0]);if(name>=0)tokens.push([name,4,1]);
             let prevLine=0,prevChar=0;const data=[];for(const [start,length,kind] of tokens){const pos=position(session.text,start);data.push(pos.line-prevLine,pos.line===prevLine?pos.character-prevChar:pos.character,length,kind,0);prevLine=pos.line;prevChar=pos.character;}
-            reply(id,{data});break;
+            const isDelta=method.endsWith('/delta');
+            if(isDelta){
+              assert.equal(p.previousResultId,session.semantic?.resultId);
+              if(session.corruptDelta){session.corruptDelta=false;reply(id,{resultId:'invalid',edits:[{start:9999999,deleteCount:1}]});record('semanticDeltaRejectedFixture',{});break;}
+            }
+            const resultId='tokens-'+(++session.semanticSerial);
+            let result={resultId,data};
+            if(isDelta){
+              const old=session.semantic.data;let start=0,suffix=0;
+              while(start<old.length&&start<data.length&&old[start]===data[start])start++;
+              while(suffix<old.length-start&&suffix<data.length-start&&old[old.length-1-suffix]===data[data.length-1-suffix])suffix++;
+              result={resultId,edits:start===old.length&&start===data.length?[]:[{start,deleteCount:old.length-start-suffix,data:data.slice(start,data.length-suffix)}]};
+            }
+            session.semantic={resultId,data};reply(id,result);
+            record('semanticTokenResponse',{kind:isDelta?'delta':'full',integers:isDelta?result.edits.reduce((n,e)=>n+e.data.length,0):data.length,fullIntegers:data.length});break;
           }
           case 'textDocument/diagnostic':{
             assert.equal(p.identifier,'fixture');const resultId='v'+session.version;
@@ -95,6 +111,7 @@ export function createLspFixture(server) {
   });
   return {
     journal,errors,sessions,
+    corruptNextDelta(){for(const session of sessions)session.corruptDelta=true;},
     waitFor(method){const found=journal.find(x=>x.method===method);if(found)return Promise.resolve(found);return new Promise((resolve,reject)=>{const waiter={method,resolve,timer:setTimeout(()=>{waiters.splice(waiters.indexOf(waiter),1);reject(new Error('Missing LSP message: '+method));},10000)};waiters.push(waiter);});},
     rejectWorkspaceEdit(){for(const socket of websocket.clients)socket.send(JSON.stringify({jsonrpc:'2.0',id:'reject-workspace-edit',method:'workspace/applyEdit',params:{edit:{changes:{'file:///not-opened.txt':[{range:{start:{line:0,character:0},end:{line:0,character:0}},newText:'MUST NOT APPLY'}]}}}}));},
     async close(){server.off('upgrade',upgrade);for(const socket of websocket.clients)socket.terminate();await new Promise(resolve=>websocket.close(resolve));}

@@ -1,0 +1,31 @@
+name: Reproducible source archive
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/source-archive.yml]
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Archive tracked source and Git object history without repository configuration
+        run: |
+          mkdir -p artifacts/source
+          git bundle create artifacts/source/EditorScene.bundle HEAD
+          git -C external/UnoEdit bundle create "$PWD/artifacts/source/UnoEdit.bundle" HEAD
+          git rev-parse HEAD > artifacts/source/REVISION.txt
+          git -C external/UnoEdit rev-parse HEAD > artifacts/source/DEPENDENCY-REVISION.txt
+          cd artifacts/source
+          sha256sum *.bundle > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tracked-source
+          path: artifacts/source
+          retention-days: 14

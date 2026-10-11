@@ -22,6 +22,10 @@ public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysis
     private JsonArray? _pullItems;
     private string? _pullResultId;
     private string[] _tokenLegend = [];
+    private bool _semanticDeltas;
+    private SemanticTokenData? _semanticData;
+    private long _semanticRevision = -1;
+    private ImmutableArray<ClassificationSpan> _semanticSpans = [];
     private bool _pullDiagnostics, _disposed;
     private Exception? _syncFailure;
     private Task? _disposeTask;
@@ -84,6 +88,7 @@ public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysis
             var types = semantic["legend"]?["tokenTypes"] as JsonArray ?? throw new InvalidDataException("The server omitted its semantic-token legend.");
             if (types.Count > 256) throw new InvalidDataException("Semantic-token legend exceeds limits.");
             _tokenLegend = types.Select(n => n?.GetValue<string>() ?? throw new InvalidDataException("Null semantic-token type.")).ToArray();
+            _semanticDeltas = semantic["full"] is JsonObject full && Enabled(full["delta"]);
             result |= LanguageCapabilities.Classification;
         }
         Capabilities = result;
@@ -122,7 +127,7 @@ public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysis
         Task<JsonNode?> Empty() => Task.FromResult<JsonNode?>(null);
         var symbols = Capabilities.HasFlag(LanguageCapabilities.Symbols) ? _client.SymbolsAsync(DocumentUri, token) : Empty();
         var folds = Capabilities.HasFlag(LanguageCapabilities.Outlining) ? _client.FoldingAsync(DocumentUri, token) : Empty();
-        var semantic = Capabilities.HasFlag(LanguageCapabilities.Classification) ? _client.SemanticTokensAsync(DocumentUri, token) : Empty();
+        var semantic = Capabilities.HasFlag(LanguageCapabilities.Classification) ? ReadSemanticTokensAsync(snapshot, token) : Task.FromResult(ImmutableArray<ClassificationSpan>.Empty);
         var diagnostics = _pullDiagnostics ? _client.DiagnosticsAsync(DocumentUri, _pullResultId, token) : Empty();
         await Task.WhenAll(symbols, folds, semantic, diagnostics).ConfigureAwait(false);
         ImmutableArray<EditorDiagnostic> errors;
@@ -138,10 +143,38 @@ public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysis
         }
         else lock (_state) errors = _pushDiagnostics;
         return new LanguageAnalysis(snapshot.DocumentId, snapshot.Revision, errors,
-            LspResultConverter.SemanticTokens(snapshot, _tokenLegend, await semantic.ConfigureAwait(false)),
+            await semantic.ConfigureAwait(false),
             LspResultConverter.Foldings(snapshot, await folds.ConfigureAwait(false)),
             LspResultConverter.Symbols(snapshot, DocumentUri, await symbols.ConfigureAwait(false)));
     }, cancellationToken);
+    private async Task<ImmutableArray<ClassificationSpan>> ReadSemanticTokensAsync(DocumentSnapshot snapshot, CancellationToken token)
+    {
+        var useDelta = _semanticDeltas && _semanticData?.ResultId is not null;
+        try { return await ReadAsync(useDelta).ConfigureAwait(false); }
+        catch (Exception error) when (useDelta && (error is InvalidDataException || error is JsonRpcException { Code: -32601 or -32602 }))
+        {
+            // Recover once from an invalid/expired base. Never loop on malformed
+            // server output or convert cancellation into a retry.
+            token.ThrowIfCancellationRequested();
+            if (error is JsonRpcException { Code: -32601 }) _semanticDeltas = false;
+            _semanticData = null; _semanticRevision = -1; _semanticSpans = [];
+            Warn("Semantic-token delta rejected; requesting a full replacement: " + error.Message);
+            return await ReadAsync(false).ConfigureAwait(false);
+        }
+        async Task<ImmutableArray<ClassificationSpan>> ReadAsync(bool delta)
+        {
+            var result = delta
+                ? await _client.SemanticTokensDeltaAsync(DocumentUri, _semanticData!.ResultId!, token).ConfigureAwait(false)
+                : await _client.SemanticTokensAsync(DocumentUri, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            var candidate = delta ? _semanticData!.ApplyDelta(result, token) : SemanticTokenData.FromFull(result, token);
+            var spans = _semanticData is not null && candidate.Data == _semanticData.Data && _semanticRevision == snapshot.Revision
+                ? _semanticSpans : LspResultConverter.DecodeSemanticTokens(snapshot, _tokenLegend, candidate.Data.AsSpan(), token);
+            token.ThrowIfCancellationRequested();
+            _semanticData = candidate; _semanticRevision = snapshot.Revision; _semanticSpans = spans;
+            return spans;
+        }
+    }
     public Task<ImmutableArray<CompletionItem>> CompleteAsync(DocumentSnapshot snapshot, int offset, CancellationToken cancellationToken = default) => WithSnapshotAsync(snapshot, async token =>
     {
         if (!Capabilities.HasFlag(LanguageCapabilities.Completion)) return [];
@@ -201,6 +234,6 @@ public sealed class LspSyntaxLanguage : ISyntaxLanguage, INotifyLanguageAnalysis
             catch (Exception error) when (error is IOException or OperationCanceledException or JsonRpcException or ObjectDisposedException) { Warn("Language-server cleanup: " + error.Message); }
             finally { await _client.DisposeAsync().ConfigureAwait(false); }
         }
-        finally { AnalysisInvalidated = null; ProtocolWarning = null; _requests.Release(); }
+        finally { _semanticData = null; _semanticSpans = []; _pullItems = null; AnalysisInvalidated = null; ProtocolWarning = null; _requests.Release(); }
     }
 }

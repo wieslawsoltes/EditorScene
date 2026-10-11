@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Text;
 using UnoEdit.Document;
 
@@ -17,45 +16,39 @@ public sealed class DocumentSnapshot
 {
     private readonly ITextSource _source;
     private readonly Lazy<string> _text;
-    private readonly Lazy<ImmutableArray<int>> _lineStarts;
-    internal DocumentSnapshot(Guid id, long revision, string fileName, ITextSource source)
+    private readonly Lazy<SnapshotLineIndex> _lines;
+    internal DocumentSnapshot(Guid id, long revision, string fileName, ITextSource source, SnapshotLineIndex? lines = null)
     {
         DocumentId = id; Revision = revision; FileName = fileName; _source = source;
         _text = new Lazy<string>(() => _source.Text);
-        _lineStarts = new Lazy<ImmutableArray<int>>(() =>
-        {
-            var starts = ImmutableArray.CreateBuilder<int>(); starts.Add(0);
-            for (var i = 0; i < Text.Length; i++)
-            {
-                if (Text[i] == '\r') { if (i + 1 < Text.Length && Text[i + 1] == '\n') i++; starts.Add(i + 1); }
-                else if (Text[i] == '\n') starts.Add(i + 1);
-            }
-            return starts.ToImmutable();
-        });
+        _lines = new Lazy<SnapshotLineIndex>(() => lines ?? SnapshotLineIndex.Build(_source));
     }
+    internal SnapshotLineIndex? BuiltLineIndex => _lines.IsValueCreated ? _lines.Value : null;
     public Guid DocumentId { get; }
     public long Revision { get; }
     public string FileName { get; }
     public int Length => _source.TextLength;
     public string Text => _text.Value;
-    public int LineCount => _lineStarts.Value.Length;
+    public int LineCount => _lines.Value.LineCount;
     public ITextSource TextSource => _source;
     public string GetText(int offset, int length) => _source.GetText(offset, length);
+    /// <summary>Return a zero-based line without materializing the document text.</summary>
+    public SnapshotLine GetLine(int lineNumber)
+    {
+        var line = _lines.Value.Line(lineNumber);
+        return new(this, lineNumber, line.Start, line.Length, line.Delimiter);
+    }
+    public SnapshotLine GetLineFromOffset(int offset) => GetLine(_lines.Value.LineAt(offset));
     public int GetOffset(TextPosition position)
     {
-        var starts = _lineStarts.Value;
-        if (position.Line < 0 || position.Line >= starts.Length || position.Character < 0)
-            throw new ArgumentOutOfRangeException(nameof(position));
-        var end = position.Line + 1 < starts.Length ? starts[position.Line + 1] : Length;
-        while (end > starts[position.Line] && Text[end - 1] is '\r' or '\n') end--;
-        return starts[position.Line] + Math.Min(position.Character, end - starts[position.Line]);
+        if (position.Character < 0) throw new ArgumentOutOfRangeException(nameof(position));
+        var line = GetLine(position.Line);
+        return line.Offset + Math.Min(position.Character, line.Length);
     }
     public TextPosition GetPosition(int offset)
     {
-        if ((uint)offset > (uint)Length) throw new ArgumentOutOfRangeException(nameof(offset));
-        var starts = _lineStarts.Value; var index = starts.BinarySearch(offset);
-        if (index < 0) index = ~index - 1;
-        return new TextPosition(index, offset - starts[index]);
+        var line = GetLineFromOffset(offset);
+        return new TextPosition(line.LineNumber, offset - line.Offset);
     }
 }
 
@@ -66,6 +59,8 @@ public sealed class DocumentSnapshot
 public sealed class EditorDocument : IDisposable
 {
     private bool _disposed;
+    private DocumentSnapshot? _snapshot;
+    private SnapshotLineIndex? _lineIndex;
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     public EditorDocument(string text = "", string fileName = "Untitled.cs")
     {
@@ -93,9 +88,18 @@ public sealed class EditorDocument : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         VerifyAccess();
-        return new DocumentSnapshot(Id, Revision, FileName, Buffer.CreateSnapshot());
+        if (_snapshot is { } cached && cached.Revision == Revision && cached.FileName == FileName) return cached;
+        _lineIndex ??= _snapshot?.BuiltLineIndex;
+        return _snapshot = new DocumentSnapshot(Id, Revision, FileName, Buffer.CreateSnapshot(), _lineIndex);
     }
-    private void OnBufferChanged(object? sender, DocumentChangeEventArgs e) => Revision++;
+    private void OnBufferChanged(object? sender, DocumentChangeEventArgs e)
+    {
+        // A worker may still be building an old snapshot's lazy index. Never wait
+        // for it on the editing thread or retain a chain of unbuilt snapshots.
+        _lineIndex ??= _snapshot?.BuiltLineIndex;
+        _lineIndex = _lineIndex?.Replace(e.Offset, e.RemovalLength, e.InsertedText);
+        _snapshot = null; Revision++;
+    }
     private void OnTextChanged(object? sender, EventArgs e) => Changed?.Invoke(this, e);
     public void MarkSaved() => Buffer.UndoStack.MarkAsOriginalFile();
 
@@ -161,6 +165,6 @@ public sealed class EditorDocument : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
+        _disposed = true; _snapshot = null; _lineIndex = null; Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
     }
 }

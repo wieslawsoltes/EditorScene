@@ -35,6 +35,7 @@ def tests(configuration):
             raise RuntimeError(f'Test failure: {name}: {result}')
         results[name] = result
     (OUT/'tests/summary.json').write_text(json.dumps(results, indent=2)+'\n')
+    run('dotnet', 'run', '--project', ROOT/'tools/EditorScene.Benchmarks', '-c', configuration, '--', OUT/'tests/performance.json')
 
 def desktop(configuration):
     run('dotnet', 'build', APP, '-c', configuration, '-f', 'net10.0-desktop',
