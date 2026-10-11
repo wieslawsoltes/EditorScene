@@ -20,7 +20,7 @@ export async function checkReview({page,state,wait,textIs,paste,click,command,fo
   await page.keyboard.press('Shift+ArrowRight');await page.keyboard.press('Shift+ArrowRight');
   await command('Edit','Select All Occurrences');await wait(()=>globalThis.__editorSceneState?.SelectionCount===3);
   // Menu closure restores focus; a pointer click would deliberately clear extra selections.
-  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0 && globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea'));
   await page.keyboard.type('z');await textIs('z z z');
   checks.push('Select All Occurrences is available in the native menu and edits every match');
 

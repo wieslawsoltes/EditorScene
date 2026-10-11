@@ -70,7 +70,7 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.ConvertToCrLf: ConvertLineEndings("\r\n"); break;
                 default: throw new ArgumentOutOfRangeException(nameof(command));
             }
-            SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusEditor();
+            SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusAfterEditCommand();
     }
     private bool CanEdit(TextEdit edit)
     {
