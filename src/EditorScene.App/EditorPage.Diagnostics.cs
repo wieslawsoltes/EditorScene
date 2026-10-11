@@ -4,6 +4,7 @@ using EditorScene.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
@@ -64,7 +65,8 @@ public sealed partial class EditorPage
         if (_secondary is not null) Add("Secondary editor", _secondary.NativeEditor.TextArea.TextView);
         if (_active.Search.IsOpened)
             foreach (var element in Descendants(_active.Search).Where(e => e.Name.StartsWith("PART_", StringComparison.Ordinal))) Add(element.Name, element);
-        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot))
+        var popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot).Where(p => p.IsOpen).ToArray();
+        foreach (var popup in popups)
             foreach (var element in popup.Child is FrameworkElement child ? Descendants(child).Prepend(child) : Enumerable.Empty<FrameworkElement>())
             {
                 var name = AutomationProperties.GetName(element);
@@ -87,6 +89,7 @@ public sealed partial class EditorPage
             CompletionOpen = _active.IsCompletionOpen, CompletionLabels = _active.CompletionLabels.ToArray(), QuickInfoOpen = _active.IsQuickInfoOpen,
             SignatureOpen = _active.IsSignatureHelpOpen, Split = _secondary is not null,
             MacroState = _active.MacroRecording.State.ToString(), MacroStepCount = _active.MacroRecording.RecordedStepCount, MacroHasLast = _active.MacroRecording.LastMacroAction is not null,
+            MacroInputReady = _active.IsMacroInputReady, FocusedControl = FocusManager.GetFocusedElement(XamlRoot)?.GetType().FullName ?? "", OpenMenuCount = popups.Count(p => p.Child is MenuFlyoutPresenter),
             SnippetActive = _active.IsSnippetActive, SnippetFields = _active.ActiveSnippetFields.Select(r => new[] { r.Start, r.Length }).ToArray(),
             SecondaryTextPrefix = _secondary?.Document.Buffer.GetText(0, Math.Min(8192, doc.Buffer.TextLength)),
             CachedLines = view.Viewport.CachedLineCount, VisibleLines = view.Viewport.LastVisibleLineCount, RenderCount = view.Viewport.RenderCount,
@@ -137,6 +140,9 @@ internal sealed class BrowserState
     public string MacroState { get; set; } = "Idle";
     public int MacroStepCount { get; set; }
     public bool MacroHasLast { get; set; }
+    public bool MacroInputReady { get; set; }
+    public string FocusedControl { get; set; } = "";
+    public int OpenMenuCount { get; set; }
     public bool SnippetActive { get; set; }
     public int[][] SnippetFields { get; set; } = [];
     public bool Split { get; set; }
