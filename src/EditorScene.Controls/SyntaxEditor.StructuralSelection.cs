@@ -76,7 +76,6 @@ public sealed partial class SyntaxEditor
             && ReferenceEquals(SyntaxLanguage, language) && ReferenceEquals(_selectionExpansion, expansion) && !Selections.IsActive;
     private bool AbandonStructuralSelection(SelectionExpansion expansion)
     {
-        // A callback may already have created a new history: never clear that one.
         if (ReferenceEquals(_selectionExpansion, expansion)) ResetSelectionExpansion();
         return false;
     }
@@ -107,15 +106,13 @@ public sealed partial class SyntaxEditor
             if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
                 return AbandonStructuralSelection(expansion);
             _editor.TextArea.TextView.EnsureCaretVisible();
+            // The native setters already publish StateChanged. Do not publish a
+            // redundant notification outside the reentrancy guard or invite a
+            // nested expansion that the outer operation could then invalidate.
+            if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
+                return AbandonStructuralSelection(expansion);
+            return true;
         }
         finally { _changingStructuralSelection = false; }
-        if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
-            return AbandonStructuralSelection(expansion);
-        StateChanged?.Invoke(this, EventArgs.Empty);
-        // A final observer may redirect selection or start a newer operation. Do
-        // not report success and restore keyboard focus over that interaction.
-        if (!IsStructuralContextCurrent(document, revision, language, expansion, generation) || NativeSelection != range || CaretOffset != targetCaret)
-            return AbandonStructuralSelection(expansion);
-        return true;
     }
 }
