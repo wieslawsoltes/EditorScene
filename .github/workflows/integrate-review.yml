@@ -1,0 +1,146 @@
+name: Integrate reviewed editor fixes
+on:
+  push:
+    branches: [fix/editor-review-performance]
+    paths: [.github/workflows/integrate-review.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply checked integration edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def replace(path, old, new):
+              p=Path(path); text=p.read_text()
+              if text.count(old)!=1: raise RuntimeError(f'Expected one anchor: {path}: {old[:90]}')
+              p.write_text(text.replace(old,new))
+          def block(path,start,end,new):
+              p=Path(path); text=p.read_text()
+              if text.count(start)!=1 or text.count(end)!=1: raise RuntimeError(f'Expected unique block: {path}')
+              a=text.index(start); b=text.index(end,a)
+              p.write_text(text[:a]+new+text[b:])
+          doc='src/EditorScene.Text/EditorDocument.cs'
+          replace(doc,'    public void MarkSaved() => Buffer.UndoStack.MarkAsOriginalFile();','    public void MarkSaved() { VerifyAccess(); Buffer.UndoStack.MarkAsOriginalFile(); }')
+          block(doc,'    public void Load(Stream stream, Encoding? fallback = null)','    /// <summary>Do not mark saved', '''    public void Load(Stream stream, Encoding? fallback = null)
+              {
+                  VerifyAccess(); ArgumentNullException.ThrowIfNull(stream); var revision = Revision;
+                  using var reader = new StreamReader(stream, fallback ?? new UTF8Encoding(false, true), true, 8192, true);
+                  var text = reader.ReadToEnd(); var encoding = reader.CurrentEncoding;
+                  VerifyAccess();
+                  if (Revision != revision) throw new InvalidOperationException("The document changed during load; the decoded text was not applied.");
+                  Buffer.Text = text; Encoding = encoding; Buffer.UndoStack.ClearAll(); MarkSaved();
+              }
+          ''')
+          block(doc,'    public void Save(Stream stream)','    public void ConvertLineEndings', '''    public void Save(Stream stream)
+              {
+                  VerifyAccess(); ArgumentNullException.ThrowIfNull(stream);
+                  var snapshot = Snapshot(); var encoding = (Encoding)Encoding.Clone();
+                  using (var writer = new StreamWriter(stream, encoding, 8192, true))
+                  { snapshot.TextSource.WriteTextTo(writer); writer.Flush(); }
+                  VerifyAccess(); if (Revision == snapshot.Revision) MarkSaved();
+              }
+          ''')
+          replace(doc,'    public void ConvertLineEndings(string delimiter)\n    {','    public void ConvertLineEndings(string delimiter)\n    {\n        VerifyAccess();')
+          control='src/EditorScene.Controls/SyntaxEditor.cs'
+          replace(control,'    private MultiSelection? _selections;','    private MultiSelection? _selections;\n    private bool _showWhitespace, _showRuler, _showIndentGuides = true;')
+          replace(control,'    public LanguageAnalysis? Analysis => _coordinator?.Current;','    public LanguageAnalysis? Analysis => _coordinator?.Current is { } value && value.DocumentId == Document.Id && value.Revision == Document.Revision ? value : null;')
+          replace(control,'        set { _language = value ?? throw new ArgumentNullException(nameof(value)); Document.LanguageId = value.Id; ConfigureLanguage(); }','        set { ArgumentNullException.ThrowIfNull(value); if (ReferenceEquals(_language, value)) return; _language = value; Document.LanguageId = value.Id; ConfigureLanguage(); }')
+          for name,field,default in [('ShowWhitespace','_showWhitespace','false'),('ShowIndentGuides','_showIndentGuides','true'),('ShowRuler','_showRuler','false')]:
+              replace(control,f'    public bool {name} {{ get => _adornments?.{name} ?? {default}; set {{ if (_adornments is not null) {{ _adornments.{name} = value; Redraw(); }} }} }}',
+                  f'    public bool {name} {{ get => {field}; set {{ {field} = value; if (_adornments is not null) {{ _adornments.{name} = value; Redraw(); }} }} }}')
+          replace(control,'_adornments = new(document, _editor.TextArea.TextView.Viewport, document.Indicators) { Theme = Theme };','_adornments = new(document, _editor.TextArea.TextView.Viewport, document.Indicators) { Theme = Theme, ShowWhitespace = _showWhitespace, ShowIndentGuides = _showIndentGuides, ShowRuler = _showRuler };')
+          replace(control,'            _brackets = new(Document.Snapshot(), analysis.Classifications); UpdateBracketHighlights();','            PrepareBrackets(analysis); UpdateBracketHighlights();')
+          block(control,'    private void UpdateBracketHighlights()','    private void OnInputError', '''    private void UpdateBracketHighlights()
+              {
+                  if (_adornments is null) return;
+                  if (_brackets?.Revision == Document.Revision && _brackets.TryGetPair(CaretOffset, out var first, out var second))
+                  {
+                      var old = _adornments.BracketHighlights;
+                      if (old.Count == 2 && old[0] == first && old[1] == second) return;
+                      _adornments.BracketHighlights = [first, second];
+                  }
+                  else { if (_adornments.BracketHighlights.Count == 0) return; _adornments.BracketHighlights = []; }
+                  Redraw();
+              }
+          ''')
+          commands='src/EditorScene.Controls/SyntaxEditor.Commands.cs'
+          replace(commands,'                case EditorCommand.SelectNextOccurrence: SelectNextOccurrence(); break;', '''                case EditorCommand.SelectNextOccurrence: SelectNextOccurrence(); break;
+                          case EditorCommand.SelectAllOccurrences: SelectAllOccurrences(); break;
+                          case EditorCommand.GoToMatchingBracket: NavigateToMatchingBracket(); break;
+                          case EditorCommand.SelectToMatchingBracket: NavigateToMatchingBracket(true); break;''')
+          replace(commands,'        if (IsReadOnly) return false;','        if (IsReadOnly || (edit.NewText.Length > 0 && !_editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset))) return false;')
+          replace(commands,'        var revision = expectedRevision ?? Document.Revision;','        var document = Document; var revision = expectedRevision ?? document.Revision;')
+          replace(commands,'        Document.ApplyEdits(edits, revision);','        if (!ReferenceEquals(document, Document)) throw new InvalidOperationException("The edit target changed during preflight.");\n        document.ApplyEdits(edits, revision);')
+          replace(commands,'        var primary = _selections.Ranges[^1];','        var primary = _selections.PrimaryRange!.Value;')
+          replace(commands,'_selections.Ranges.Take(_selections.Ranges.Count - 1).ToArray()','_selections.Ranges.Where((_, index) => index != _selections.PrimaryIndex).ToArray()')
+          block(commands,'    public void SelectNextOccurrence()','    private static bool IsWord', '    public void SelectNextOccurrence() => SelectNextOccurrenceCore();\n')
+          enum='src/EditorScene.Controls/EditorCommand.cs'
+          replace(enum,'SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf','SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf,\n    SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket')
+          menu='src/EditorScene.App/EditorPage.Menus.cs'
+          replace(menu,'        var advanced = Menu("Advanced");','        Command(edit, "Select All Occurrences", EditorCommand.SelectAllOccurrences);\n        Command(edit, "Go To Matching Bracket", EditorCommand.GoToMatchingBracket);\n        Command(edit, "Select To Matching Bracket", EditorCommand.SelectToMatchingBracket);\n        var advanced = Menu("Advanced");')
+          replace(menu,'entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); return true;', 'entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); return !entry.Document.IsModified;')
+          page='src/EditorScene.App/EditorPage.cs'
+          replace(page,'_primary.Document = entry.Document; _primary.SyntaxLanguage = entry.Language;', '_primary.SetDocumentAndLanguage(entry.Document, entry.Language);')
+          replace(page,'_secondary.Document = entry.Document; _secondary.SyntaxLanguage = entry.Language;', '_secondary.SetDocumentAndLanguage(entry.Document, entry.Language);')
+          replace(page,'    private readonly List<EditorIcon> _icons = [];','    private readonly List<EditorIcon> _icons = [];\n    private readonly HashSet<string> _tabControlNames = [];\n    private Button? _closeTabButton;')
+          replace(page,'        _tabs.Children.Clear();','        foreach (var name in _tabControlNames) _ui.Remove(name);\n        _tabControlNames.Clear(); _tabs.Children.Clear();')
+          replace(page,'button.Click += (_, _) => ActivateDocument(entry); entry.Tab = button; Register("Document " + entry.Document.FileName, button); _tabs.Children.Add(button);','button.Click += (_, _) => ActivateDocument(entry); entry.Tab = button; entry.TabTheme = null;\n            var name = "Document " + entry.Document.FileName; Register(name, button); _tabControlNames.Add(name); _tabs.Children.Add(button);')
+          block(page,'        var close = new Button { Content = NewIcon(EditorIconKind.Close)','    private void RebuildTabCaptions()', '''        if (_closeTabButton is null)
+                  {
+                      _closeTabButton = new Button { Content = NewIcon(EditorIconKind.Close), Height = 26, MinHeight = 26, Width = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0) };
+                      _closeTabButton.Click += (_, _) => _ = GuardAsync(CloseDocumentAsync); Register("Close document", _closeTabButton);
+                  }
+                  _tabs.Children.Add(_closeTabButton); RebuildTabCaptions();
+              }
+          ''')
+          block(page,'    private void RebuildTabCaptions()','    private async Task CloseDocumentAsync()', '''    private void RebuildTabCaptions()
+              {
+                  foreach (var entry in _documents)
+                  {
+                      var active = ReferenceEquals(entry, _current); var modified = entry.Document.IsModified; var name = entry.Document.FileName;
+                      if (entry.Tab is not { } tab) continue;
+                      if (entry.CaptionName != name || entry.CaptionModified != modified || entry.TabTheme is null)
+                      {
+                          if (tab.Content is StackPanel panel && panel.Children[0] is TextBlock text) text.Text = name + (modified ? " *" : "");
+                          entry.CaptionName = name; entry.CaptionModified = modified;
+                      }
+                      if (!ReferenceEquals(entry.TabTheme, _theme) || entry.TabActive != active)
+                      {
+                          tab.Background = SyntaxEditor.Brush(active ? _theme.Background : _theme.Chrome);
+                          tab.BorderBrush = SyntaxEditor.Brush(active ? _theme.Accent : _theme.Chrome);
+                          entry.TabTheme = _theme; entry.TabActive = active;
+                      }
+                  }
+              }
+          ''')
+          replace(page,'        internal Button? Tab { get; set; }','        internal Button? Tab { get; set; }\n        internal EditorTheme? TabTheme { get; set; }\n        internal bool TabActive { get; set; }\n        internal string? CaptionName { get; set; }\n        internal bool CaptionModified { get; set; }')
+          # Stale diagnostics must never navigate an old offset in a newly edited document.
+          replace(page,'if (e.ClickedItem is DiagnosticRow row) { _active.Select(row.Diagnostic.Range.Offset, row.Diagnostic.Range.Length); _active.FocusEditor(); }','if (e.ClickedItem is DiagnosticRow row && row.DocumentId == _active.Document.Id && row.Revision == _active.Document.Revision) { _active.Select(row.Diagnostic.Range.Offset, row.Diagnostic.Range.Length); _active.FocusEditor(); }')
+          replace(page,'new DiagnosticRow(d, _active.Document.Buffer.GetLocation(Math.Clamp(d.Range.Offset, 0, _active.Document.Buffer.TextLength)).Line)','new DiagnosticRow(d, _active.Document.Buffer.GetLocation(Math.Clamp(d.Range.Offset, 0, _active.Document.Buffer.TextLength)).Line, analysis.DocumentId, analysis.Revision)')
+          replace(page,'private sealed record DiagnosticRow(EditorDiagnostic Diagnostic, int Line)','private sealed record DiagnosticRow(EditorDiagnostic Diagnostic, int Line, Guid DocumentId, long Revision)')
+          # An outline built against a previous snapshot cannot navigate its old spans.
+          outline='src/EditorScene.Controls/DocumentOutline.cs'
+          replace(outline,'_editor?.Select(item.Symbol.SelectionRange.Offset, item.Symbol.SelectionRange.Length); _editor?.FocusEditor();','if (_editor?.Analysis is { } current && ReferenceEquals(current, _shownAnalysis)) { _editor.Select(item.Symbol.SelectionRange.Offset, item.Symbol.SelectionRange.Length); _editor.FocusEditor(); }')
+          replace(outline,'    private SyntaxEditor? _editor;','    private SyntaxEditor? _editor;\n    private LanguageAnalysis? _shownAnalysis;')
+          replace(outline,'if (_editor is not null) _editor.AnalysisUpdated -= OnAnalysis;','if (_editor is not null) { _editor.AnalysisUpdated -= OnAnalysis; _editor.StateChanged -= OnStateChanged; }')
+          replace(outline,'if (_editor is not null) _editor.AnalysisUpdated += OnAnalysis;','if (_editor is not null) { _editor.AnalysisUpdated += OnAnalysis; _editor.StateChanged += OnStateChanged; }')
+          replace(outline,'    private void Rebuild()','    private void OnStateChanged(object? sender, EventArgs args) { if (!ReferenceEquals(_shownAnalysis, _editor?.Analysis)) Rebuild(); }\n    private void Rebuild()')
+          replace(outline,'        _tree.RootNodes.Clear();','        _shownAnalysis = _editor?.Analysis; _tree.RootNodes.Clear();')
+          PY
+          git diff --check
+      - name: Commit integration and remove this one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-review.yml
+          git add src
+          git commit -m 'fix(controls): integrate streaming search, bracket commands, snapshot-safe IO and workspace lifecycle fixes'
+          git push origin HEAD:fix/editor-review-performance
+          git rev-parse HEAD
