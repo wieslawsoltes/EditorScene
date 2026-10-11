@@ -2,10 +2,7 @@ using EditorScene.Text;
 
 namespace EditorScene.LanguageServices;
 
-/// <summary>
-/// Debounced, cancellable analysis. Publication is marshalled to the document's UI
-/// thread and guarded by both request generation and document revision.
-/// </summary>
+/// <summary>Debounced analysis with provider invalidation, owner-thread snapshot capture and revision-safe publication.</summary>
 public sealed class AnalysisCoordinator : IDisposable
 {
     private readonly EditorDocument _document;
@@ -19,7 +16,7 @@ public sealed class AnalysisCoordinator : IDisposable
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _language = language ?? throw new ArgumentNullException(nameof(language));
         _dispatch = dispatch ?? throw new ArgumentNullException(nameof(dispatch));
-        _document.Changed += OnChanged;
+        _document.Changed += OnChanged; Subscribe(_language, true);
     }
     public TimeSpan Debounce { get; set; } = TimeSpan.FromMilliseconds(180);
     public LanguageAnalysis? Current { get; private set; }
@@ -29,14 +26,27 @@ public sealed class AnalysisCoordinator : IDisposable
     public ISyntaxLanguage Language
     {
         get => _language;
-        set { ObjectDisposedException.ThrowIf(_disposed, this); _language = value ?? throw new ArgumentNullException(nameof(value)); Current = null; RequestAnalysis(true); }
+        set
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this); ArgumentNullException.ThrowIfNull(value);
+            Subscribe(_language, false); _language = value; Subscribe(value, true); Current = null; RequestAnalysis(true);
+        }
     }
+    private void Subscribe(ISyntaxLanguage language, bool subscribe)
+    {
+        if (language is not INotifyLanguageAnalysisChanged source) return;
+        if (subscribe) source.AnalysisInvalidated += OnInvalidated; else source.AnalysisInvalidated -= OnInvalidated;
+    }
+    private void OnInvalidated(object? sender, LanguageAnalysisInvalidated invalidated) => _dispatch(() =>
+    {
+        if (_disposed || !ReferenceEquals(sender, _language) || invalidated.DocumentId != _document.Id || invalidated.Revision != _document.Revision) return;
+        RequestAnalysis(true);
+    });
     private void OnChanged(object? sender, EventArgs e) => RequestAnalysis();
     public void RequestAnalysis(bool immediate = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var snapshot = _document.Snapshot();
-        _pending?.Cancel(); _pending?.Dispose();
+        var snapshot = _document.Snapshot(); _pending?.Cancel(); _pending?.Dispose();
         var cancellation = _pending = new CancellationTokenSource();
         var generation = ++_generation; var language = _language;
         Pending = ExecuteAsync(snapshot, language, generation, immediate ? TimeSpan.Zero : Debounce, cancellation.Token);
@@ -58,15 +68,12 @@ public sealed class AnalysisCoordinator : IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception)
-        {
-            _dispatch(() => { if (!_disposed && generation == _generation) Failed?.Invoke(this, exception); });
-        }
+        { _dispatch(() => { if (!_disposed && generation == _generation) Failed?.Invoke(this, exception); }); }
     }
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; ++_generation; _document.Changed -= OnChanged;
-        _pending?.Cancel(); _pending?.Dispose(); _pending = null;
-        Published = null; Failed = null;
+        _disposed = true; ++_generation; _document.Changed -= OnChanged; Subscribe(_language, false);
+        _pending?.Cancel(); _pending?.Dispose(); _pending = null; Published = null; Failed = null;
     }
 }
