@@ -1,0 +1,35 @@
+name: LSP contract diagnostics
+on:
+  push:
+    branches: [feat/lsp-editor-integration]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lsp-contracts-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: editorscene-nuget-${{ runner.os }}-${{ hashFiles('global.json', '**/*.props', '**/*.csproj') }}
+          restore-keys: editorscene-nuget-${{ runner.os }}-
+      - name: Run bounded LSP and completion tests with individual test diagnostics
+        run: dotnet test tests/EditorScene.Tests/EditorScene.Tests.csproj -c Release --filter 'FullyQualifiedName~Lsp|FullyQualifiedName~CompletionEditPlan' --logger 'console;verbosity=detailed' --logger 'trx;LogFileName=lsp.trx' --results-directory artifacts/lsp --blame-hang-timeout 30s --blame-hang-dump-type none
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lsp-contract-diagnostics
+          path: artifacts/lsp
+          retention-days: 14

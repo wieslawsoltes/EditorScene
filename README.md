@@ -4,7 +4,7 @@ Native code-editor components for **Uno Platform desktop and WebAssembly**, with
 
 **Status: functional alpha, not full Actipro SyntaxEditor parity.** Actipro's documented editing, language-service and extensibility behavior is the compatibility target. This is an independent implementation, not an Actipro product or a binary-compatible WPF replacement. No proprietary Actipro source code or artwork is included. See [compatibility](docs/compatibility.md) for explicit boundaries.
 
-GitHub Pages deployment is configured for validated **`main`** builds only. Document/language/rendering regressions, native-host checks, isolated package consumers and three complete browser input passes must succeed before deployment. Check [Actions](https://github.com/wieslawsoltes/EditorScene/actions) and the deployed `build.json` before assuming a particular revision is published. [PR #1](https://github.com/wieslawsoltes/EditorScene/pull/1) records the initial implementation and validation history.
+GitHub Pages deployment is configured for validated **`main`** builds only. Document/language/rendering regressions, native-host checks, isolated package consumers and three complete browser input passes must succeed before deployment. Check [Actions](https://github.com/wieslawsoltes/EditorScene/actions) and the deployed `build.json` before assuming a particular revision is published. [PR #1](https://github.com/wieslawsoltes/EditorScene/pull/1) records the initial implementation; [PR #2](https://github.com/wieslawsoltes/EditorScene/pull/2) records LSP integration.
 
 ## Build and run
 
@@ -23,20 +23,20 @@ python3 tools/package.py
 
 The SDK and package versions are pinned in `global.json` and project files: .NET SDK 10.0.401, Uno.Sdk 6.7.30. Open `EditorScene.slnx` to work with all libraries and the sample. `tools/build.py browser` produces `artifacts/site`, configured for the `/EditorScene/` URL prefix. Serve the directory at that prefix; opening `index.html` with `file://` is not supported. Use `--base-path /` when publishing to a local web root instead.
 
-The app supports new/open/save documents, tabs, independent split views sharing one document, language selection, a navigable symbol selector, document outline, error list, event log, bookmarks, breakpoint indicators, themes, snippets, macro recording/playback and text export. Its controls are native Uno controls, not a JavaScript editor embedded in a WebView.
+The app supports new/open/save documents, tabs, independent split views sharing one document, language selection, a navigable symbol selector, document outline, error list, event log, bookmarks, breakpoint indicators, themes, snippets, macro recording/playback, explicit language-server connections and text export. Its controls are native Uno controls, not a JavaScript editor embedded in a WebView.
 
 ## Reusable packages
 
 | Package | Responsibility |
 | --- | --- |
 | `EditorScene.Text` | Versioned documents, immutable snapshots, bounded snapshot readers, atomic edits, multi-selection, indicators, tracked ranges, data-only macros, HTML/RTF export. |
-| `EditorScene.LanguageServices` | Provider contracts, registry, cancellable/debounced analysis and snapshot-safe publication, bracket mapping. |
+| `EditorScene.LanguageServices` | Provider contracts, registry, cancellable/debounced analysis, provider invalidation, revision-safe completion edit plans and bracket mapping. |
 | `EditorScene.Languages.DotNet` | Roslyn-backed C# and Visual Basic diagnostics, classifications, symbols, completion, quick info, signature help and formatting. |
 | `EditorScene.Languages.Structured` | Strict JSON and safe XML/XAML analysis, structural navigation, folding and formatting. |
-| `EditorScene.Protocol` | Bounded JSON-RPC stream/WebSocket transports and an explicit LSP client lifecycle/request surface. |
+| `EditorScene.Protocol` | Bounded JSON-RPC stream/WebSocket transports, negotiated LSP synchronization, validated result conversion and a document-scoped `LspSyntaxLanguage` provider. |
 | `EditorScene.Rendering.Skia` | Semantic/lexical styling, palettes and viewport adornments over the host's Skia canvas. |
 | `EditorScene.Snippets` | UI-independent Visual Studio snippet XML, immutable declarations/tokens, folder catalog, atomic import and 16 built-in snippets. |
-| `EditorScene.Controls` | `SyntaxEditor` with native macro integration, `NavigableSymbolSelector`, `DocumentOutline`, `SnippetPicker` and original vector `EditorIcon` controls. |
+| `EditorScene.Controls` | `SyntaxEditor` with native macro integration and atomic completion commits, `NavigableSymbolSelector`, `DocumentOutline`, `SnippetPicker` and original vector `EditorIcon` controls. |
 
 The feed also includes the pinned MIT dependencies `UnoEdit.Core`, `UnoEdit.Rendering.Skia` and `UnoEdit.Uno`; do not omit these when consuming a downloaded local feed. The package job builds all 11 packages and uses a fresh NuGet cache outside the repository to execute a headless consumer and compile desktop/browser control consumers. It verifies that no source `ProjectReference` was used and that restored package bytes match the built artifacts. Package artifacts are not a claim of publication to nuget.org.
 
@@ -62,6 +62,14 @@ var outline = new DocumentOutline { Editor = editor };
 ```
 
 The host owns externally supplied documents and should dispose views and documents when finished. Document edits and snapshot capture run on the owning thread. Language providers receive immutable snapshots; results and edits must be checked against the current document revision before publication or application. Two editors can share a document without sharing their caret or viewport.
+
+## Language servers
+
+**Language → Connect Language Server…** connects the selected document to an explicitly supplied trusted WebSocket endpoint. The dialog explains that the document and subsequent edits will be sent to that server. The sample accepts `wss://`, or loopback-only `ws://` for development, subject to browser security policies. It does not launch processes, persist connection settings, reconnect automatically or send other files. **Disconnect Language Server** restores the built-in provider.
+
+`LspSyntaxLanguage` adapts the remote server to the existing language contract: completion, hover, signatures, symbols, folding, full semantic tokens, formatting and diagnostics. It negotiates UTF-16 full/incremental synchronization and save behavior. Per-document request leases prevent new changes from racing older responses; result conversion validates ranges before native controls consume them. Completion replacement and additional edits, including imports, are committed in a single undo group.
+
+The adapter supports pull diagnostics and exact-version push diagnostics. Unversioned pushes are deliberately ignored. Remote commands, workspace edits, completion snippets/resolve, rename/refactoring, dynamic registration and full protocol parity are not implemented. GitHub Pages hosts only the client; a real language server must be provided separately. See [connection examples, supported capabilities and limitations](docs/lsp.md).
 
 ## Snippets
 
@@ -115,7 +123,7 @@ Point and span tracking have explicit insertion affinity, handle reverse history
 
 ## Validation and rendering
 
-`tools/browser-smoke.mjs` and `tools/browser-macros.mjs` drive the exact published .NET/Uno application through pointer, keyboard, clipboard, file upload and download. The optional `?test=1` bridge exposes observation only; it has no document mutation commands. Pointer tests wait for stable geometry across distinct native observations. CI runs the complete suite three times in fresh browser contexts and retains all result files, screenshots and traces.
+`tools/browser-smoke.mjs`, `tools/browser-macros.mjs` and `tools/browser-lsp.mjs` drive the exact published .NET/Uno application through pointer, keyboard, clipboard, file upload and download. LSP tests use a synthetic WebSocket protocol peer, not a mocked language-provider return value. The optional `?test=1` bridge exposes observation only; it has no document mutation commands. Pointer tests wait for stable geometry across distinct native observations. CI runs the complete suite three times in fresh browser contexts and retains all result files, screenshots, protocol transcripts and traces.
 
 Browser CI creates a real WebGL2 Skia context using **software SwiftShader**. That validates the graphics path, not physical-GPU throughput, battery usage or driver compatibility. The host chooses acceleration; this repository does not claim a direct WebGPU renderer. Desktop execution checks currently use Linux/X11. Windows/macOS runtime, device-specific IME/accessibility and pixel-by-pixel Actipro equivalence need separate validation.
 
