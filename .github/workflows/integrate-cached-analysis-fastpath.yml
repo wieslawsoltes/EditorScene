@@ -1,0 +1,98 @@
+name: Integrate completed-analysis fast path
+on:
+  push:
+    branches: [feat/structural-selection-incremental-analysis]
+    paths: [.github/workflows/integrate-cached-analysis-fastpath.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply checked fast-path and benchmark integration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def edit(path, old, new):
+              p=Path(path); text=p.read_text(); assert text.count(old)==1, path+': '+old[:100]; p.write_text(text.replace(old,new))
+          edit('src/EditorScene.Languages.DotNet/DotNetLanguage.cs',
+              'public Task<LanguageAnalysis> AnalyzeAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => Task.Run(() => AnalyzeCached(snapshot, cancellationToken), cancellationToken);',
+              'public Task<LanguageAnalysis> AnalyzeAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => cancellationToken.IsCancellationRequested\n        ? Task.FromCanceled<LanguageAnalysis>(cancellationToken)\n        : TryGetCompletedAnalysis(snapshot) ?? AnalyzeOnWorkerAsync(snapshot, cancellationToken);')
+          p='src/EditorScene.Languages.DotNet/DotNetLanguage.Cache.cs'
+          edit(p,'        internal LanguageAnalysis? Analysis;','        internal LanguageAnalysis? Analysis;\n        internal Task<LanguageAnalysis>? CompletedAnalysis;')
+          edit(p,'if (previous is null || previous.Snapshot.Revision <= snapshot.Revision) slot.Model = model;','if (previous is null || previous.Snapshot.Revision <= snapshot.Revision) Volatile.Write(ref slot.Model, model);')
+          edit(p,'            model.Analysis = analysis; Interlocked.Increment(ref _analysisBuilds); return analysis;',
+              '            model.Analysis = analysis;\n            Volatile.Write(ref model.CompletedAnalysis, Task.FromResult(analysis));\n            Interlocked.Increment(ref _analysisBuilds); return analysis;')
+          edit(p,'    private LanguageAnalysis AnalyzeCached(','''    private Task<LanguageAnalysis>? TryGetCompletedAnalysis(DocumentSnapshot snapshot)
+              {
+                  if (snapshot is null) return null; // Preserve asynchronous argument-error behavior on the worker path.
+                  lock (_cacheGate)
+                  {
+                      if (!_models.TryGetValue(snapshot.DocumentId, out var slot)) return null;
+                      var model = Volatile.Read(ref slot.Model);
+                      if (model is null || model.Snapshot.Revision != snapshot.Revision || model.Snapshot.FileName != snapshot.FileName) return null;
+                      var completed = Volatile.Read(ref model.CompletedAnalysis);
+                      if (completed is not null) { Interlocked.Increment(ref _cacheHits); slot.LastAccess = ++_accessClock; }
+                      return completed;
+                  }
+              }
+              // Keeping this lambda in a separate method prevents a closure from
+              // being allocated at the public method entry even on a cache hit.
+              private Task<LanguageAnalysis> AnalyzeOnWorkerAsync(DocumentSnapshot snapshot, CancellationToken token)
+                  => Task.Run(() => AnalyzeCached(snapshot, token), token);
+              private LanguageAnalysis AnalyzeCached(''')
+          edit('tools/build.py','if len(checks) < 125','if len(checks) < 127')
+          edit('tools/EditorScene.Benchmarks/Program.cs','CompilerBenchmarks.Add(rows);','CompilerBenchmarks.Add(rows);\nCompletedAnalysisBenchmarks.Add(rows);')
+          p=Path('tools/EditorScene.Benchmarks/CompletedAnalysisBenchmarks.cs'); assert not p.exists()
+          p.write_text('''using System.Diagnostics;
+          using EditorScene.Languages.DotNet;
+          using EditorScene.Text;
+
+          internal static class CompletedAnalysisBenchmarks
+          {
+              internal static void Add(List<object> rows)
+              {
+                  using var document = new EditorDocument("class C { int M() => 1 + 2; }");
+                  var snapshot = document.Snapshot(); var language = new DotNetLanguage();
+                  var result = language.AnalyzeAsync(snapshot).GetAwaiter().GetResult();
+                  var sharedTask = language.AnalyzeAsync(snapshot);
+                  void Run()
+                  {
+                      for (var i = 0; i < 10_000; i++)
+                      {
+                          var task = language.AnalyzeAsync(snapshot);
+                          if (!ReferenceEquals(task, sharedTask) || !task.IsCompletedSuccessfully || !ReferenceEquals(task.Result, result))
+                              throw new InvalidOperationException("Completed analysis was not reused.");
+                      }
+                  }
+                  for (var i = 0; i < 3; i++) Run();
+                  var times = new double[11]; var bytes = new long[11];
+                  for (var i = 0; i < 11; i++)
+                  {
+                      var allocated = GC.GetAllocatedBytesForCurrentThread(); var start = Stopwatch.GetTimestamp();
+                      Run(); times[i] = Stopwatch.GetElapsedTime(start).TotalMilliseconds; bytes[i] = GC.GetAllocatedBytesForCurrentThread() - allocated;
+                  }
+                  Array.Sort(times); Array.Sort(bytes);
+                  if (language.CacheStatistics.AnalysisBuilds != 1) throw new InvalidOperationException("Warm analysis was recomputed.");
+                  rows.Add(new { scenario = "completed_analysis_requests_10000", implementation = "current", p50Milliseconds = times[5], p95Milliseconds = times[10], medianAllocatedBytes = bytes[5],
+                      sortedElapsedMilliseconds = times, sortedAllocatedBytes = bytes, documentCharacters = snapshot.Length,
+                      note = "10000 exact-snapshot AnalyzeAsync calls returning the same completed task/result. Initial analysis and three warmups excluded; eleven samples. Measures cache lookup, not parsing, semantic analysis, UI or GPU." });
+                  Console.WriteLine($"COMPILER_BENCH completed_analysis_requests_10000 current p50_ms={times[5]:F4} p95_ms={times[10]:F4} bytes={bytes[5]}");
+              }
+          }
+          ''')
+          PY
+          git diff --check
+      - name: Commit source integration and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-cached-analysis-fastpath.yml
+          git add src tools
+          git commit -m 'perf(analysis): return completed snapshot analyses without worker tasks or closure allocations'
+          git push origin HEAD:feat/structural-selection-incremental-analysis
+          git rev-parse HEAD
