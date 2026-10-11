@@ -5,13 +5,14 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Markup;
+using Microsoft.UI.Xaml.Input;
 using Windows.System;
 
 namespace EditorScene.Controls;
 
-/// <summary>Reusable current-document error list. Rows are projected once per analysis and virtualized by ListView.</summary>
-public sealed class DiagnosticList : UserControl, IDisposable
+/// <summary>Reusable current-document diagnostic grid with virtualized native rows,
+/// stable sorting, shared resizable columns, and exact-analysis navigation.</summary>
+public sealed partial class DiagnosticList : UserControl, IDisposable
 {
     private readonly Grid _layout = new();
     private readonly ListView _rows = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
@@ -19,39 +20,47 @@ public sealed class DiagnosticList : UserControl, IDisposable
     private readonly ToggleButton _errors = Toggle("Errors", "Show errors");
     private readonly ToggleButton _warnings = Toggle("Warnings", "Show warnings");
     private readonly ToggleButton _information = Toggle("Messages", "Show information");
+    private readonly Button _clearFilter = SmallButton("Clear", "Clear diagnostic filter");
+    private readonly Button _resetLayout = SmallButton("Reset", "Reset diagnostic columns and order");
     private readonly TextBlock _summary = new() { FontSize = 11, Margin = new Thickness(6, 2, 6, 2) };
     private readonly Border _heading = new() { BorderThickness = new Thickness(0, 1, 0, 1) };
     private SyntaxEditor? _editor;
     private LanguageAnalysis? _analysis;
     private DiagnosticTable? _table;
+    private DiagnosticTableView? _queryView;
     private ImmutableArray<DiagnosticTableRow> _visible = [];
     private DiagnosticVisibility _lastVisibility;
     private string? _lastQuery;
+    private DiagnosticSortColumn _sortColumn, _lastColumn;
+    private DiagnosticSortDirection _sortDirection, _lastDirection;
+    private long _publication;
     private bool _disposed;
-    [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties, typeof(DiagnosticTableRow))]
+    private EditorTheme _theme = EditorTheme.Light;
+
     public DiagnosticList()
     {
         IsTabStop = false;
-        _layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _layout.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         _layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var tools = new Grid { ColumnSpacing = 2, Padding = new Thickness(3) };
         for (var i = 0; i < 3; i++) tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         tools.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        var controls = new Control[] { _errors, _warnings, _information, _filter };
+        tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var controls = new Control[] { _errors, _warnings, _information, _filter, _clearFilter, _resetLayout };
         for (var i = 0; i < controls.Length; i++) { Grid.SetColumn(controls[i], i); tools.Children.Add(controls[i]); }
         _layout.Children.Add(tools);
-        _heading.Child = (Grid)XamlReader.Load("<Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Height='24'><Grid.ColumnDefinitions><ColumnDefinition Width='28'/><ColumnDefinition Width='82'/><ColumnDefinition Width='46'/><ColumnDefinition Width='46'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions><TextBlock Grid.Column='1' Text='Code' FontSize='11' VerticalAlignment='Center'/><TextBlock Grid.Column='2' Text='Line' FontSize='11' VerticalAlignment='Center'/><TextBlock Grid.Column='3' Text='Char' FontSize='11' VerticalAlignment='Center'/><TextBlock Grid.Column='4' Text='Description' FontSize='11' VerticalAlignment='Center'/></Grid>");
-        Grid.SetRow(_heading, 1); _layout.Children.Add(_heading);
-        _rows.ItemTemplate = (DataTemplate)XamlReader.Load("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><Grid MinHeight='24' ToolTipService.ToolTip='{Binding Message}'><Grid.ColumnDefinitions><ColumnDefinition Width='28'/><ColumnDefinition Width='82'/><ColumnDefinition Width='46'/><ColumnDefinition Width='46'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions><TextBlock Text='{Binding Glyph}' FontWeight='Bold' FontSize='15' HorizontalAlignment='Center' VerticalAlignment='Center'/><TextBlock Grid.Column='1' Text='{Binding Code}' FontSize='12' VerticalAlignment='Center' TextTrimming='CharacterEllipsis'/><TextBlock Grid.Column='2' Text='{Binding Line}' FontSize='12' VerticalAlignment='Center'/><TextBlock Grid.Column='3' Text='{Binding Character}' FontSize='12' VerticalAlignment='Center'/><TextBlock Grid.Column='4' Text='{Binding Message}' FontSize='12' VerticalAlignment='Center' TextTrimming='CharacterEllipsis' Margin='0,0,6,0'/></Grid></DataTemplate>");
-        _rows.ItemContainerStyle = (Style)XamlReader.Load("<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='ListViewItem'><Setter Property='MinHeight' Value='24'/><Setter Property='Padding' Value='0'/><Setter Property='HorizontalContentAlignment' Value='Stretch'/></Style>");
-        Grid.SetRow(_rows, 2); _layout.Children.Add(_rows); Grid.SetRow(_summary, 3); _layout.Children.Add(_summary); Content = _layout;
+        var templates = new DiagnosticTemplates();
+        _rows.ItemTemplate = (DataTemplate)templates["DiagnosticRowTemplate"];
+        _rows.ItemContainerStyle = (Style)templates["DiagnosticRowContainerStyle"];
+        InitializeColumns();
+        Grid.SetRow(_summary, 2); _layout.Children.Add(_summary); Content = _layout;
         AutomationProperties.SetName(_rows, "Diagnostic rows"); AutomationProperties.SetName(_filter, "Filter diagnostics");
-        _rows.ItemClick += (_, e) => { if (e.ClickedItem is DiagnosticTableRow row) Navigate(row); };
-        _rows.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter && _rows.SelectedItem is DiagnosticTableRow row) { Navigate(row); e.Handled = true; } };
-        foreach (var toggle in new[] { _errors, _warnings, _information }) toggle.Click += (_, _) => ApplyFilter();
-        _filter.TextChanged += (_, _) => ApplyFilter();
+        _rows.ItemClick += OnItemClick; _rows.KeyDown += OnRowsKeyDown;
+        foreach (var toggle in new[] { _errors, _warnings, _information }) toggle.Click += OnFilterToggle;
+        _filter.TextChanged += OnFilterChanged;
+        _clearFilter.Click += OnClearFilter; _resetLayout.Click += OnResetLayout;
         ApplyTheme(EditorTheme.Light); ApplyFilter(true);
     }
     public SyntaxEditor? Editor
@@ -72,38 +81,68 @@ public sealed class DiagnosticList : UserControl, IDisposable
     public ToggleButton ErrorsToggle => _errors;
     public ToggleButton WarningsToggle => _warnings;
     public ToggleButton InformationToggle => _information;
+    public Button ClearFilterButton => _clearFilter;
+    public Button ResetLayoutButton => _resetLayout;
     public DiagnosticTable? Table => _table;
+    public ImmutableArray<DiagnosticTableRow> VisibleRows => _visible;
     public int VisibleCount => _visible.Length;
+    public DiagnosticSortColumn SortColumn => _sortColumn;
+    public DiagnosticSortDirection SortDirection => _sortDirection;
     public long ProjectionBuildCount { get; private set; }
     public long FilterBuildCount { get; private set; }
+    public long SortBuildCount => _queryView?.SortBuildCount ?? 0;
     public event EventHandler? RowsChanged;
+
+    public void SortBy(DiagnosticSortColumn column, DiagnosticSortDirection direction = DiagnosticSortDirection.Ascending)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!Enum.IsDefined(column)) throw new ArgumentOutOfRangeException(nameof(column));
+        if (!Enum.IsDefined(direction)) throw new ArgumentOutOfRangeException(nameof(direction));
+        if (column == DiagnosticSortColumn.ProviderOrder && direction != DiagnosticSortDirection.Ascending)
+            throw new ArgumentException("Provider order does not have a descending variant.", nameof(direction));
+        if (_sortColumn == column && _sortDirection == direction) return;
+        _sortColumn = column; _sortDirection = direction; UpdateSortHeaders(); ApplyFilter();
+    }
     public void ApplyTheme(EditorTheme theme)
     {
-        ArgumentNullException.ThrowIfNull(theme);
+        ObjectDisposedException.ThrowIf(_disposed, this); ArgumentNullException.ThrowIfNull(theme); _theme = theme;
         RequestedTheme = theme.IsDark ? ElementTheme.Dark : ElementTheme.Light;
         _layout.Background = SyntaxEditor.Brush(theme.Background);
         _heading.Background = SyntaxEditor.Brush(theme.Chrome); _heading.BorderBrush = SyntaxEditor.Brush(theme.Border);
         _rows.Foreground = _filter.Foreground = SyntaxEditor.Brush(theme.Foreground);
         _summary.Foreground = SyntaxEditor.Brush(theme.Muted);
-        if (_heading.Child is Grid grid) foreach (var child in grid.Children.OfType<TextBlock>()) child.Foreground = SyntaxEditor.Brush(theme.Foreground);
+        ApplyColumnTheme();
     }
     private static ToggleButton Toggle(string label, string name)
     {
         var toggle = new ToggleButton { Content = label, IsChecked = true, MinHeight = 24, Height = 24, FontSize = 11, Padding = new Thickness(5, 1, 5, 1) };
         AutomationProperties.SetName(toggle, name); return toggle;
     }
+    private static Button SmallButton(string label, string name)
+    {
+        var button = new Button { Content = label, MinHeight = 24, Height = 24, FontSize = 11, Padding = new Thickness(5, 1, 5, 1) };
+        AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name); return button;
+    }
+    private void OnItemClick(object sender, ItemClickEventArgs e) { if (e.ClickedItem is DiagnosticTableRow row) Navigate(row); }
+    private void OnRowsKeyDown(object sender, KeyRoutedEventArgs e)
+    { if (e.Key == VirtualKey.Enter && _rows.SelectedItem is DiagnosticTableRow row) { Navigate(row); e.Handled = true; } }
+    private void OnFilterToggle(object sender, RoutedEventArgs args) => ApplyFilter();
+    private void OnFilterChanged(object sender, TextChangedEventArgs args) => ApplyFilter();
+    private void OnClearFilter(object sender, RoutedEventArgs args) { if (!_disposed) { _filter.Text = string.Empty; _filter.Focus(FocusState.Programmatic); } }
+    private void OnResetLayout(object sender, RoutedEventArgs args) { if (!_disposed) { ResetColumnWidths(); if (!_disposed) SortBy(DiagnosticSortColumn.ProviderOrder); } }
     private void AnalysisUpdated(object? sender, LanguageAnalysis analysis) => Refresh();
     private void StateChanged(object? sender, EventArgs args) => Refresh();
     private void Refresh()
     {
         if (_disposed) return;
+        if (_editor?.IsDisposed == true) { Detach(); _editor = null; }
         var analysis = _editor?.Analysis;
         if (ReferenceEquals(analysis, _analysis) && (_table is null || _table.FileName == _editor?.Document.FileName)) return;
-        _analysis = analysis; _table = null;
+        _analysis = analysis; _table = null; _queryView = null;
         if (analysis is not null && _editor is not null)
         {
-            try { _table = new DiagnosticTable(_editor.Document.Snapshot(), analysis); ProjectionBuildCount++; }
-            catch (ArgumentException) { /* Reject this immutable result once; a replacement result is retried. */ }
+            try { _table = new DiagnosticTable(_editor.Document.Snapshot(), analysis); _queryView = new(_table); ProjectionBuildCount++; }
+            catch (Exception error) when (error is ArgumentException or ObjectDisposedException) { /* Reject invalid/released results once. */ }
         }
         ApplyFilter(true);
     }
@@ -111,18 +150,31 @@ public sealed class DiagnosticList : UserControl, IDisposable
     {
         if (_disposed) return;
         var visibility = (_errors.IsChecked == true ? DiagnosticVisibility.Error : 0) | (_warnings.IsChecked == true ? DiagnosticVisibility.Warning : 0) | (_information.IsChecked == true ? DiagnosticVisibility.Information : 0);
-        var query = _filter.Text?.Trim() ?? "";
-        if (!force && visibility == _lastVisibility && query == _lastQuery) return;
-        _lastVisibility = visibility; _lastQuery = query;
-        _visible = _table?.Filter(visibility, query) ?? []; _rows.ItemsSource = _visible; FilterBuildCount++;
+        var query = _filter.Text?.Trim() ?? string.Empty;
+        if (!force && visibility == _lastVisibility && query == _lastQuery && _sortColumn == _lastColumn && _sortDirection == _lastDirection) return;
+        var generation = ++_publication;
+        var result = _queryView?.Query(visibility, query, _sortColumn, _sortDirection) ?? [];
+        var previousSelection = _rows.SelectedItem as DiagnosticTableRow;
+        _lastVisibility = visibility; _lastQuery = query; _lastColumn = _sortColumn; _lastDirection = _sortDirection;
+        var changed = _visible != result; _visible = result; FilterBuildCount++;
+        if (changed) _rows.ItemsSource = result;
+        // ItemsSource/selection changes can run synchronous host callbacks. Do not
+        // overwrite a newly bound document or touch children after host disposal.
+        if (_disposed || generation != _publication) return;
+        if (previousSelection is not null && result.Any(r => ReferenceEquals(r, previousSelection))) _rows.SelectedItem = previousSelection;
+        if (_disposed || generation != _publication) return;
         _errors.Content = $"{_table?.ErrorCount ?? 0} Errors"; _warnings.Content = $"{_table?.WarningCount ?? 0} Warnings"; _information.Content = $"{_table?.InformationCount ?? 0} Messages";
+        _clearFilter.IsEnabled = query.Length != 0;
         _summary.Text = _table is null ? "Waiting for current document analysis" : $"{_visible.Length:N0} of {_table.Rows.Length:N0} diagnostics · current document";
         RowsChanged?.Invoke(this, EventArgs.Empty);
     }
     private void Navigate(DiagnosticTableRow row)
     {
+        if (_disposed || !_visible.Any(r => ReferenceEquals(r, row))) return;
         var editor = _editor;
-        if (editor is null || _table is null || !ReferenceEquals(_analysis, editor.Analysis) || !_table.IsCurrent(editor.Document.Snapshot())) { Refresh(); return; }
+        if (editor is null || editor.IsDisposed || _table is null || !ReferenceEquals(_analysis, editor.Analysis)) { Refresh(); return; }
+        try { if (!_table.IsCurrent(editor.Document.Snapshot())) { Refresh(); return; } }
+        catch (ObjectDisposedException) { Refresh(); return; }
         var document = editor.Document; var analysis = _analysis;
         var range = row.Diagnostic.Range; editor.Select(range.Offset, range.Length);
         if (!_disposed && !editor.IsDisposed && ReferenceEquals(_editor, editor) && ReferenceEquals(editor.Document, document) && ReferenceEquals(editor.Analysis, analysis) && editor.SelectionStart == range.Offset && editor.SelectionLength == range.Length) editor.FocusEditor();
@@ -132,6 +184,10 @@ public sealed class DiagnosticList : UserControl, IDisposable
     public new void Dispose()
     {
         if (_disposed) return;
-        Detach(); _editor = null; _analysis = null; _table = null; _visible = []; _rows.ItemsSource = null; _disposed = true; base.Dispose();
+        _disposed = true; _publication++; Detach(); RowsChanged = null;
+        _rows.ItemClick -= OnItemClick; _rows.KeyDown -= OnRowsKeyDown;
+        foreach (var toggle in new[] { _errors, _warnings, _information }) toggle.Click -= OnFilterToggle;
+        _filter.TextChanged -= OnFilterChanged; _clearFilter.Click -= OnClearFilter; _resetLayout.Click -= OnResetLayout;
+        DisposeColumns(); _editor = null; _analysis = null; _table = null; _queryView = null; _visible = []; _rows.ItemsSource = null; base.Dispose();
     }
 }
