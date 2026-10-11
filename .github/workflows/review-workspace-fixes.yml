@@ -1,0 +1,59 @@
+name: Integrate workspace review fixes
+on:
+  push:
+    branches: [feat/classic-editor-workspace]
+    paths: [.github/workflows/review-workspace-fixes.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/EditorScene'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply checked integration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          edits={}
+          def replace(path,old,new):
+              text=edits.setdefault(path,Path(path).read_text())
+              assert text.count(old)==1, path+': '+old[:100]
+              edits[path]=text.replace(old,new)
+          replace('src/EditorScene.App/EditorPage.Workspace.cs',
+              'private readonly ContentPresenter _toolContent = new();',
+              'private readonly ContentPresenter _toolContent = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };')
+          for path in ['src/EditorScene.Controls/DiagnosticList.cs','src/EditorScene.Controls/EditorStatusBar.cs']:
+              replace(path,'            if (ReferenceEquals(value, _editor)) return;',
+                  '            if (value?.IsDisposed == true) throw new ObjectDisposedException(nameof(value));\n            if (ReferenceEquals(value, _editor)) return;')
+          replace('src/EditorScene.Controls/DiagnosticList.cs','    public DiagnosticList()',
+              '    [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties, typeof(DiagnosticTableRow))]\n    public DiagnosticList()')
+          replace('src/EditorScene.LanguageServices/DiagnosticTable.cs',
+              '        DocumentId = snapshot.DocumentId; Revision = snapshot.Revision; FileName = snapshot.FileName;',
+              '        if (analysis.Diagnostics.IsDefault) throw new ArgumentException("The diagnostic array is uninitialized.", nameof(analysis));\n        DocumentId = snapshot.DocumentId; Revision = snapshot.Revision; FileName = snapshot.FileName;')
+          replace('src/EditorScene.LanguageServices/DiagnosticTable.cs',
+              '    public bool IsCurrent(DocumentSnapshot snapshot) => snapshot.DocumentId == DocumentId && snapshot.Revision == Revision && snapshot.FileName == FileName;',
+              '    public bool IsCurrent(DocumentSnapshot snapshot)\n    { ArgumentNullException.ThrowIfNull(snapshot); return snapshot.DocumentId == DocumentId && snapshot.Revision == Revision && snapshot.FileName == FileName; }')
+          replace('src/EditorScene.App/NativeWorkspaceChecks.cs','        return Task.CompletedTask;',
+              '        NativeWorkspaceReviewChecks.Run(checks);\n        return Task.CompletedTask;')
+          replace('tools/build.py','if len(checks) < 160','if len(checks) < 170')
+          # Ensure hidden child controls are not exposed as clickable test coordinates.
+          # This remains observation-only and does not alter application interaction.
+          replace('src/EditorScene.App/EditorPage.Diagnostics.cs',
+              '            var origin = element.TransformToVisual(this).TransformPoint(new Point());',
+              '            for (DependencyObject? parent = element; parent is not null; parent = VisualTreeHelper.GetParent(parent))\n                if (parent is UIElement visual && visual.Visibility != Visibility.Visible) return;\n            var origin = element.TransformToVisual(this).TransformPoint(new Point());')
+          # Ctrl+Home -> ArrowDown -> Home lands at the beginning of line 2, offset 14.
+          # Bindings, not anonymous test-only strings, supply displayed diagnostic cells.
+          for path,text in edits.items(): Path(path).write_text(text)
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/review-workspace-fixes.yml
+          git add src tools/build.py
+          git commit -m 'fix(workspace): integrate stretching, trimmed bindings, lifecycle guards and native review assertions'
+          git push origin HEAD:feat/classic-editor-workspace
+          git rev-parse HEAD
