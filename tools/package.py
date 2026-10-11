@@ -65,6 +65,13 @@ if (minimal.Offset != 0 || minimal.Length != 0 || minimal.NewText != " ") throw 
 var semantic = EditorScene.Protocol.SemanticTokenData.FromFull(System.Text.Json.Nodes.JsonNode.Parse("{\\"resultId\\":\\"a\\",\\"data\\":[0,0,5,0,0]}"));
 var delta = semantic.ApplyDelta(System.Text.Json.Nodes.JsonNode.Parse("{\\"resultId\\":\\"b\\",\\"edits\\":[{\\"start\\":1,\\"deleteCount\\":1,\\"data\\":[1]}]}"));
 if (delta.Data[1] != 1 || semantic.Data[1] != 0) throw new Exception("Packaged immutable semantic delta failed.");
+var literal = new SnapshotLiteralSearch("class", wholeWord: true);
+if (literal.FindNext(snapshot, 0)?.Text != "class") throw new Exception("Packaged literal search failed.");
+var map = new EditorScene.LanguageServices.BracketMap(snapshot, []);
+if (map.PairCount < 1) throw new Exception("Packaged bracket map failed.");
+var rangeIndex = new EditorScene.LanguageServices.RangeIndex<int>([0, 5, 10], x => new(x, 1));
+var hits = new List<int>(); rangeIndex.CopyOverlaps(new(4, 3), hits);
+if (hits.Count != 1 || hits[0] != 5) throw new Exception("Packaged range index failed.");
 var analysis = await new DotNetLanguage().AnalyzeAsync(snapshot);
 if (analysis.Diagnostics.Any(d => d.Severity == EditorScene.LanguageServices.IssueSeverity.Error)) throw new Exception("Packaged compiler references failed.");
 using var jsonDocument = new EditorDocument("{\\"x\\":42}");
@@ -94,6 +101,8 @@ public sealed class ConsumerControl : UserControl
     public SyntaxEditor Editor { get; } = new() { Document = new EditorDocument("{}", "consumer.json"), SyntaxLanguage = new JsonLanguage() };
     public ConsumerControl()
     {
+        Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());
+        Editor.NavigateToMatchingBracket();
         var navigation = new NavigableSymbolSelector { Editor = Editor };
         var outline = new DocumentOutline { Editor = Editor };
         var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);

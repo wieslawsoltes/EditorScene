@@ -47,6 +47,7 @@ internal static class NativeReviewChecks
         editor.NativeEditor.TextArea.ReadOnlySectionProvider = provider;
         using var navigation = new NavigableSymbolSelector { Editor = editor };
         using var outline = new DocumentOutline { Editor = editor };
+        editor.RequestAnalysis();
         Check(editor.Analysis is not null, "Current revision analysis remains available after native edits");
         // Holding a deferred provider makes stale-state behavior deterministic, not timing-dependent.
         var deferred = new DeferredLanguage(); editor.SyntaxLanguage = deferred;

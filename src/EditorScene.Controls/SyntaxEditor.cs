@@ -88,6 +88,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void Rebind(EditorDocument? previous, EditorDocument? document)
     {
         if (_disposed || document is null) return;
+        _brackets = null;
         ClosePopups(); _coordinator?.Dispose(); DetachStyles(); _adornments?.Dispose(); _folding?.Dispose();
         if (previous is not null) previous.Changed -= OnDocumentChanged;
         if (_ownedDocument is not null && !ReferenceEquals(_ownedDocument, document)) { _ownedDocument.Dispose(); _ownedDocument = null; }
@@ -118,6 +119,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
         _folding?.Clear(); _brackets = null;
         _coordinator = new(document, SyntaxLanguage, action => { if (DispatcherQueue.HasThreadAccess) action(); else DispatcherQueue.TryEnqueue(() => { if (!_disposed) action(); }); });
         _coordinator.Published += OnAnalysisPublished; _coordinator.Failed += OnInputError;
+        StateChanged?.Invoke(this, EventArgs.Empty);
         _coordinator.RequestAnalysis(true);
     }
     private void OnAnalysisPublished(object? sender, LanguageAnalysis analysis)
@@ -143,7 +145,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void UpdateBracketHighlights()
     {
         if (_adornments is null) return;
-        if (_brackets?.Revision == Document.Revision && _brackets.TryGetPair(CaretOffset, out var first, out var second))
+        if (_brackets?.DocumentId == Document.Id && _brackets.Revision == Document.Revision && _brackets.TryGetPair(CaretOffset, out var first, out var second))
         {
             var old = _adornments.BracketHighlights;
             if (old.Count == 2 && old[0] == first && old[1] == second) return;
