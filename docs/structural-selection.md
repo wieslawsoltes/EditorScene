@@ -1,51 +1,48 @@
 # Structural selection and incremental compiler analysis
 
-This increment adds reversible selection expansion/contraction and incremental C#/VB model construction. It also repairs analysis-coordinator reentrancy and stale-result lifetime defects. These are independent EditorScene features targeting documented editor capabilities, not an Actipro API/binary/pixel compatibility claim.
+This increment adds reversible structural selection, incremental C#/VB source updates, shared completed-analysis caching, deferred semantic state and analysis-scheduling fixes. These are independently implemented EditorScene capabilities, not a claim of full Actipro API/binary/feature/pixel parity or an exhaustive audit of every subsystem.
 
-## Native editor commands
+## Native commands and host API
 
-**Alt+Shift+Right** expands the active selection; **Alt+Shift+Left** contracts it. Both commands are also available as **Edit > Expand Selection** and **Edit > Contract Selection**. Hosts can call:
+**Alt+Shift+Right** expands the selection and **Alt+Shift+Left** contracts it. Both are also available under **Edit > Expand Selection / Contract Selection**.
 
 ```csharp
 bool expanded = await editor.ExpandSelectionAsync(cancellationToken);
 bool contracted = editor.ContractSelection();
 ```
 
-C# and Visual Basic use compiler token/trivia and enclosing syntax-node spans, including the interior of paired delimiters. A caret on a numeric literal can expand to the literal, its binary expression, enclosing statement/member/type, and the document. Duplicate ranges are omitted. Contracting restores each exact preceding selection, including reversed anchor/active endpoints and the original zero-length caret.
+C# and Visual Basic use compiler token/trivia and enclosing syntax-node spans, including paired-delimiter interiors. A numeric literal can expand to its binary expression, containing member/type and document. Duplicate ranges are omitted. Contraction restores each preceding selection, including reversed endpoints and the original empty caret.
 
-Providers without structural-selection capability use a bounded-memory word/line fallback supplemented by current classification, folding and navigation ranges. Word edges account for Unicode scalar letters, digits, combining marks and connector punctuation. This fallback is not a full grammar-specific selection service for JSON, XML, XAML or every lexical language.
+The Uno engine permits the insertion caret to differ from the active selection endpoint. EditorScene captures all three values, positions the insertion caret at each expanded active endpoint, and restores its independent original position at depth zero. Native tests verify both ordinary reversed selections and deliberately independent insertion carets.
 
-Structural selection is a single-selection operation. More than one active caret is explicitly rejected; it does not silently discard a multi-selection. Read-only documents support navigation because text is not changed. The commands are excluded from macro recording/playback because they depend on asynchronous language analysis rather than a fixed semantic edit sequence.
+Providers without structural-selection capability use a bounded-memory Unicode word/line fallback supplemented by current classification, folding and navigation ranges. This is not a grammar-specific JSON/XML/XAML selection provider. Word boundaries include scalar letters, digits, combining marks and connector punctuation.
 
-### Pending work and selection lifetime
+Structural selection operates on one selection. Multiple active carets are explicitly rejected rather than silently removed. Read-only documents support the commands because no text is changed. Macro recording/playback excludes these asynchronous, provider-dependent commands.
 
-The native view captures the document, revision, provider, anchor/active selection and a generation before requesting ranges. It applies a response only if all still match. Manual selection/caret changes, document edits, provider changes, rebinding, unloading and disposal cancel/invalidate the request and clear old history. A provider that ignores cancellation still cannot apply a stale result. Contract cancels an outstanding expansion. Repeated expansion while a request is pending does not enqueue an unbounded sequence of requests.
+### Lifetime and cancellation
 
-`IsSelectionExpansionPending`, `SelectionExpansionDepth` and `CanContractSelection` expose observations for hosts. A canceled or superseded in-flight `ExpandSelectionAsync` returns `false`; an already-canceled supplied token is rejected at entry. Invalid current-provider ranges fail before the selection is modified. These APIs are called on the view/document owner thread; provider work consumes immutable snapshots.
+The view captures document identity, revision, language provider, anchor, active endpoint, insertion caret and a request generation. It accepts the response only while all remain current. Manual movement/selection, editing, provider changes, rebinding, unloading and disposal invalidate pending work/history. Providers that ignore cancellation cannot apply obsolete results. Contract cancels an outstanding expansion; repeated expansion while pending does not accumulate requests.
 
-Menu-originated commands use the existing deferred focus restoration after menu closure. A discarded stale response does not focus the editor or overwrite the status of a newer interaction.
+`IsSelectionExpansionPending`, `SelectionExpansionDepth` and `CanContractSelection` expose host observations. Superseded/canceled in-flight expansion returns `false`; an already-canceled supplied token is rejected at entry. Invalid current-provider ranges fail before changing the selection. View APIs run on the document owner thread; providers receive immutable snapshots. Menu focus is restored after closure only for successful current operations, without stealing focus from a newer popup.
 
-## Reusable selection model
+## Reusable selection core
 
-`EditorScene.LanguageServices.SelectionExpansion` contains only document identity, revision, immutable selection endpoints and a current index. It retains neither a live document nor the snapshot's text:
+`EditorScene.LanguageServices.SelectionExpansion` stores document identity/revision and immutable selection endpoints, not a live document or its text:
 
 ```csharp
 var snapshot = document.Snapshot();
 var initial = new SelectionRange(anchor, active);
-var candidates = SelectionCandidates.Basic(snapshot, active);
-var history = new SelectionExpansion(snapshot, initial, candidates);
+var history = new SelectionExpansion(snapshot, initial,
+    SelectionCandidates.Basic(snapshot, active));
 if (history.TryExpand(snapshot, initial, out var expanded))
-{
-    // Use expanded.Anchor and expanded.Active in a host-specific view.
     history.TryContract(snapshot, expanded, out var restored);
-}
 ```
 
-Candidates are validated before use, sorted by size and document position, and reduced to a strictly growing containment chain. Crossing alternatives are not parents. The full document is the final step when it is not already present. Wrong-document, wrong-revision and manually changed selection histories are rejected. Undoing the text to equal contents does not revive a history from an earlier revision.
+All candidates are validated, sorted by size/document position, and reduced to a strictly growing containment chain. Crossing alternatives are not parents. Whole-document selection is appended when absent. Foreign documents, new revisions and changed selections invalidate a history; undo to equal text does not resurrect an earlier revision's history.
 
-The maximum candidate count is 4,096. Boundaries cannot split a valid UTF-16 surrogate pair or CRLF. This is not a claim that every externally supplied range is constrained to every Unicode grapheme boundary. Repeated model expansion/contraction is allocation-free; native control layout, events, task scheduling and painting can still allocate.
+There is a maximum of 4,096 local candidates. Boundaries cannot split valid surrogate pairs or CRLF, but this does not impose every grapheme-cluster rule on externally supplied ranges. Repeated core expansion/contraction is allocation-free after construction; native events, tasks, layout and painting are not covered by that guarantee.
 
-An optional language extension separates this service from ordinary analysis:
+A language advertises `LanguageCapabilities.SelectionRanges` and implements the optional extension:
 
 ```csharp
 public interface ISelectionRangeProvider
@@ -56,61 +53,71 @@ public interface ISelectionRangeProvider
 }
 ```
 
-A provider advertises `LanguageCapabilities.SelectionRanges` and returns ranges against the exact requested immutable snapshot. The native view caches the resulting expansion history only while document/provider/selection state remains valid.
+The view reuses its returned chain until the captured document/provider/selection state changes.
 
 ## LSP selectionRange
 
-The client advertises static `textDocument.selectionRange` support with dynamic registration disabled. `LspSyntaxLanguage` enables the capability only when the server advertises `selectionRangeProvider`. Requests use the existing serialized document-snapshot lease and negotiated UTF-16 synchronization; a newer `didChange` cannot race the response for an older request.
+The client advertises static `textDocument.selectionRange` support with dynamic registration disabled. The adapter enables requests only when the server advertises `selectionRangeProvider`. The existing document-snapshot lease serializes UTF-16 synchronization and the request, preventing a newer `didChange` from racing an older response.
 
-`LanguageServerClient.SelectionRangesAsync` supports 1–1,024 requested positions. `LspSelectionRanges.Decode` verifies response cardinality, object/range types, UTF-16 positions, containing parents and a maximum of 128 parent nodes per position. Equal parent ranges are deduplicated. A null result produces empty chains; null entries inside a non-null response array are rejected. No incomplete chain is returned after a validation failure, and response JSON is never mutated or interpreted as commands.
+`LanguageServerClient.SelectionRangesAsync` accepts 1–1,024 positions. `LspSelectionRanges.Decode` checks response cardinality, JSON object/range types, UTF-16 coordinates, containment and a maximum parent depth of 128. Equal parents are deduplicated; null results yield empty chains, while null entries in non-null result arrays are rejected. Malformed chains fail atomically. Response JSON is neither mutated nor interpreted as commands.
 
-The view currently requests one position and caches the chain for expansion/contraction. Unsupported servers use the local fallback; they are not sent unadvertised selection requests. Dynamic registration, partial-result progress and full vendor selection-provider contracts remain outside this increment.
+The native view requests one position and reuses the chain for expansion/contraction. Unsupported servers use the local fallback instead of receiving unadvertised requests. Dynamic registration, partial-result progress and full vendor provider contracts remain outside this increment.
 
-## Incremental .NET model construction
+## Compiler cache design
 
-Before this increment, every new document revision converted `snapshot.Text` into a complete source string and constructed a fresh compilation, even when only one character changed. Repeated analysis on the same revision also repeated diagnostics, classification and symbol walks.
+The preceding provider materialized `snapshot.Text` for every new model and created a fresh compilation. Repeated analysis of the same revision repeated diagnostics, classification and symbol walks.
 
-The provider now:
+The new provider creates cold Roslyn source from a snapshot reader. Forward edits use `SnapshotTextChanges.GetMinimalChange` and `SourceText.WithChanges`; `SyntaxTree.WithChangedText` receives actual change history. A regression test uses `SyntaxNode.IsIncrementallyIdenticalTo` to verify reuse of unchanged syntax nodes, not merely an incremented counter.
 
-1. Creates a cold Roslyn `SourceText` from a snapshot reader rather than materializing `DocumentSnapshot.Text`.
-2. Derives a forward change with the existing history-bounded `SnapshotTextChanges.GetMinimalChange` and applies it to the preceding `SourceText.WithChanges`.
-3. Updates the syntax tree with `WithChangedText` and replaces that tree in the preceding compilation, preserving reusable compiler/reference state.
-4. Shares one cached model-construction gate per retained document and caches the completed immutable `LanguageAnalysis` for each model. Concurrent split-view requests can reuse the same completed analysis object.
+Compilation and semantic models are **lazy**. Syntax-only range requests do not construct either, including after an edit. When semantic work is needed, a previously completed compilation can replace its syntax tree; otherwise a new compilation is created. Factories retain only an already-built preceding compilation/tree, not a chain of unbuilt models or preceding document snapshots. Concurrent analysis requests force the lazy state once and share the completed immutable analysis for that model.
 
-The cache retains at most eight document slots and evicts the least recently used idle slot. If all eight model-construction slots are busy, additional documents use transient uncached slots. This bounds retained slots, not total memory of arbitrary concurrent requests. Cancellation is checked while waiting and before cache publication. Older snapshots can be analyzed without displacing a newer cached revision. File-name changes invalidate model identity and the syntax-tree path.
+At most eight document slots are retained, with least-recently-used idle-slot eviction. When all retained construction gates are busy, additional documents use transient slots. This bounds retained slots, not total memory for arbitrary simultaneous work. Older snapshots remain analyzable but cannot displace newer revisions. File-name changes invalidate the syntax-tree path. Cancellation is checked while waiting and before model publication.
 
-`DotNetLanguage.CacheStatistics` exposes actual model builds, hits, cold parses, incremental updates, compilation replacements, analysis builds and retained slot counts. The counters report work, not elapsed time or performance guarantees.
+`CacheStatistics` reports model builds/hits, cold parses, incremental updates, actual compilation replacements, completed analyses, compilation builds and semantic-model builds. These are work counters, not time estimates.
 
-### Limits
+### Performance findings — not a universal speedup
 
-This does not make all semantic analysis incremental: diagnostics, classification and navigation construction for a new revision still do substantive compiler work. Initial parsing scans the document. Long/unrelated histories can require broader differencing; widely separated edits can produce a larger contiguous replacement. Completion/formatting paths may still request full text where their existing implementation does so. The cache is not a project system, multi-project compilation graph, refactoring engine or shared multi-document LSP workspace.
+The retained initial probe in [compiler-initial-a186.json](performance/compiler-initial-a186.json) found a real unfavorable result: cold-semantic model construction rose from 6.4099 ms to 24.0116 ms median, with more temporary allocations. That evidence is preserved rather than relabeled as an improvement.
 
-Cold reader construction and compiler calls can have cancellation latency inside platform APIs. The model cache does not expose hardware timing, physical-GPU throughput or overall editor frame-rate claims.
+The expanded probe at revision `2bb1153e7c24dd2e2324dab30cd30ac64b06d686` separates the work:
 
-## Analysis-coordinator fixes
+| Workload | Previous p50 ms | New p50 ms | Previous / new managed bytes |
+| --- | ---: | ---: | ---: |
+| Model construction, prior diagnostics not warmed | 7.4657 | 24.6904 | 1,333,776 / 1,948,872 |
+| Updated model plus full diagnostics, prior diagnostics warmed | 71.2639 | 61.2599 | 5,240,608 / 4,676,736 |
+| Source-change construction only | 0.0257 | 0.0138 | 235,688 / 3,664 |
+| Syntax-tree update only | 3.2804 | 3.3724 | 1,094,312 / 1,943,136 |
+| Compilation replacement/construction only | 0.0032 | 0.0335 | 1,904 / 1,784 |
+| 10,000 cached structural-selection cycles | not applicable | 0.1335 | not applicable / 0 |
 
-Review identified two reentrancy failures in the existing reusable coordinator. Canceling a provider could synchronously trigger a new document edit/request, only for the outer request to overwrite it. A synchronously published analysis could also start a new request before the outer `ExecuteAsync` returned, after which the outer assignment overwrote `Pending` with the wrong task.
+The semantic-warm p95 **worsened** from 98.9569 to 122.8566 ms in this run. The isolated syntax-update path also allocates more despite actual syntax-node reuse. Phase samples run separately and must not be summed as though they were one execution. These data support reduced source-copy allocation and a workload-specific warm semantic median improvement, **not uniformly faster compiler construction or improved tail latency**.
 
-The coordinator now detaches the prior cancellation source and advances the generation before invoking cancellation callbacks. It checks that generation before starting work and again before assigning `Pending`. Publication verifies the captured provider as well as generation and revision. Editing clears obsolete `Current` immediately rather than exposing an old result until debounce completes; disposal releases the published result. Reassigning the same provider no longer restarts work. Mutation/request APIs verify the document owner thread, and debounce is explicitly limited to zero through one minute.
+The direct model cache tests additionally establish one model/analysis for concurrent same-snapshot views and zero compilation/semantic builds for syntax-only requests. The table reproduces old/new compiler hot paths; it does not measure the entire provider, its cache gate, Task scheduling, native UI or rendering.
 
-The host must dispatch publication/invalidation callbacks onto the document owner thread. `Pending` observes the most recently scheduled provider operation; separately queued UI publication can complete later. Arbitrary throwing/blocking external callbacks are not promised transactional rollback.
+Each row has three warmups and eleven samples. Compiler fixtures have 117,792 UTF-16 units, 4,000 methods and one four-character numeric edit. Setup, prior-model warmup and output verification are excluded. The semantic-warm row forces diagnostics before the edit during setup and for the new model during measurement. Current-thread allocations do not capture every worker allocation from compiler internals. Raw outputs, exact revisions and environment data are in `artifacts/tests/performance.json` in the corresponding CI run. No absolute machine-independent timing gate is used.
 
-## Validation and measurement methodology
+### Remaining compiler limits
 
-New unit coverage includes containment/direction, Unicode and CRLF boundaries, cancellation, malformed LSP parent chains, exact wire capabilities and synchronization, concurrent same-snapshot model/analysis reuse, bounded cache retention, old-revision and file-name behavior, and reentrant analysis callbacks. Native-host checks exercise real selection state, read-only behavior, delayed providers that ignore cancellation, document/provider changes and disposal. Browser tests use real keys, menus and the WebSocket fixture; the diagnostics bridge remains observation-only.
+Initial parsing scans the document. New-revision diagnostics/classification/navigation still perform substantial compiler work; this is not a fully incremental semantic pipeline. Long or unrelated histories can require broad differencing, and distant edits can produce one larger contiguous replacement. Completion and formatting paths may still request full text. The cache is not a project system, refactoring engine or multi-document LSP workspace. Platform parser/compiler calls can delay cancellation internally. Physical-GPU, frame-rate, power and end-to-end input latency have not been measured by these probes.
 
-The benchmark executable adds:
+## Scheduling review and fixes
 
-- `csharp_small_edit_model`: 4,000 C# methods and one four-character edit, comparing the preceding full-source/new-compilation hot path with changed-source/reused-compilation construction.
-- `structural_selection_cycles_10000`: 10,000 cached model expansion/contraction pairs, without native UI/layout/painting.
+Canceling the previous provider can invoke callbacks that edit the document, switch providers, request new analysis or dispose the coordinator. Previously, the outer request could overwrite the reentrant newer request. A synchronous publication handler could likewise start work before the outer call assigned `Pending`, causing that assignment to replace the newer task.
 
-Both retain three warmups and eleven samples with p50, observed p95 and current-thread managed allocations. Compiler setup, prior-model warmup and final produced-text verification are excluded; full semantic analysis, Task scheduling and native rendering are not measured by this microbenchmark. Raw outputs are retained in `artifacts/tests/performance.json` with the exact source revision/environment. Read the corresponding successful job results before treating a benchmark or test as validated.
+The coordinator now advances its generation and detaches the old cancellation source before invoking callbacks. It checks the generation before starting work and before assigning `Pending`. Publication checks provider identity as well as generation/revision. Editing clears obsolete `Current` immediately during debounce; disposal releases the last published result and subscriptions. Reassigning the same provider avoids a redundant restart. Mutating/request APIs verify the owner thread, and debounce accepts zero through one minute.
+
+Hosts must dispatch publication/invalidation callbacks onto the document owner thread. `Pending` represents the most recently scheduled provider operation; separately queued UI publication may finish later. Arbitrary blocking or throwing external callbacks are not given transactional rollback guarantees.
+
+## Validation scope
+
+Unit coverage includes containment/direction, UTF-16/CRLF, malformed protocol chains, cancellation and snapshot leases, actual parser-node reuse, deferred semantic state, same-snapshot concurrency, bounded retention, old revisions/file names, and reentrant scheduling callbacks. Native checks cover real selection/caret state, read-only documents, providers that ignore cancellation, document/provider changes and disposal. Browser tests use actual keys, menus and WebSocket transport; the diagnostic bridge remains observation-only. Existing regression/package validation is retained, not replaced by the new tests.
+
+This review specifically inspects selection, compiler-cache and coordinator paths and their control/protocol integration. Other subsystems remain covered by their existing tests, not an assertion that every file received exhaustive manual review. See [compatibility.md](compatibility.md) for remaining work.
 
 ## Primary references
 
-- Actipro selection and editing feature target: https://www.actiprosoftware.com/docs/controls/wpf/syntaxeditor/index
+- Actipro SyntaxEditor target documentation: https://www.actiprosoftware.com/docs/controls/wpf/syntaxeditor/index
 - LSP selectionRange: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_selectionRange
-- Roslyn SourceText reader construction: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.text.sourcetext.from
-- Roslyn immutable source changes: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.text.sourcetext.withchanges
-
-See [compatibility.md](compatibility.md) for the remaining product, platform and visual-parity boundaries.
+- Roslyn reader construction: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.text.sourcetext.from
+- Roslyn source changes: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.text.sourcetext.withchanges
+- Actual incremental syntax identity: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.syntaxnode.isincrementallyidenticalto
