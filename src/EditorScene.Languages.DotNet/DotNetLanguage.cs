@@ -28,7 +28,9 @@ public sealed partial class DotNetLanguage : ISyntaxLanguage, ISelectionRangePro
     public string DisplayName => _visualBasic ? "Visual Basic" : "C#";
     public IReadOnlyList<string> Extensions => _visualBasic ? [".vb"] : [".cs", ".csx"];
     public LanguageCapabilities Capabilities => LanguageCapabilities.Diagnostics | LanguageCapabilities.Classification | LanguageCapabilities.Outlining | LanguageCapabilities.Symbols | LanguageCapabilities.Completion | LanguageCapabilities.QuickInfo | LanguageCapabilities.SignatureHelp | LanguageCapabilities.Formatting | LanguageCapabilities.SelectionRanges;
-    public Task<LanguageAnalysis> AnalyzeAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => Task.Run(() => AnalyzeCached(snapshot, cancellationToken), cancellationToken);
+    public Task<LanguageAnalysis> AnalyzeAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => cancellationToken.IsCancellationRequested
+        ? Task.FromCanceled<LanguageAnalysis>(cancellationToken)
+        : TryGetCompletedAnalysis(snapshot) ?? AnalyzeOnWorkerAsync(snapshot, cancellationToken);
 
     private LanguageAnalysis AnalyzeCore(DocumentSnapshot snapshot, CachedModel model, CancellationToken token)
     {

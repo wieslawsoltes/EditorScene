@@ -46,6 +46,7 @@ public sealed partial class DotNetLanguage
         internal Compilation? BuiltCompilation => _compilation.IsValueCreated ? _compilation.Value : null;
         internal readonly SemaphoreSlim AnalysisGate = new(1, 1);
         internal LanguageAnalysis? Analysis;
+        internal Task<LanguageAnalysis>? CompletedAnalysis;
     }
     /// <summary>Observed cache work, not timing estimates. At most eight document slots are retained.</summary>
     public DotNetCacheStatistics CacheStatistics
@@ -114,7 +115,7 @@ public sealed partial class DotNetLanguage
             var reusable = forward ? previous!.BuiltCompilation : null;
             var model = CreateCachedModel(snapshot, tree, reusable, reusable is null ? null : previous!.Tree);
             token.ThrowIfCancellationRequested(); Interlocked.Increment(ref _modelBuilds);
-            if (previous is null || previous.Snapshot.Revision <= snapshot.Revision) slot.Model = model;
+            if (previous is null || previous.Snapshot.Revision <= snapshot.Revision) Volatile.Write(ref slot.Model, model);
             return model;
         }
         finally
@@ -143,6 +144,23 @@ public sealed partial class DotNetLanguage
             Interlocked.Increment(ref _compilationBuilds); return compilation;
         }, () => Interlocked.Increment(ref _semanticModelBuilds));
     }
+    private Task<LanguageAnalysis>? TryGetCompletedAnalysis(DocumentSnapshot snapshot)
+    {
+        if (snapshot is null) return null; // Preserve asynchronous argument-error behavior on the worker path.
+        lock (_cacheGate)
+        {
+            if (!_models.TryGetValue(snapshot.DocumentId, out var slot)) return null;
+            var model = Volatile.Read(ref slot.Model);
+            if (model is null || model.Snapshot.Revision != snapshot.Revision || model.Snapshot.FileName != snapshot.FileName) return null;
+            var completed = Volatile.Read(ref model.CompletedAnalysis);
+            if (completed is not null) { Interlocked.Increment(ref _cacheHits); slot.LastAccess = ++_accessClock; }
+            return completed;
+        }
+    }
+    // Keeping this lambda in a separate method prevents a closure from
+    // being allocated at the public method entry even on a cache hit.
+    private Task<LanguageAnalysis> AnalyzeOnWorkerAsync(DocumentSnapshot snapshot, CancellationToken token)
+        => Task.Run(() => AnalyzeCached(snapshot, token), token);
     private LanguageAnalysis AnalyzeCached(DocumentSnapshot snapshot, CancellationToken token)
     {
         var model = GetModel(snapshot, token); model.AnalysisGate.Wait(token);
@@ -151,7 +169,9 @@ public sealed partial class DotNetLanguage
             token.ThrowIfCancellationRequested();
             if (model.Analysis is not null) return model.Analysis;
             var analysis = AnalyzeCore(snapshot, model, token); token.ThrowIfCancellationRequested();
-            model.Analysis = analysis; Interlocked.Increment(ref _analysisBuilds); return analysis;
+            model.Analysis = analysis;
+            Volatile.Write(ref model.CompletedAnalysis, Task.FromResult(analysis));
+            Interlocked.Increment(ref _analysisBuilds); return analysis;
         }
         finally { model.AnalysisGate.Release(); }
     }
