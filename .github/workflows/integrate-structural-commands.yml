@@ -1,0 +1,62 @@
+name: Integrate structural selection commands
+on:
+  push:
+    branches: [feat/structural-selection-incremental-analysis]
+    paths: [.github/workflows/integrate-structural-commands.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Wire selection negotiation, commands and lifecycle guards
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def edit(path,old,new):
+              p=Path(path); t=p.read_text(); assert t.count(old)==1, path+': '+old[:100]; p.write_text(t.replace(old,new))
+          p='src/EditorScene.Protocol/LanguageServerClient.cs'
+          edit(p,'public sealed class LanguageServerClient','public sealed partial class LanguageServerClient')
+          edit(p,'                        ["documentSymbol"] =', '                        ["selectionRange"] = new JsonObject { ["dynamicRegistration"] = false },\n                        ["documentSymbol"] =')
+          p='src/EditorScene.Protocol/LspSyntaxLanguage.cs'
+          edit(p,'public sealed class LspSyntaxLanguage','public sealed partial class LspSyntaxLanguage')
+          edit(p,'        _pullDiagnostics = Enabled(caps["diagnosticProvider"]);','        if (Enabled(caps["selectionRangeProvider"])) result |= LanguageCapabilities.SelectionRanges;\n        _pullDiagnostics = Enabled(caps["diagnosticProvider"]);')
+          p='src/EditorScene.Controls/SyntaxEditor.cs'
+          edit(p,'        ClosePopups(); _coordinator?.Dispose();\n        var viewport =', '        ResetSelectionExpansion();\n        ClosePopups(); _coordinator?.Dispose();\n        var viewport =')
+          edit(p,'    private void OnDocumentChanged(object? sender, EventArgs e)\n    {','    private void OnDocumentChanged(object? sender, EventArgs e)\n    {\n        ResetSelectionExpansion();')
+          edit(p,'    private void OnSelectionChanged(object? sender, EventArgs args) { UpdateBracketHighlights(); StateChanged?.Invoke(this, EventArgs.Empty); }','    private void OnSelectionChanged(object? sender, EventArgs args) { if (!_changingStructuralSelection) ResetSelectionExpansion(); UpdateBracketHighlights(); StateChanged?.Invoke(this, EventArgs.Empty); }')
+          edit(p,'        DisposeMacroSupport(); ClosePopups(); _disposed = true;', '        ResetSelectionExpansion(); DisposeMacroSupport(); ClosePopups(); _disposed = true;')
+          p='src/EditorScene.Controls/SyntaxEditor.Commands.cs'
+          edit(p,'                case EditorCommand.SelectToMatchingBracket: NavigateToMatchingBracket(true); break;', '''                case EditorCommand.SelectToMatchingBracket: NavigateToMatchingBracket(true); break;
+                          case EditorCommand.ExpandSelection: if (await ExpandSelectionAsync()) FocusAfterEditCommand(); return;
+                          case EditorCommand.ContractSelection: if (ContractSelection()) FocusAfterEditCommand(); return;''')
+          p='src/EditorScene.Controls/EditorCommand.cs'
+          edit(p,'SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket','SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket, ExpandSelection, ContractSelection')
+          p='src/EditorScene.Controls/SyntaxEditor.Input.cs'
+          edit(p,'        EditorCommand? action = null;','''        EditorCommand? action = null;
+                  if (alt && shift && !command && e.Key is VirtualKey.Right or VirtualKey.Left)
+                  { _chord = null; e.Handled = true; _ = ExecuteAsync(e.Key == VirtualKey.Right ? EditorCommand.ExpandSelection : EditorCommand.ContractSelection); return; }''')
+          p='src/EditorScene.Controls/SyntaxEditor.Macros.cs'
+          edit(p,'or EditorCommand.SelectToMatchingBracket);','or EditorCommand.SelectToMatchingBracket or EditorCommand.ExpandSelection or EditorCommand.ContractSelection);')
+          p='src/EditorScene.Controls/SyntaxEditor.MacroFocus.cs'
+          edit(p,'private void OnMacroUnloaded(object sender, RoutedEventArgs args) => CancelPendingMacroFocus();','private void OnMacroUnloaded(object sender, RoutedEventArgs args) { CancelPendingMacroFocus(); ResetSelectionExpansion(); }')
+          p='src/EditorScene.App/EditorPage.Menus.cs'
+          edit(p,'        var advanced = Menu("Advanced");','        Command(edit, "Expand Selection", EditorCommand.ExpandSelection);\n        Command(edit, "Contract Selection", EditorCommand.ContractSelection);\n        var advanced = Menu("Advanced");')
+          p='src/EditorScene.App/EditorPage.Diagnostics.cs'
+          edit(p,'            BracketPairs = _active.BracketPairCount,', '            SelectionExpansionDepth = _active.SelectionExpansionDepth, SelectionExpansionPending = _active.IsSelectionExpansionPending,\n            BracketPairs = _active.BracketPairCount,')
+          edit(p,'    public int BracketPairs { get; set; }','    public int SelectionExpansionDepth { get; set; }\n    public bool SelectionExpansionPending { get; set; }\n    public int BracketPairs { get; set; }')
+          PY
+          git diff --check
+      - name: Commit integration and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-structural-commands.yml
+          git add src
+          git commit -m 'feat(editor): integrate syntax/LSP selection expansion, contraction and stale-result cancellation'
+          git push origin HEAD:feat/structural-selection-incremental-analysis
+          git rev-parse HEAD
