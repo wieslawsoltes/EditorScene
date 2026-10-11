@@ -11,7 +11,7 @@ namespace EditorScene.App;
 
 internal static class NativeWorkspaceChecks
 {
-    internal static Task RunAsync(List<string> checks)
+    internal static async Task RunAsync(List<string> checks)
     {
         void Check(bool value, string name) { if (!value) throw new InvalidOperationException("Native workspace regression: " + name); checks.Add(name); }
         using var document = new EditorDocument("a\nb", "workspace.txt");
@@ -26,9 +26,9 @@ internal static class NativeWorkspaceChecks
         for (var i = 0; i < 1000; i++) { editor.IsOverstrike = editor.IsOverstrike; status.Refresh(); }
         Check(errors.ProjectionBuildCount == projections && errors.FilterBuildCount == filters, "Repeated unchanged native events do not rebuild diagnostic rows or filters");
         Check(status.RefreshCount == refreshes, "Repeated unchanged native events do not rebuild status text");
-        errors.FilterBox.Text = "WARN";
+        await SetFilterAsync("WARN");
         Check(errors.VisibleCount == 1 && errors.Table!.Rows.Length == 2, "Native diagnostic text filter preserves the immutable original table");
-        errors.FilterBox.Text = "";
+        await SetFilterAsync("");
         Check(errors.VisibleCount == 2, "Clearing the diagnostic filter restores all rows");
         status.ZoomSlider.Value = 20;
         Check(editor.FontSize == 20, "Native status slider changes the attached editor font size");
@@ -43,7 +43,7 @@ internal static class NativeWorkspaceChecks
         Check(splitEditor.ShowWhitespace && splitEditor.ShowRuler && !splitEditor.ShowIndentGuides && !splitEditor.AutoShowCompletion && !splitEditor.AutoCompleteBrackets && splitEditor.FontSize == 17, "New split copies visual and IntelliPrompt preferences");
         splitEditor.WordWrap = false; splitEditor.CaretOffset = 0;
         Check(editor.WordWrap && editor.CaretOffset != splitEditor.CaretOffset, "Split view preferences and carets remain independent after copying");
-        var split = new ResizableSplitView { First = editor, Second = splitEditor };
+        using var split = new ResizableSplitView { First = editor, Second = splitEditor };
         Check(split.IsSplit && split.Orientation == Orientation.Vertical, "Reusable split defaults to top/bottom panes");
         split.Measure(new Size(800, 400)); split.Arrange(new Rect(0, 0, 800, 400)); split.Ratio = .3;
         Check(split.Ratio == .3, "Split ratio survives native layout");
@@ -52,7 +52,7 @@ internal static class NativeWorkspaceChecks
         var rejected = false; try { split.Ratio = double.NaN; } catch (ArgumentOutOfRangeException) { rejected = true; }
         Check(rejected && split.Ratio == .3, "Invalid split ratios are rejected without mutating layout state");
         split.Second = null;
-        Check(!split.IsSplit && ReferenceEquals(split.First, editor), "Closing the second pane preserves the first view"); split.First = null; split.Dispose();
+        Check(!split.IsSplit && ReferenceEquals(split.First, editor), "Closing the second pane preserves the first view"); split.First = null;
         foreach (var theme in new[] { EditorTheme.Light, EditorTheme.Dark, EditorTheme.HighContrast })
         {
             status.ApplyTheme(theme); errors.ApplyTheme(theme); split.ApplyTheme(theme);
@@ -71,7 +71,20 @@ internal static class NativeWorkspaceChecks
         errors.Dispose(); status.Dispose(); editor.IsOverstrike = !editor.IsOverstrike;
         Check(true, "Disposed workspace controls remain detached during subsequent editor events");
         NativeWorkspaceReviewChecks.Run(checks);
-        return Task.CompletedTask;
+
+        async Task SetFilterAsync(string text)
+        {
+            // TextChanged is intentionally asynchronous in WinUI. Wait for the
+            // control's resulting row publication, not a fixed delay or direct
+            // invocation of its filter internals. Preserve the actual event path.
+            var published = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var previousBuilds = errors.FilterBuildCount;
+            void Changed(object? sender, EventArgs args)
+            { if (errors.FilterBox.Text == text && errors.FilterBuildCount > previousBuilds) published.TrySetResult(true); }
+            errors.RowsChanged += Changed;
+            try { errors.FilterBox.Text = text; await published.Task.WaitAsync(TimeSpan.FromSeconds(5)); }
+            finally { errors.RowsChanged -= Changed; }
+        }
     }
     private sealed class FixtureLanguage : ISyntaxLanguage
     {
