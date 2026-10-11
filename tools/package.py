@@ -72,6 +72,10 @@ if (map.PairCount < 1) throw new Exception("Packaged bracket map failed.");
 var rangeIndex = new EditorScene.LanguageServices.RangeIndex<int>([0, 5, 10], x => new(x, 1));
 var hits = new List<int>(); rangeIndex.CopyOverlaps(new(4, 3), hits);
 if (hits.Count != 1 || hits[0] != 5) throw new Exception("Packaged range index failed.");
+var selectionRanges = await new DotNetLanguage().GetSelectionRangesAsync(snapshot, 0);
+var expansion = new EditorScene.LanguageServices.SelectionExpansion(snapshot, new SelectionRange(0, 0), selectionRanges);
+if (!expansion.TryExpand(snapshot, expansion.Current, out var selected) || selected.Length == 0) throw new Exception("Packaged structural selection failed.");
+if (!expansion.TryContract(snapshot, selected, out var original) || original != new SelectionRange(0, 0)) throw new Exception("Packaged structural contraction failed.");
 var analysis = await new DotNetLanguage().AnalyzeAsync(snapshot);
 if (analysis.Diagnostics.Any(d => d.Severity == EditorScene.LanguageServices.IssueSeverity.Error)) throw new Exception("Packaged compiler references failed.");
 using var jsonDocument = new EditorDocument("{\\"x\\":42}");
@@ -99,6 +103,8 @@ using Microsoft.UI.Xaml.Controls;
 public sealed class ConsumerControl : UserControl
 {
     public SyntaxEditor Editor { get; } = new() { Document = new EditorDocument("{}", "consumer.json"), SyntaxLanguage = new JsonLanguage() };
+    public Task<bool> ExpandAsync() => Editor.ExpandSelectionAsync();
+    public bool Contract() => Editor.ContractSelection();
     public ConsumerControl()
     {
         Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());

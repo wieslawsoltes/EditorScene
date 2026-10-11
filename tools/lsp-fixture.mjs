@@ -43,10 +43,11 @@ export function createLspFixture(server) {
           case 'initialize':
             assert.deepEqual(p.capabilities.general.positionEncodings,['utf-16']);
             assert.equal(p.capabilities.workspace.applyEdit,false);
+            assert.equal(p.capabilities.textDocument.selectionRange.dynamicRegistration,false);
             assert.equal(p.capabilities.textDocument.semanticTokens.requests.full.delta,true);
             reply(id,{capabilities:{positionEncoding:'utf-16',textDocumentSync:{openClose:true,change:2,save:{includeText:true}},
               completionProvider:{triggerCharacters:['.']},hoverProvider:true,signatureHelpProvider:{triggerCharacters:['(']},
-              documentSymbolProvider:true,foldingRangeProvider:true,documentFormattingProvider:true,
+              documentSymbolProvider:true,foldingRangeProvider:true,documentFormattingProvider:true,selectionRangeProvider:true,
               diagnosticProvider:{identifier:'fixture',interFileDependencies:false,workspaceDiagnostics:false},
               semanticTokensProvider:{full:{delta:true},legend:{tokenTypes:['keyword','class'],tokenModifiers:[]}}}});break;
           case 'initialized':break;
@@ -56,6 +57,15 @@ export function createLspFixture(server) {
             assert.equal(p.textDocument.uri,session.uri);assert.equal(p.textDocument.version,session.version+1);
             assert.equal(p.contentChanges.length,1);for(const change of p.contentChanges){assert.ok(change.range,'Incremental sync must include a range');const start=offset(session.text,change.range.start),end=offset(session.text,change.range.end);assert.ok(end>=start);session.text=session.text.slice(0,start)+change.text+session.text.slice(end);}
             session.version=p.textDocument.version;break;
+          case 'textDocument/selectionRange':{
+            assert.equal(p.textDocument.uri,session.uri);assert.ok(Array.isArray(p.positions)&&p.positions.length>0);
+            const selections=p.positions.map(pos=>{
+              const caret=offset(session.text,pos);let start=caret,end=caret;
+              while(start>0&&/[\w]/.test(session.text[start-1]))start--;
+              while(end<session.text.length&&/[\w]/.test(session.text[end]))end++;
+              return {range:range(session.text,start,end),parent:{range:range(session.text,0,session.text.length)}};
+            });reply(id,selections);break;
+          }
           case 'textDocument/documentSymbol':{
             const name=session.text.indexOf('Demo');reply(id,name<0?[]:[{name:'RemoteDemo',kind:5,range:range(session.text,0,session.text.length),selectionRange:range(session.text,name,name+4),children:[]}]);break;
           }
