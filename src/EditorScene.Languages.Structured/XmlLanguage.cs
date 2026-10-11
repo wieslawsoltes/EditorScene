@@ -55,7 +55,6 @@ public sealed class XmlLanguage(bool xaml = false) : ISyntaxLanguage
             }
             if (i + 1 < text.Length && text[i + 1] is '?' or '!')
             {
-                // A processing instruction may contain '>'; only '?>' ends it.
                 var processing = text[i + 1] == '?';
                 var end = processing ? text.IndexOf("?>", i + 2, StringComparison.Ordinal) : text.IndexOf('>', i + 1);
                 i = end < 0 ? text.Length : end + (processing ? 2 : 1);
@@ -107,21 +106,19 @@ public sealed class XmlLanguage(bool xaml = false) : ISyntaxLanguage
     public Task<ImmutableArray<TextEdit>> FormatAsync(DocumentSnapshot snapshot, CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         using var reader = XmlReader.Create(new StringReader(snapshot.Text), Settings);
-        // Whitespace between child elements can be meaningful (e.g. inline runs in XAML).
-        // Without a schema it is unsafe to discard these text nodes to reindent them.
         var document = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
         var declaration = document.Declaration?.ToString();
-        cancellationToken.ThrowIfCancellationRequested();
+        var newline = snapshot.Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        XmlWhitespaceFormatter.Apply(document, newline, cancellationToken);
         var builder = new StringBuilder();
         using (var writer = XmlWriter.Create(builder, new XmlWriterSettings
         {
-            Indent = true, IndentChars = "    ", OmitXmlDeclaration = declaration is null,
-            NewLineChars = snapshot.Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
-            NewLineHandling = NewLineHandling.Entitize
+            // Whitespace was inserted only where safe. Automatic writer indentation
+            // cannot know about mixed content before its first text node is written.
+            Indent = false, OmitXmlDeclaration = declaration is null,
+            NewLineChars = newline, NewLineHandling = NewLineHandling.Entitize
         })) document.Save(writer);
         var formatted = builder.ToString();
-        // StringBuilder reports UTF-16 to XmlWriter. Restore only the declaration,
-        // never identically named attributes, CDATA, comments or text elsewhere.
         if (declaration is not null)
         {
             var end = formatted.IndexOf("?>", StringComparison.Ordinal);
