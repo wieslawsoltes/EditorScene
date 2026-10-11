@@ -128,7 +128,8 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
     { if (e.Key == VirtualKey.Enter && _rows.SelectedItem is DiagnosticTableRow row) { Navigate(row); e.Handled = true; } }
     private void OnFilterToggle(object sender, RoutedEventArgs args) => ApplyFilter();
     private void OnFilterChanged(object sender, TextChangedEventArgs args) => ApplyFilter();
-    private void OnClearFilter(object sender, RoutedEventArgs args) { if (!_disposed) { _filter.Text = string.Empty; _filter.Focus(FocusState.Programmatic); } }
+    private void OnClearFilter(object sender, RoutedEventArgs args)
+    { if (_disposed) return; _filter.Text = string.Empty; if (!_disposed) _filter.Focus(FocusState.Programmatic); }
     private void OnResetLayout(object sender, RoutedEventArgs args) { if (!_disposed) { ResetColumnWidths(); if (!_disposed) SortBy(DiagnosticSortColumn.ProviderOrder); } }
     private void AnalysisUpdated(object? sender, LanguageAnalysis analysis) => Refresh();
     private void StateChanged(object? sender, EventArgs args) => Refresh();
@@ -149,8 +150,13 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
     private void ApplyFilter(bool force = false)
     {
         if (_disposed) return;
+        var rawQuery = _filter.Text ?? string.Empty;
+        // Input chrome follows the raw text even when its normalized query is
+        // unchanged. Spaces must remain clearable without rebuilding any rows.
+        if (_clearFilter.IsEnabled != (rawQuery.Length != 0)) _clearFilter.IsEnabled = rawQuery.Length != 0;
+        if (_disposed) return;
         var visibility = (_errors.IsChecked == true ? DiagnosticVisibility.Error : 0) | (_warnings.IsChecked == true ? DiagnosticVisibility.Warning : 0) | (_information.IsChecked == true ? DiagnosticVisibility.Information : 0);
-        var query = _filter.Text?.Trim() ?? string.Empty;
+        var query = rawQuery.Trim();
         if (!force && visibility == _lastVisibility && query == _lastQuery && _sortColumn == _lastColumn && _sortDirection == _lastDirection) return;
         var generation = ++_publication;
         var result = _queryView?.Query(visibility, query, _sortColumn, _sortDirection) ?? [];
@@ -164,7 +170,6 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
         if (previousSelection is not null && result.Any(r => ReferenceEquals(r, previousSelection))) _rows.SelectedItem = previousSelection;
         if (_disposed || generation != _publication) return;
         _errors.Content = $"{_table?.ErrorCount ?? 0} Errors"; _warnings.Content = $"{_table?.WarningCount ?? 0} Warnings"; _information.Content = $"{_table?.InformationCount ?? 0} Messages";
-        _clearFilter.IsEnabled = query.Length != 0;
         _summary.Text = _table is null ? "Waiting for current document analysis" : $"{_visible.Length:N0} of {_table.Rows.Length:N0} diagnostics · current document";
         RowsChanged?.Invoke(this, EventArgs.Empty);
     }

@@ -11,6 +11,7 @@ public sealed partial class EditorPage
     {
         SortColumn = _errors.SortColumn.ToString(), SortDirection = _errors.SortDirection.ToString(),
         SortBuilds = _errors.SortBuildCount, RealizedRows = _errors.RealizedRowCount,
+        FilterText = _errors.FilterBox.Text, ClearEnabled = _errors.ClearFilterButton.IsEnabled,
         Widths = DiagnosticList.Columns.Select(_errors.GetEffectiveColumnWidth).ToArray(),
         RowWidths = Descendants(_errors.RowsView).OfType<DiagnosticRowPresenter>().Where(r => r.Row is not null)
             .Take(16).Select(r => ((Grid)r.Content).ColumnDefinitions.Select(c => c.Width.Value).ToArray()).ToArray(),
@@ -28,6 +29,8 @@ internal sealed class DiagnosticGridState
     public string SortDirection { get; set; } = "";
     public long SortBuilds { get; set; }
     public int RealizedRows { get; set; }
+    public string FilterText { get; set; } = "";
+    public bool ClearEnabled { get; set; }
     public double[] Widths { get; set; } = [];
     public double[][] RowWidths { get; set; } = [];
     public string[] RowIcons { get; set; } = [];

@@ -27,6 +27,12 @@ export async function checkDiagnosticGrid({page,state,wait,textIs,paste,click,fi
   assert.equal((await state()).DiagnosticGrid.SortBuilds,sorts,'Filtering must reuse the current immutable ordering');
   await click('Clear diagnostic filter');await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===300);
   assert.equal((await state()).DiagnosticGrid.SortBuilds,sorts);
+  const filters=(await state()).DiagnosticFilterBuilds;
+  await fill('Filter diagnostics','   ');
+  await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.ClearEnabled&&globalThis.__editorSceneState.DiagnosticGrid.FilterText==='   ');
+  await click('Clear diagnostic filter');
+  await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.FilterText===''&&globalThis.__editorSceneState.DiagnosticGrid.ClearEnabled===false);
+  assert.equal((await state()).DiagnosticFilterBuilds,filters,'Whitespace-only input chrome must not invalidate normalized query data');
   checks.push('Native headers sort line numbers numerically in both directions and filtering reuses the ordering');
   await click('Resize diagnostic Code');
   await wait(()=>globalThis.__editorSceneState?.FocusedControl==='Microsoft.UI.Xaml.Controls.Primitives.Thumb');
