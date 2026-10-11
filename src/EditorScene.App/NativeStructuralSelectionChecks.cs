@@ -18,11 +18,18 @@ internal static class NativeStructuralSelectionChecks
         Check(await editor.ExpandSelectionAsync() && editor.SelectedText == "alpha beta", "Native fallback expands a word to its line");
         Check(editor.ContractSelection() && editor.SelectedText == "alpha", "Native contraction restores the preceding selection");
         Check(editor.ContractSelection() && editor.CaretOffset == 2 && editor.SelectionLength == 0, "Native contraction restores the exact original caret");
-        editor.NativeEditor.TextArea.Session.SetSelection(5, 0);
+        editor.NativeEditor.TextArea.Session.SetCaretOffset(0); editor.NativeEditor.TextArea.Session.SetSelection(5, 0);
         await editor.ExpandSelectionAsync();
         Check(editor.NativeEditor.TextArea.Session.AnchorOffset == 10 && editor.CaretOffset == 0, "Reverse selection remains reversed during structural expansion");
         editor.ContractSelection();
         Check(editor.NativeEditor.TextArea.Session.AnchorOffset == 5 && editor.CaretOffset == 0, "Reverse selection contracts to its original endpoints");
+        editor.NativeEditor.TextArea.Session.SetCaretOffset(2);
+        editor.NativeEditor.TextArea.Session.SetSelection(5, 0);
+        await editor.ExpandSelectionAsync();
+        Check(editor.CaretOffset == 0 && editor.SelectionLength == 10, "Expansion positions the insertion caret at the active structural endpoint");
+        editor.ContractSelection();
+        Check(editor.CaretOffset == 2 && editor.NativeEditor.TextArea.Session.AnchorOffset == 5 && editor.NativeEditor.TextArea.Session.SelectionEndOffset == 0,
+            "Contraction restores an insertion caret positioned independently of the selection endpoints");
         editor.IsReadOnly = true; await editor.ExpandSelectionAsync(); editor.ContractSelection();
         Check(editor.Text == "alpha beta" && document.Revision == 0, "Structural selection works in read-only documents without editing"); editor.IsReadOnly = false;
         editor.Select(2, 0); await editor.ExpandSelectionAsync(); editor.CaretOffset = 8;
