@@ -1,6 +1,6 @@
 # Language Server Protocol integration
 
-EditorScene.Protocol now includes a reusable `LspSyntaxLanguage` adapter. It implements the same `ISyntaxLanguage` contract as the built-in C#/VB/JSON/XML providers, so native Uno controls do not depend on protocol details. This is a bounded, explicitly connected LSP feature set, not a claim to implement every LSP or Actipro feature.
+EditorScene.Protocol includes a reusable `LspSyntaxLanguage` adapter. It implements the same `ISyntaxLanguage` contract as the built-in C#/VB/JSON/XML providers, so native Uno controls do not depend on protocol details. This is a bounded, explicitly connected LSP feature set, not a claim to implement every LSP or Actipro feature.
 
 ## Connect in the sample
 
@@ -36,13 +36,21 @@ editor.SyntaxLanguage = provider;
 
 Initialization advertises supported capabilities and accepts UTF-16 positions only. The client negotiates full or incremental text synchronization, open/close and save behavior. Incremental changes preserve surrogate-pair and CRLF boundaries. A live provider requires both open/close and text changes; it refuses a server that cannot receive the edited document.
 
-Only advertised requests are made. Supported results are plain-text completion (arrays or CompletionList, edit-range defaults, insert/replace edits, and additional text edits), hover, signature help including parameter label offsets, hierarchical/flat document symbols, nested folding regions, full and delta relative semantic tokens and document formatting. Full and unchanged pull-diagnostic reports retain result IDs. Versioned push diagnostics invalidate only the matching document revision and are routed through the existing analysis coordinator.
+Only advertised requests are made. Supported results are plain-text completion (arrays or CompletionList, edit-range defaults, insert/replace edits, and additional text edits), hover, signature help including parameter label offsets, hierarchical/flat document symbols, nested folding regions, full and delta relative semantic tokens, document formatting, and structural selection ranges. Full and unchanged pull-diagnostic reports retain result IDs. Versioned push diagnostics invalidate only the matching document revision and are routed through the analysis coordinator. Explicit same-revision provider invalidation clears `Current` while replacement analysis is pending; matching text revision alone does not prove externally invalidated data is still current.
 
 A document snapshot lease is held through each response. Newer didChange messages cannot race an older request. Cancellation releases the lease; late RPC replies are discarded by request ID. Results are validated before reaching the editor: malformed UTF-16 positions, overlapping edits, crossing folds, oversized arrays, excessive symbol depth, invalid semantic tokens and foreign-document symbols are rejected or filtered as documented in the converter.
 
 Completion commits use the reusable `CompletionEditPlan`. It honors the entire server replacement range, including suffix text after the caret, and applies imports/additional edits in one undo group. Typing inside the completion span is translated through version history. An unrelated document edit invalidates the plan, even when that edit is subsequently undone. All edits are checked against read-only protection before mutation.
 
 Incremental text changes use bounded snapshot history and persistent line indexes instead of scanning unchanged prefixes. Semantic-token decoding avoids per-token JSON position allocations. See [performance details](performance.md) for algorithms, size limits, cancellation/recovery behavior and benchmark methodology.
+
+## Structural selection
+
+The client advertises `textDocument.selectionRange` with dynamic registration disabled. The provider advertises `LanguageCapabilities.SelectionRanges` only when the server supplies `selectionRangeProvider`. **Edit > Expand Selection / Contract Selection**, or **Alt+Shift+Right / Left**, then uses the negotiated remote parent chain. An unsupported server receives no selectionRange request; the native view uses its local fallback.
+
+`LanguageServerClient.SelectionRangesAsync` accepts 1–1,024 positions. `LspSelectionRanges.Decode` checks one result per requested position, valid UTF-16 coordinates, child/parent containment and at most 128 parent nodes. Equal parents are deduplicated. A null response yields empty chains; null entries in a non-null array and malformed/crossing parents are rejected before any selection is applied. Remote ranges are data, never executable commands.
+
+The current native view requests one position and caches the chain while document, revision, provider, selection and insertion caret remain current. Expansion/contraction restores reversed endpoints and the original independent insertion caret. It does not discard extra carets or accept stale results after edits, provider changes, rebinding or disposal. Synchronous host callbacks are checked between native caret/selection setters, so a callback's new selection or document is not overwritten by the rest of an obsolete command. See [structural selection](structural-selection.md) and its native regression suite for the ownership contract and limits.
 
 ## Deliberate boundaries
 
@@ -51,12 +59,13 @@ Incremental text changes use bounded snapshot history and persistent line indexe
 - Remote text and documentation are displayed as text, not interpreted as HTML or executed.
 - Server requests to apply workspace edits or execute commands have no handler and receive method-not-found. No other file is opened or changed. Rename/refactoring, code actions, references, cross-document navigation, workspace folders, file watching and dynamic registration are not integrated.
 - Full and negotiated delta semantic tokens are supported with validated immutable caching and a single full replacement on an invalid delta base. Cancellation never retries; malformed full recovery fails. Token range requests and multiline/overlapping tokens are not advertised. Server token modifiers are validated but not yet styled individually.
+- Structural selection is single-selection in the native view. Partial-result progress, dynamic registration and complete vendor selection-provider contracts are not implemented.
 - Native UI interaction coverage does not establish universal compatibility with third-party language servers. A test peer is intentionally synthetic and identified as such.
 
 ## Validation
 
-The LSP unit tests use actual paired JSON-RPC connections over channel transports, not mocked return methods on the provider. They cover synchronization negotiation, Unicode boundaries, versions, cancellation, snapshot leases, diagnostics, safe result conversion and completion transactions.
+The LSP unit tests use actual paired JSON-RPC connections over channel transports, not mocked return methods on the provider. They cover synchronization negotiation, Unicode boundaries, versions, cancellation, snapshot leases, diagnostics, safe result conversion, structural parent chains and completion transactions. Coordinator regressions exercise same-revision invalidation, replacement failures and obsolete provider notifications.
 
-`tools/lsp-fixture.mjs` is a synthetic WebSocket language server used only by browser tests. The published .NET/Uno app connects through its real dialog and `ClientWebSocket`. Tests inspect wire messages and drive native input to verify remote analysis, suffix-replacing completion with an added import, undo/redo, hover/signatures, formatting, real save downloads and didSave, rejected workspace edits and teardown. The fixture is not a shipped compiler or a substitute for third-party-server conformance testing.
+`tools/lsp-fixture.mjs` is a synthetic WebSocket language server used only by browser tests. The published .NET/Uno app connects through its real dialog and `ClientWebSocket`. Tests inspect wire messages and drive native input to verify remote analysis, suffix-replacing completion with an added import, undo/redo, hover/signatures, structural expansion/contraction with one cached remote request, formatting, real save downloads and didSave, rejected workspace edits and teardown. The fixture is not a shipped compiler or a substitute for third-party-server conformance testing.
 
 Reference: Language Server Protocol 3.17 specification, https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/ .
