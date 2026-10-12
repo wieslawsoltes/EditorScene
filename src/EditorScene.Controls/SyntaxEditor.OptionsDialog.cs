@@ -49,7 +49,8 @@ public sealed partial class SyntaxEditor
             Unloaded -= OnOptionsUnloaded;
             dialog.Content = null; _optionsDialogOpen = false;
             if (!_disposed) StateChanged?.Invoke(this, EventArgs.Empty);
-            if (restoreFocus && Current()) FocusAfterEditCommand();
+            if (restoreFocus && !_optionsDialogOpen && Current() && document.Revision == revision && CaretOffset == caret
+                && session.AnchorOffset == anchor && session.SelectionEndOffset == active) FocusAfterEditCommand();
         }
     }
 }
