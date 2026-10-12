@@ -15,7 +15,7 @@ public sealed partial class SyntaxEditor
         if (XamlRoot is null) throw new InvalidOperationException("Load the editor before opening its options.");
         if (MacroSessionActive) throw new InvalidOperationException("Stop macro recording/playback before changing editor options.");
         var document = Document; var language = SyntaxLanguage; var before = GetViewOptions();
-        var view = new EditorOptionsView(before); var desired = before;
+        using var view = new EditorOptionsView(before); var desired = before;
         var dialog = new ContentDialog { Title = "Text Editor Options", Content = view, XamlRoot = XamlRoot, RequestedTheme = RequestedTheme,
             PrimaryButtonText = "Apply", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
         dialog.PrimaryButtonClick += (_, args) => { if (!view.TryGetOptions(out desired)) args.Cancel = true; };
@@ -30,6 +30,12 @@ public sealed partial class SyntaxEditor
             if (!_disposed) SetStatus("Editor options applied");
             if (!_disposed && ReferenceEquals(Document, document) && ReferenceEquals(SyntaxLanguage, language) && GetViewOptions() == desired) FocusEditor();
         }
-        finally { _optionsDialogOpen = false; if (!_disposed) StateChanged?.Invoke(this, EventArgs.Empty); }
+        finally
+        {
+            // Detach the dialog-owned panel before disposing its native children.
+            // No document, provider or editor is owned by that panel.
+            dialog.Content = null; _optionsDialogOpen = false;
+            if (!_disposed) StateChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 }
