@@ -62,7 +62,7 @@ internal static class TabColumnBenchmarks
                 var map = new TabColumnMap(source, 0, 4);
                 if (map.TabCount != expectedCount || map.ColumnLength != expectedColumn || map.LeadingWhitespaceLength != expectedLeading) throw new InvalidOperationException("Incorrect adaptive map");
                 GC.KeepAlive(map);
-            }, "Current constructor samples at most 128 units per chunk: at least 16 tabs selects a scalar traversal; otherwise span searches skip ordinary runs. Same fields, lazy lists, leading-whitespace metadata, immutable snapshot and warm pool as immediately preceding span implementation. Includes result validation. Sparse-prefix/dense-tail fixture deliberately retains an unfavorable heuristic case.");
+            }, "Current constructor reuses its initial tab search, skipping tab-free chunks without a density probe. When at least 16 units remain, it samples up to 128 units starting at the first tab: at least 16 tabs selects a scalar traversal; otherwise span searches skip ordinary runs. Same fields, lazy lists, leading-whitespace metadata, immutable snapshot and warm pool as immediately preceding span implementation. Includes result validation. All sparse and mixed-prefix fixtures remain, including unfavorable timing/allocation results.");
         }
         void Measure(string scenario, string implementation, Action run, string note)
         {
