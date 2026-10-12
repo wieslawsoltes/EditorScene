@@ -1,7 +1,7 @@
 using EditorScene.LanguageServices;
 using EditorScene.Text;
 using EditorScene.Text.Macros;
-using UnoEdit.Editing;
+using UnoEdit;
 
 namespace EditorScene.Controls;
 
@@ -28,7 +28,7 @@ public sealed partial class SyntaxEditor
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess();
         if (_backspacing) throw new InvalidOperationException("A Backspace operation is already active.");
         if (MacroRecording.State == MacroRecordingState.Playing) throw new InvalidOperationException("Macro playback is in progress.");
-        MacroRecording.NotifyEditAction(new("native.Backspace"));
+        if (MacroRecording.State == MacroRecordingState.Recording) MacroRecording.NotifyEditAction(new("native.Backspace"));
         BackspaceWithTabStops();
     }
     private readonly record struct BackspaceContext(EditorDocument Document, long Revision, ISyntaxLanguage Language,

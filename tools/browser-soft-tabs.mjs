@@ -30,7 +30,9 @@ export async function checkSoftTabs({page,state,wait,textIs,paste,open,toggle,cl
 
   await replace('x    '); await page.keyboard.press('Control+End'); await page.keyboard.press('Backspace');
   await textIs('x   ');
-  await replace('a\r\nb'); await caret(3); await page.keyboard.press('Backspace'); await textIs('ab');
+  await replace('a\r\nb'); await page.keyboard.press('Control+End'); await page.keyboard.press('ArrowLeft');
+  await wait(()=>globalThis.__editorSceneState?.CaretOffset===3);
+  await page.keyboard.press('Backspace'); await textIs('ab');
   checks.push('Configured soft-tab Backspace preserves ordinary content-space deletion and CRLF line joining');
 
   await replace('      x\n      x'); await caret(6);
