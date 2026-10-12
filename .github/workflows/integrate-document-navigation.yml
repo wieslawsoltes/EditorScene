@@ -1,0 +1,107 @@
+name: Integrate document navigation
+on:
+  push:
+    branches: [feat/document-navigation]
+    paths: [.github/workflows/integrate-document-navigation.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/EditorScene' && github.ref == 'refs/heads/feat/document-navigation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Connect reviewed native controls and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          files={}
+          def edit(path,old,new):
+              text=files.setdefault(path,Path(path).read_text())
+              assert text.count(old)==1, path+': '+old[:100]
+              files[path]=text.replace(old,new)
+          p='src/EditorScene.App/EditorPage.Workspace.cs'
+          edit(p,'        var tabsScroll = new ScrollViewer { Content = _tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, MinHeight = 25 };\n        Put(tabsScroll, 3); _chromePanels.Add(_tabs); Put(_navigator, 4);',
+              '        Put(BuildDocumentStrip(), 3); _chromePanels.Add(_tabs); Put(_navigator, 4);')
+          p='src/EditorScene.App/EditorPage.cs'
+          text=Path(p).read_text()
+          begin=text.index('    private void RebuildTabs()\n')
+          end=text.index('    private void RebuildTabCaptions()\n',begin)
+          old=text[begin:end]
+          new='''    private void RebuildTabs()
+              {
+                  foreach (var name in _tabControlNames) _ui.Remove(name);
+                  _tabControlNames.Clear();
+                  var retained = _documents.Where(d => d.Tab is not null).Select(d => (UIElement)d.Tab!).ToHashSet();
+                  for (var i = _tabs.Children.Count - 1; i >= 0; i--)
+                      if (!retained.Contains(_tabs.Children[i])) _tabs.Children.RemoveAt(i);
+                  for (var i = 0; i < _documents.Count; i++)
+                  {
+                      var entry = _documents[i];
+                      if (entry.Tab is null)
+                      {
+                          var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+                          panel.Children.Add(new TextBlock { Text = entry.Document.FileName, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+                          var button = new Button { Content = panel, Height = 27, MinHeight = 27, Padding = new Thickness(9, 2, 9, 2), BorderThickness = new Thickness(0, 0, 0, 2) };
+                          button.Click += (_, _) => ActivateDocument(entry);
+                          button.Loaded += (_, _) => { if (ReferenceEquals(entry, _current)) QueueActiveTabReveal(); };
+                          entry.Tab = button; entry.TabTheme = null; _tabBuildCount++;
+                      }
+                      var tab = entry.Tab;
+                      if (i >= _tabs.Children.Count || !ReferenceEquals(_tabs.Children[i], tab))
+                      {
+                          var previous = _tabs.Children.IndexOf(tab);
+                          if (previous >= 0) _tabs.Children.RemoveAt(previous);
+                          _tabs.Children.Insert(i, tab);
+                      }
+                      var name = "Document " + entry.Document.FileName;
+                      Register(name, tab); _tabControlNames.Add(name);
+                  }
+                  RefreshDocumentList(); RebuildTabCaptions(); QueueActiveTabReveal();
+              }
+          '''
+          edit(p,old,new)
+          edit(p,'    private void ActivateDocument(WorkspaceDocument entry)\n    {', '    private void ActivateDocument(WorkspaceDocument entry)\n    {\n        if (_dialog is not null || !_documents.Contains(entry)) return;\n        if (ReferenceEquals(_current, entry)) { _active.FocusEditor(); QueueActiveTabReveal(); return; }')
+          edit(p,'        _current = entry; _primary.SetDocumentAndLanguage(entry.Document, entry.Language);','        _current = entry; _documentList.SelectedDocumentId = entry.Document.Id; _primary.SetDocumentAndLanguage(entry.Document, entry.Language);')
+          edit(p,'UpdateErrorCaption(); RebuildTabCaptions(); UpdateStatus(); _primary.FocusEditor();','UpdateErrorCaption(); RebuildTabCaptions(); UpdateStatus(); _primary.FocusEditor(); QueueActiveTabReveal();')
+          edit(p,'                entry.CaptionName = name; entry.CaptionModified = modified;', '                entry.CaptionName = name; entry.CaptionModified = modified;\n                ToolTipService.SetToolTip(tab, name);\n                _documentList.UpdateDocument(new(entry.Document.Id, name, modified));')
+          edit(p,'_loaded = true; _commandBindings.Editor = _active; ApplyTheme(_theme); _primary.FocusEditor(); QueueDiagnostics();','_loaded = true; _commandBindings.Editor = _active; ApplyTheme(_theme); _primary.FocusEditor(); QueueActiveTabReveal(); QueueDiagnostics();')
+          edit(p,'Unloaded += (_, _) => { _loaded = false; _commandBindings.Editor = null; };','Unloaded += (_, _) => { _loaded = false; _commandBindings.Editor = null; _documentList.Hide(); };')
+          edit(p,'        if (!control) return;\n        switch (e.Key)','        if (!control) return;\n        if (HandleDocumentNavigationKey(e)) { e.Handled = true; return; }\n        switch (e.Key)')
+          p='src/EditorScene.App/EditorPage.Menus.cs'
+          edit(p,'        Item(window, "Next Document", () => { if (_current is not null) ActivateDocument(_documents[(_documents.IndexOf(_current) + 1) % _documents.Count]); return Task.CompletedTask; });', '''        Item(window, "Next Document", () => { NavigateDocument(1); return Task.CompletedTask; }, "Ctrl+PageDown");
+                  Item(window, "Previous Document", () => { NavigateDocument(-1); return Task.CompletedTask; }, "Ctrl+PageUp");
+                  Item(window, "Documents…", () => { DispatcherQueue.TryEnqueue(ShowDocumentList); return Task.CompletedTask; }, "Ctrl+Alt+Down");''')
+          p='src/EditorScene.App/EditorPage.Diagnostics.cs'
+          edit(p,'            Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()', '''            DocumentTabBuilds = _tabBuildCount, DocumentMenuBuilds = _documentList.ItemBuildCount,
+                      DocumentMenuCheckCount = _documentList.Items.OfType<ToggleMenuFlyoutItem>().Count(item => item.IsChecked),
+                      DocumentTabOffset = _tabScroll.HorizontalOffset, DocumentTabExtent = _tabScroll.ExtentWidth, DocumentTabViewportWidth = _tabScroll.ViewportWidth,
+                      Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()''')
+          edit(p,'    public long CommandBindingWrites { get; set; }', '''    public long CommandBindingWrites { get; set; }
+              public long DocumentTabBuilds { get; set; }
+              public long DocumentMenuBuilds { get; set; }
+              public int DocumentMenuCheckCount { get; set; }
+              public double DocumentTabOffset { get; set; }
+              public double DocumentTabExtent { get; set; }
+              public double DocumentTabViewportWidth { get; set; }''')
+          edit('src/EditorScene.App/NativeEditorChecks.cs','        NativeCommandObserverChecks.Run(checks);','        NativeCommandObserverChecks.Run(checks);\n        NativeDocumentListChecks.Run(checks);')
+          edit('tools/browser-smoke.mjs',"import {checkCommandBindings} from './browser-command-bindings.mjs';", "import {checkCommandBindings} from './browser-command-bindings.mjs';\nimport {checkDocumentNavigation} from './browser-document-navigation.mjs';")
+          edit('tools/browser-smoke.mjs','  await checkCommandBindings({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});','  await checkCommandBindings({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});\n  await checkDocumentNavigation({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});')
+          edit('tools/package.py','        Commands.Editor = Editor;','        using var documentMenu = new EditorDocumentList();\n        var documentId = Guid.NewGuid();\n        documentMenu.SetDocuments([new EditorDocumentListEntry(documentId, "Consumer.cs")]);\n        documentMenu.SelectedDocumentId = documentId;\n        if (documentMenu.DocumentCount != 1) throw new Exception("Packaged document menu contract failed.");\n        Commands.Editor = Editor;')
+          for path,text in files.items(): Path(path).write_text(text)
+          PY
+          git diff --check
+          node --check tools/browser-document-navigation.mjs
+          node --check tools/browser-smoke.mjs
+          python3 -m py_compile tools/package.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-document-navigation.yml
+          git add src tools
+          git commit -m 'feat(ui): integrate stable native document tabs, overflow and keyboard navigation'
+          git push origin HEAD:refs/heads/feat/document-navigation
