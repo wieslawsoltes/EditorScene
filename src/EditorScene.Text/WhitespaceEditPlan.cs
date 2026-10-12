@@ -106,7 +106,7 @@ public sealed class WhitespaceEditPlan
                     if (snapshot.Length + delta > int.MaxValue) throw new InvalidOperationException("Whitespace conversion would exceed the document length limit.");
                     cancellationToken.ThrowIfCancellationRequested();
                     var replacement = length == 0 ? string.Empty : string.Create(checked((int)length), checked((int)tabCount),
-                        static (target, tabCount) => { target[..tabCount].Fill('\t'); target[tabCount..].Fill(' '); });
+                        static (target, numberOfTabs) => { target[..numberOfTabs].Fill('\t'); target[numberOfTabs..].Fill(' '); });
                     edits.Add(new(runStart, runLength, replacement)); generated += length;
                 }
             }
