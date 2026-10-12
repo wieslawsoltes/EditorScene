@@ -65,6 +65,7 @@ export async function checkCommandBindings({page,state,wait,textIs,paste,click,c
   await page.screenshot({path:path.join(output,'command-bindings-light.png')});
   await click('Theme');await click('Choice Dark');await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');
   await page.screenshot({path:path.join(output,'command-bindings-dark.png')});
+  await click('Language');await click('Choice C#');await wait(()=>globalThis.__editorSceneState?.Language==='csharp');
   await textIs('abcdef');await focusEditor();
   checks.push('Unchanged caret-driven command updates leave native properties untouched and disabled glyphs remain legible in both themes');
 }

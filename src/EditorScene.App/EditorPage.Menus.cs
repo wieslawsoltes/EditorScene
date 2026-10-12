@@ -99,7 +99,7 @@ public sealed partial class EditorPage
         var item = new MenuFlyoutItem { Text = label, FontSize = 12, KeyboardAcceleratorTextOverride = shortcut };
         item.Click += (_, _) => _ = GuardAsync(action); menu.Items.Add(item); Register("Command " + label, item); return item;
     }
-    private void Command(MenuBarItem menu, string label, EditorCommand command, string shortcut = "") => Item(menu, label, async () => { await _active.ExecuteAsync(command); AddEvent(label); }, shortcut);
+    private void Command(MenuBarItem menu, string label, EditorCommand command, string shortcut = "") => AddBoundMenuCommand(menu, label, command, shortcut);
     private void Separator(MenuBarItem menu) => menu.Items.Add(new MenuFlyoutSeparator());
     private void Toggle(MenuBarItem menu, string label, Func<bool> get, Action action)
     {
@@ -110,7 +110,7 @@ public sealed partial class EditorPage
     {
         var item = new MenuFlyoutItem { Text = label, FontSize = 12 }; item.Click += (_, _) => OpenSample(file, text, language); menu.Items.Add(item); Register("Sample " + language, item);
     }
-    private void ToolCommand(string label, EditorIconKind icon, EditorCommand command) => Tool(label, icon, () => _active.ExecuteAsync(command));
+    private void ToolCommand(string label, EditorIconKind icon, EditorCommand command) => AddBoundToolCommand(label, icon, command);
     private void Tool(string label, EditorIconKind icon, Func<Task> action)
     {
         var button = new Button { Content = NewIcon(icon), Width = 26, Height = 25, MinHeight = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
