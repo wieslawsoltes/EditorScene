@@ -100,8 +100,9 @@ public sealed partial class SyntaxEditor
     private void IndentWithTabStops()
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess();
-        if (IsReadOnly) throw new InvalidOperationException("The document is read only.");
-        // Native selected-line indentation already handles lines, anchors and undo.
+        // Match the native editor: Tab in a read-only view neither edits nor reports
+        // an operation failure merely because the key was pressed.
+        if (IsReadOnly) return;
         if (!Selections.IsActive && SelectionLength != 0) { _editor.TextArea.Session.Indent(); return; }
         var document = Document; var snapshot = document.Snapshot(); var language = SyntaxLanguage;
         var options = GetViewOptions(); var selections = Selections;
