@@ -1,14 +1,18 @@
 # Macro recording and playback
 
-EditorScene now provides a UI-independent `EditorScene.Text.Macros` model and recorder plus native editor integration. This is an incremental parity feature, not a claim that every Actipro edit-action extension or serialized vendor macro is compatible.
+EditorScene provides a UI-independent `EditorScene.Text.Macros` model and recorder plus native editor integration. This is an incremental parity feature, not a claim that every Actipro edit-action extension or serialized vendor macro is compatible.
 
 ## User interface
 
 The Macros menu contains Start, Stop, Pause, Resume, Cancel Recording, Run Last Macro, Cancel Playback, Import and Export. While recording or playing, an editor-local pointer shield prevents mouse selection from changing the action sequence; menus remain available. Escape cancels playback between actions. Macro commands have no default key bindings.
 
+Pausing removes the pointer shield as well as suspending action capture. Interactive controls such as Find fields and its close button then receive real pointer input. Starting/resuming recording or beginning playback closes the interactive search panel before restoring the shield. A paused search panel is not left visibly open but unusable beneath the recording overlay. Context menus retain their separate conservative policy and remain suspended during a paused macro session.
+
 Typing, character/word/line/page/document navigation, extended selections, deletion, indentation, overstrike, clipboard commands and noninteractive EditorScene commands are recorded as semantic actions rather than screen coordinates. Text replay uses the current editor's pairing and overstrike options. Stop saves a nonempty recording; Cancel and an empty Stop preserve the previous saved macro. Paused actions are not recorded. Document switching cancels recording and requests playback cancellation.
 
-Automatic completion popups and snippet shortcut expansion are suspended during active recording/playback. Explicit interactive popup commands and adding multiple selections are rejected during recording; pause first to use them. Interactive snippets, search-dialog field changes, file/workspace commands and arbitrary external UnoEdit input-handler side effects are not captured by this implementation. Noninteractive search-next/previous uses the target editor's current search settings. Language and view-dependent commands use the target editor's current context.
+Automatic completion remains suppressed throughout a macro session, including while paused, and is restored when the session ends. Explicit interactive popup commands and adding multiple selections are rejected during recording; pause first to use them. Interactive snippets, search-dialog field changes, file/workspace commands and arbitrary external UnoEdit input-handler side effects are not captured by this implementation. Noninteractive search-next/previous uses the target editor's current search settings. Language and view-dependent commands use the target editor's current context.
+
+Native toolbar/menu bindings distinguish recording, paused and playing states: recordable commands remain available while recording, ordinary interactive commands can be used while paused, and playback disables invocation through those bindings. Existing keyboard/input and command execution checks remain authoritative. See [command bindings](command-bindings.md) for scope and authorization boundaries.
 
 ## Reusable recorder
 
