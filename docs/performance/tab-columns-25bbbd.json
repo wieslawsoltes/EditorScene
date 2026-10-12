@@ -1,0 +1,47 @@
+{
+  "sourceRevision": "25bbbd1622796333135d4673543872734329e849",
+  "workflowRun": 38226523003,
+  "testJob": 114735562428,
+  "artifactId": 11735903520,
+  "artifactName": "regression-tests",
+  "fullReportPath": "performance.json",
+  "artifactZipSha256ReportedByCI": "037a42154c87cc427ab7c96e9921155e913d0c6a0c87f977368a65a651a241f9",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "status": "Exact rows read from the successful regression/benchmark job. Later UI-only refinements are not measured by these rows. This file does not independently certify the separate browser job or a Pages deployment.",
+  "methodology": "CPU Stopwatch and current-thread managed allocations for a 100003-UTF-16-unit line containing two tabs. Query rows measure 10000 lookups on a preconstructed map; construction is excluded. Build rows include one map, reader and sparse arrays using a warm shared buffer pool, excluding document/snapshot creation. These are new operations without a prior-version baseline, not whole-editor speedup, cold startup, glyph/bidi/grapheme layout or physical-GPU/input-latency measurements. No independent local archive verification is claimed.",
+  "rows": [
+    {
+      "scenario": "tab_column_queries_10000",
+      "implementation": "current",
+      "p50Milliseconds": 0.2422,
+      "p95Milliseconds": 0.2694,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0.2273, 0.2332, 0.2336, 0.2337, 0.2352, 0.2422, 0.249, 0.2562, 0.264, 0.2672, 0.2694],
+      "sortedAllocatedBytes": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "scenario": "tab_column_build_100003",
+      "implementation": "current",
+      "p50Milliseconds": 0.1228,
+      "p95Milliseconds": 0.1454,
+      "medianAllocatedBytes": 712,
+      "sortedElapsedMilliseconds": [0.1215, 0.1218, 0.122, 0.1221, 0.1223, 0.1228, 0.1256, 0.1286, 0.1303, 0.1334, 0.1454],
+      "sortedAllocatedBytes": [712, 712, 712, 712, 712, 712, 712, 712, 712, 712, 712]
+    }
+  ],
+  "measurementReview": "The earlier mixed correctness/allocation test observed 24 bytes without identifying their allocation site. The final test measures a separate non-inlined lookup method after three warmups, then requires exactly zero bytes in every one of eleven samples. The gate was not relaxed to accept an allocation allowance. It asserts steady-state behavior, not cold-start allocation.",
+  "existingCostsNotResolved": {
+    "compilerModelPreviousMedianMs": 10.6269,
+    "compilerModelCurrentMedianMs": 24.4859,
+    "compilerModelPreviousBytes": 1333776,
+    "compilerModelCurrentBytes": 1948872,
+    "warmDiagnosticsPreviousP95Ms": 124.1272,
+    "warmDiagnosticsCurrentP95Ms": 154.3879,
+    "note": "The complete report retains these unfavorable compiler results. Sparse-column lookup and UI improvements do not resolve all existing compiler construction/allocation/tail-latency costs."
+  }
+}
