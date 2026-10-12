@@ -12,18 +12,24 @@ export async function checkEditorOptions({page,state,wait,textIs,paste,click,com
   }
   async function reveal(name) {
     await wait(key=>!!globalThis.__editorSceneState?.Controls?.[key]&&!!globalThis.__editorSceneState.Controls['Visible Editor options scroll'],name);
-    const c=(await state()).Controls,input=c[name],viewport=c['Visible Editor options scroll'];
-    assert.ok(input[2]<=viewport[2]+1&&input[3]<viewport[3],'Option input must fit the scroll viewport');
-    const delta=input[1]<viewport[1]+4?input[1]-viewport[1]-12:
-      input[1]+input[3]>viewport[1]+viewport[3]-4?input[1]+input[3]-viewport[1]-viewport[3]+12:0;
-    if(delta!==0) {
-      // Actual wheel input at the viewport edge avoids a NumberBox swallowing
-      // the wheel as a numeric increment. This is scrolling, not a test retry.
+    // Native wheel movement can be scaled/coalesced. Drive bounded scrolling
+    // from observed geometry, not the assumption that one wheel delta is an exact
+    // layout-pixel displacement. Every input and its final visibility are checked.
+    for(let step=0;step<8;step++) {
+      const c=(await state()).Controls,input=c[name],viewport=c['Visible Editor options scroll'];
+      assert.ok(input[2]<=viewport[2]+1&&input[3]<viewport[3],'Option input must fit the scroll viewport');
+      assert.ok(input[0]>=viewport[0]-1&&input[0]+input[2]<=viewport[0]+viewport[2]+1,'Option input must not be clipped horizontally');
+      if(input[1]>=viewport[1]&&input[1]+input[3]<=viewport[1]+viewport[3])return;
+      const gap=input[1]<viewport[1]?input[1]-viewport[1]:input[1]+input[3]-viewport[1]-viewport[3];
+      const delta=Math.sign(gap)*Math.max(120,Math.abs(gap)+40);
       await page.mouse.move(viewport[0]+viewport[2]-4,viewport[1]+Math.min(100,viewport[3]/2));
       await page.mouse.wheel(0,delta);
+      await wait(({key,previousY})=>{
+        const a=globalThis.__editorSceneState?.Controls?.[key];return a&&Math.abs(a[1]-previousY)>=1;
+      },{key:name,previousY:input[1]},5000);
     }
-    await wait(key=>{const c=globalThis.__editorSceneState?.Controls,a=c?.[key],v=c?.['Visible Editor options scroll'];
-      return a&&v&&a[0]>=v[0]-1&&a[0]+a[2]<=v[0]+v[2]+1&&a[1]>=v[1]&&a[1]+a[3]<=v[1]+v[3];},name);
+    const c=(await state()).Controls,a=c[name],v=c['Visible Editor options scroll'];
+    assert.ok(a[1]>=v[1]&&a[1]+a[3]<=v[1]+v[3],`Could not reveal ${name} after eight actual scroll inputs`);
   }
   async function number(name,value) {
     const key='Option input '+name;await reveal(key);await click(key);
