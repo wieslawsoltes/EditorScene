@@ -9,13 +9,14 @@ namespace EditorScene.Controls;
 public sealed class EditorOptionsView : UserControl, IDisposable
 {
     private bool _disposed, _stacked;
-    private readonly Grid _sections = new() { ColumnSpacing = 24, MaxWidth = 510 };
+    private readonly Grid _sections = new() { ColumnSpacing = 24, MaxWidth = 560 };
     private readonly StackPanel _display = new() { Spacing = 6 };
     private readonly StackPanel _editing = new() { Spacing = 6 };
     private readonly NumberBox _tabSize = Number("Tab and indent size", 1, 1000);
     private readonly NumberBox _fontSize = Number("Editor font size", 8, 40);
     private readonly NumberBox _rulerColumn = Number("Ruler column", 1, 10000);
     private readonly CheckBox _spaces = Check("Insert spaces instead of tabs");
+    private readonly CheckBox _softBackspace = Check("Backspace over spaces to tab stop");
     private readonly CheckBox _wrap = Check("Word wrap");
     private readonly CheckBox _numbers = Check("Show line numbers");
     private readonly CheckBox _whitespace = Check("Show whitespace");
@@ -48,15 +49,15 @@ public sealed class EditorOptionsView : UserControl, IDisposable
         _display.Children.Add(_numbers); _display.Children.Add(_wrap); _display.Children.Add(_whitespace);
         _display.Children.Add(_guides); _display.Children.Add(_ruler); _display.Children.Add(_rulerColumn);
         _editing.Children.Add(Heading("Tabs and input")); _editing.Children.Add(_tabSize); _editing.Children.Add(_spaces);
+        _editing.Children.Add(_softBackspace);
         _editing.Children.Add(new TextBlock { Text = "The tab-stop width is also the indentation unit. Existing text is not converted.", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
-        _editing.Children.Add(_brackets); _editing.Children.Add(_completion);
+        _editing.Children.Add(Heading("IntelliPrompt")); _editing.Children.Add(_brackets); _editing.Children.Add(_completion);
+        _spaces.Checked += OnSpacesChanged; _spaces.Unchecked += OnSpacesChanged;
         _reset.Click += OnRestoreDefaults;
         _sections.Children.Add(_display); Grid.SetColumn(_editing, 1); _sections.Children.Add(_editing);
         _sections.SizeChanged += OnSectionsSizeChanged;
         _scroll.Content = _sections;
-        // Keep actions outside the scroll content. A stacked panel can be taller
-        // than the dialog; otherwise a reset click may target clipped content at
-        // the same coordinates as the dialog's Apply/Cancel buttons.
+        // Actions stay outside the scroll content, including in narrow windows.
         var body = new Grid { MaxHeight = 450 };
         body.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         body.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -66,14 +67,13 @@ public sealed class EditorOptionsView : UserControl, IDisposable
         SetOptions(options);
     }
     private void OnRestoreDefaults(object sender, RoutedEventArgs args) { if (!_disposed) SetOptions(new EditorViewOptions()); }
+    private void OnSpacesChanged(object sender, RoutedEventArgs args) { if (!_disposed) _softBackspace.IsEnabled = _spaces.IsChecked == true; }
     private void OnSectionsSizeChanged(object sender, SizeChangedEventArgs args)
     {
         if (_disposed || args.NewSize.Width <= 0) return;
         var stacked = args.NewSize.Width < 480;
         if (_stacked == stacked) return;
         _stacked = stacked;
-        // Reposition existing sections only at the breakpoint; preserve native focus,
-        // current numeric drafts and the control tree rather than recreating inputs.
         Grid.SetColumnSpan(_display, stacked ? 2 : 1);
         Grid.SetColumn(_editing, stacked ? 0 : 1); Grid.SetRow(_editing, stacked ? 1 : 0);
         Grid.SetColumnSpan(_editing, stacked ? 2 : 1);
@@ -82,12 +82,14 @@ public sealed class EditorOptionsView : UserControl, IDisposable
     public new void Dispose()
     {
         if (_disposed) return; _disposed = true;
-        _sections.SizeChanged -= OnSectionsSizeChanged; _reset.Click -= OnRestoreDefaults; base.Dispose();
+        _sections.SizeChanged -= OnSectionsSizeChanged; _reset.Click -= OnRestoreDefaults;
+        _spaces.Checked -= OnSpacesChanged; _spaces.Unchecked -= OnSpacesChanged; base.Dispose();
     }
     public NumberBox TabSizeInput => _tabSize;
     public NumberBox FontSizeInput => _fontSize;
     public NumberBox RulerColumnInput => _rulerColumn;
     public CheckBox InsertSpacesInput => _spaces;
+    public CheckBox SoftTabBackspaceInput => _softBackspace;
     public CheckBox WordWrapInput => _wrap;
     private static TextBlock Heading(string text) => new() { Text = text, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) };
     private static CheckBox Check(string text)
@@ -108,6 +110,7 @@ public sealed class EditorOptionsView : UserControl, IDisposable
         options.Validate(); _tabSize.Value = options.TabSize; _fontSize.Value = options.FontSize; _rulerColumn.Value = options.RulerColumn;
         _spaces.IsChecked = options.ConvertTabsToSpaces; _wrap.IsChecked = options.WordWrap; _numbers.IsChecked = options.ShowLineNumbers;
         _whitespace.IsChecked = options.ShowWhitespace; _guides.IsChecked = options.ShowIndentGuides; _ruler.IsChecked = options.ShowRuler;
+        _softBackspace.IsChecked = options.CanBackspaceOverSpacesToTabStop; _softBackspace.IsEnabled = options.ConvertTabsToSpaces;
         _brackets.IsChecked = options.AutoCompleteBrackets; _completion.IsChecked = options.AutoShowCompletion; _validation.Text = string.Empty;
     }
     public bool TryGetOptions(out EditorViewOptions options)
@@ -121,6 +124,7 @@ public sealed class EditorOptionsView : UserControl, IDisposable
         try
         {
             options = new() { TabSize = checked((int)_tabSize.Value), ConvertTabsToSpaces = _spaces.IsChecked == true,
+                CanBackspaceOverSpacesToTabStop = _softBackspace.IsChecked == true,
                 FontSize = _fontSize.Value, WordWrap = _wrap.IsChecked == true, ShowLineNumbers = _numbers.IsChecked == true,
                 ShowWhitespace = _whitespace.IsChecked == true, ShowIndentGuides = _guides.IsChecked == true,
                 ShowRuler = _ruler.IsChecked == true, RulerColumn = checked((int)_rulerColumn.Value),

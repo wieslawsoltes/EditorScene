@@ -21,19 +21,23 @@ public sealed partial class SyntaxEditor
         using var view = new EditorOptionsView(before); var desired = before;
         var dialog = new ContentDialog { Title = "Text Editor Options", Content = view, XamlRoot = root, RequestedTheme = RequestedTheme,
             PrimaryButtonText = "Apply", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
+        // A default ContentDialog is too narrow for two useful options columns even
+        // on a desktop. Scope the width to this dialog, not all application dialogs.
+        dialog.Resources["ContentDialogMaxWidth"] = 664d;
+        void UpdateOptionsWidth() => view.Width = Math.Max(0, Math.Min(560, root.Size.Width - 104));
+        void OnOptionsRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => UpdateOptionsWidth();
+        UpdateOptionsWidth();
         dialog.PrimaryButtonClick += (_, args) => { if (!view.TryGetOptions(out desired)) args.Cancel = true; };
         var unloaded = false; var restoreFocus = false; var expected = before;
         void OnOptionsUnloaded(object sender, RoutedEventArgs args) { unloaded = true; dialog.Hide(); }
         bool Current() => !_disposed && !unloaded && ReferenceEquals(XamlRoot, root) && ReferenceEquals(Document, document)
             && ReferenceEquals(SyntaxLanguage, language) && !MacroSessionActive && GetViewOptions() == expected;
-        _optionsDialogOpen = true; Unloaded += OnOptionsUnloaded;
+        _optionsDialogOpen = true; Unloaded += OnOptionsUnloaded; root.Changed += OnOptionsRootChanged;
         try
         {
             var result = await dialog.ShowAsync();
             if (result != ContentDialogResult.Primary)
             {
-                // Closing the menu/modal must not leave typing routed to its former
-                // menu item. Restore only an unchanged target, never a newer host caret.
                 restoreFocus = Current() && document.Revision == revision && CaretOffset == caret
                     && session.AnchorOffset == anchor && session.SelectionEndOffset == active;
                 return;
@@ -46,7 +50,7 @@ public sealed partial class SyntaxEditor
         }
         finally
         {
-            Unloaded -= OnOptionsUnloaded;
+            Unloaded -= OnOptionsUnloaded; root.Changed -= OnOptionsRootChanged;
             dialog.Content = null; _optionsDialogOpen = false;
             if (!_disposed) StateChanged?.Invoke(this, EventArgs.Empty);
             if (restoreFocus && !_optionsDialogOpen && Current() && document.Revision == revision && CaretOffset == caret
