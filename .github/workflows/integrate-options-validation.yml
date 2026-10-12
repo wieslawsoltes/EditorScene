@@ -32,7 +32,7 @@ jobs:
           edit(p,'    public NumberBox TabSizeInput', '    public new void Dispose() { if (_disposed) return; _disposed = true; base.Dispose(); }\n    public NumberBox TabSizeInput')
           edit('src/EditorScene.App/NativeEditorChecks.cs','        await NativeDiagnosticNavigationChecks.RunAsync(checks);','        await NativeDiagnosticNavigationChecks.RunAsync(checks);\n        await NativeOptionsChecks.RunAsync(checks);')
           edit('tools/build.py','if len(checks) < 206','if len(checks) < 228')
-          edit('tools/EditorScene.Benchmarks/Program.cs','DiagnosticNavigationBenchmarks.Add(rows);','DiagnosticNavigationBenchmarks.Add(rows);\nTabColumnBenchmarks.Add(rows);')
+          edit('tools/EditorScene.Benchmarks/Program.cs','WorkspaceBenchmarks.Add(rows);','WorkspaceBenchmarks.Add(rows);\nTabColumnBenchmarks.Add(rows);')
           p='tools/browser-workspace.mjs'
           edit(p,"import {checkDiagnosticGrid} from './browser-diagnostics.mjs';", "import {checkDiagnosticGrid} from './browser-diagnostics.mjs';\nimport {checkEditorOptions} from './browser-options.mjs';")
           edit(p,'  await checkDiagnosticGrid({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});','  await checkDiagnosticGrid({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});\n  await checkEditorOptions({page,state,wait,textIs,paste,click,command,output,checks});')
