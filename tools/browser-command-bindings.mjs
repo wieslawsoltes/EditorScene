@@ -58,13 +58,17 @@ export async function checkCommandBindings({page,state,wait,textIs,paste,click,c
   await click('Language');await click('Choice Plain text');await wait(()=>globalThis.__editorSceneState?.Language==='plaintext');
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Complete word'],false);
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Format document'],false);
-  await command('Window','Split Editor');await wait(()=>globalThis.__editorSceneState?.Split);
-  let second=(await state()).Controls['Secondary editor'];await page.mouse.click(second[0]+35,second[1]+10);
+  await command('Window','Split Editor');
+  await wait(()=>globalThis.__editorSceneState?.Split&&globalThis.__editorSceneState.OpenMenuCount===0);
+  // A property observation can arrive before its initiating menu finishes closing.
+  // Use the same distinct-observation geometry checks as all other native clicks.
+  await click('Secondary editor');
   await wait(()=>globalThis.__editorSceneState?.ActiveView==='Secondary');
-  await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Paste']===false);
-  let first=(await state()).Controls['Primary editor'];await page.mouse.click(first[0]+35,first[1]+10);
+  await command('View','Read Only');
+  await wait(()=>globalThis.__editorSceneState?.ReadOnly&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Paste']===false&&globalThis.__editorSceneState.OpenMenuCount===0);
+  await click('Primary editor');
   await wait(()=>globalThis.__editorSceneState?.ActiveView==='Primary'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Paste']===true);
-  second=(await state()).Controls['Secondary editor'];await page.mouse.click(second[0]+35,second[1]+10);
+  await click('Secondary editor');
   await wait(()=>globalThis.__editorSceneState?.ActiveView==='Secondary'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Paste']===false);
   await command('Window','Split Editor');await wait(()=>globalThis.__editorSceneState?.Split===false&&globalThis.__editorSceneState.ActiveView==='Primary');
   checks.push('Language capability changes and independent split read-only state update the same bound native command controls');
