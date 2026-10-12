@@ -1,0 +1,47 @@
+name: Integrate edit permission review
+on:
+  push:
+    branches: [feat/editor-options-tab-columns]
+    paths: [.github/workflows/integrate-permission-review.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/EditorScene'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply exact reviewed anchors
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          edits={}
+          def edit(path,old,new):
+              text=edits.setdefault(path,Path(path).read_text())
+              assert text.count(old)==1, path+': '+old[:100]
+              edits[path]=text.replace(old,new)
+          edit('src/EditorScene.Controls/SyntaxEditor.Commands.cs', '''    private bool CanEdit(TextEdit edit)
+              {
+                  if (IsReadOnly || (edit.NewText.Length > 0 && !_editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset))) return false;
+                  if (edit.Length == 0) return _editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset);
+                  var ranges = _editor.TextArea.GetDeletableSegments(new SimpleSegment(edit.Offset, edit.Length));
+                  return ranges.Length == 1 && ranges[0].Offset == edit.Offset && ranges[0].Length == edit.Length;
+              }''', '    private bool CanEdit(TextEdit edit) => CanEditWithCurrentPermissions(edit);')
+          edit('src/EditorScene.App/NativeEditorChecks.cs','        await NativeOptionsChecks.RunAsync(checks);',
+              '        await NativeOptionsChecks.RunAsync(checks);\n        await NativePermissionReviewChecks.RunAsync(checks);')
+          edit('src/EditorScene.Controls/SyntaxEditor.OptionsDialog.cs',
+              '            if (restoreFocus && Current()) FocusAfterEditCommand();',
+              '            if (restoreFocus && !_optionsDialogOpen && Current() && document.Revision == revision && CaretOffset == caret\n                && session.AnchorOffset == anchor && session.SelectionEndOffset == active) FocusAfterEditCommand();')
+          for path,text in edits.items(): Path(path).write_text(text)
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-permission-review.yml
+          git add src
+          git commit -m 'fix(editing): integrate callback-safe permission checks, focus guards and six native regressions'
+          git push origin HEAD:feat/editor-options-tab-columns
+          git rev-parse HEAD
