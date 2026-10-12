@@ -11,9 +11,11 @@ namespace EditorScene.Controls;
 /// writes changed native properties. Removing a binding does not dispose its control.</summary>
 public sealed class EditorCommandBindings : IDisposable
 {
+    private static readonly DependencyProperty[] ObservedProperties = [SyntaxEditor.IsReadOnlyProperty, SyntaxEditor.WordWrapProperty, SyntaxEditor.ShowLineNumbersProperty];
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private Registration[] _registrations = [];
     private Group[] _groups = [];
+    private long[] _propertyTokens = [];
     private SyntaxEditor? _editor;
     private IndicatorCollection? _indicators;
     private long _generation;
@@ -34,7 +36,15 @@ public sealed class EditorCommandBindings : IDisposable
             value?.Document.VerifyAccess();
             if (ReferenceEquals(value, _editor)) return;
             DetachEditor(); _editor = value; _generation++;
-            if (value is not null) { value.StateChanged += OnStateChanged; value.AnalysisUpdated += OnAnalysisUpdated; }
+            if (value is not null)
+            {
+                value.StateChanged += OnStateChanged; value.AnalysisUpdated += OnAnalysisUpdated;
+                // These wrapper setters forward to native properties without raising
+                // StateChanged. Observe their actual DP transitions, including XAML binding.
+                _propertyTokens = new long[ObservedProperties.Length];
+                for (var i = 0; i < ObservedProperties.Length; i++)
+                    _propertyTokens[i] = value.RegisterPropertyChangedCallback(ObservedProperties[i], OnViewPropertyChanged);
+            }
             Refresh();
         }
     }
@@ -53,7 +63,7 @@ public sealed class EditorCommandBindings : IDisposable
         try { Refresh(); return registration; }
         catch { registration.Dispose(); throw; }
     }
-    /// <summary>Synchronously refresh for host changes not represented by StateChanged.
+    /// <summary>Synchronously refresh for host changes not represented by editor notifications.
     /// Property callbacks may rebind/dispose the collection; stale remaining writes stop.
     /// Feedback that cannot settle within eight passes is explicitly rejected.</summary>
     public void Refresh()
@@ -121,10 +131,9 @@ public sealed class EditorCommandBindings : IDisposable
     }
     private void OnStateChanged(object? sender, EventArgs args) { if (!_disposed) { _generation++; Refresh(); } }
     private void OnAnalysisUpdated(object? sender, LanguageAnalysis analysis) => OnStateChanged(sender, EventArgs.Empty);
+    private void OnViewPropertyChanged(DependencyObject sender, DependencyProperty property) => OnStateChanged(sender, EventArgs.Empty);
     private void WatchIndicators()
     {
-        // Hosts may add/remove bookmarks without executing an editor command.
-        // Rebinding the same view to another document must also detach this source.
         var indicators = _editor?.Document.Indicators;
         if (ReferenceEquals(indicators, _indicators)) return;
         if (_indicators is not null) _indicators.Changed -= OnStateChanged;
@@ -133,7 +142,13 @@ public sealed class EditorCommandBindings : IDisposable
     }
     private void DetachEditor()
     {
-        if (_editor is { } editor) { editor.StateChanged -= OnStateChanged; editor.AnalysisUpdated -= OnAnalysisUpdated; }
+        if (_editor is { } editor)
+        {
+            editor.StateChanged -= OnStateChanged; editor.AnalysisUpdated -= OnAnalysisUpdated;
+            for (var i = 0; i < _propertyTokens.Length; i++)
+                editor.UnregisterPropertyChangedCallback(ObservedProperties[i], _propertyTokens[i]);
+        }
+        _propertyTokens = [];
         if (_indicators is not null) _indicators.Changed -= OnStateChanged;
         _indicators = null;
     }
