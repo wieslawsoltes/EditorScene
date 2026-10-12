@@ -20,11 +20,16 @@ export async function checkDocumentNavigation({page,state,wait,textIs,paste,clic
   await wait(name=>globalThis.__editorSceneState?.FileName===name&&globalThis.__editorSceneState.OpenMenuCount===0,names[0]);
   await textIs('');
   assert.equal((await state()).DocumentTabBuilds,built+6);
+  await focusEditor(); await page.keyboard.press('Control+PageDown');
+  await wait(name=>globalThis.__editorSceneState?.FileName===name,names[1]);
+  await page.keyboard.press('Control+PageUp');
+  await wait(name=>globalThis.__editorSceneState?.FileName===name,names[0]);
+  await textIs('');
   await command('Window','Previous Document');
   await wait(name=>globalThis.__editorSceneState?.FileName===name,before.FileName);
   await command('Window','Next Document');
   await wait(name=>globalThis.__editorSceneState?.FileName===name,names[0]);
-  checks.push('Identity-based native document menu preserves dirty documents and reverse/forward navigation reuses existing tabs');
+  checks.push('Identity-based native document menu preserves dirty documents and real shortcuts plus reverse/forward menus reuse existing tabs');
 
   await page.setViewportSize({width:520,height:700});
   await wait(()=>{
