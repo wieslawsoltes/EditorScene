@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-export async function checkDiagnosticNavigation({page,state,wait,textIs,click,fill,focusEditor,output,checks,text}) {
+export async function checkDiagnosticNavigation({page,state,wait,textIs,paste,command,click,fill,focusEditor,output,checks}) {
+  await command('File','New');
+  const text='class Navigation { void M() {\n    U000();\n    U001();\n    U002();\n} }';
+  await paste(text);
+  await wait(()=>globalThis.__editorSceneState?.AnalysisRevision===globalThis.__editorSceneState.Revision&&globalThis.__editorSceneState.Diagnostics.length===3);
+  if(!(await state()).ToolPaneOpen)await click('Error List');
+  await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===3);
+  await click('Reset diagnostic columns and order');
   let s=await state();const offsets=s.DiagnosticGrid.VisibleOffsets;
-  assert.ok(offsets.length>=3,'Navigation requires actual compiler diagnostics');
+  assert.equal(offsets.length,3,'Navigation requires actual compiler diagnostics');
   const revision=s.Revision,projections=s.DiagnosticProjectionBuilds;
   await focusEditor();await page.keyboard.press('F8');
   await wait(n=>globalThis.__editorSceneState?.SelectionStart===n&&globalThis.__editorSceneState.DiagnosticGrid.SelectedOffset===n,offsets[0]);
@@ -19,11 +26,9 @@ export async function checkDiagnosticNavigation({page,state,wait,textIs,click,fi
   await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.SortColumn==='Line'&&globalThis.__editorSceneState.DiagnosticGrid.SortDirection==='Descending');
   s=await state();const descending=s.DiagnosticGrid.VisibleOffsets,selected=s.DiagnosticGrid.SelectedOffset;
   const index=descending.indexOf(selected);assert.ok(index>=0,'Sorting must retain diagnostic row identity');
-  // Focus the Error List itself rather than the editor; keyboard navigation must
-  // bubble to its same handler without invoking an internal command bridge.
   await click('Filter diagnostics');await page.keyboard.press('F8');
   await wait(n=>globalThis.__editorSceneState?.SelectionStart===n,descending[(index+1)%descending.length]);
-  await fill('Filter diagnostics','U299');await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===1);
+  await fill('Filter diagnostics','U002');await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===1);
   s=await state();const filtered=s.DiagnosticGrid.VisibleOffsets[0];
   await page.keyboard.press('F8');await wait(n=>globalThis.__editorSceneState?.SelectionStart===n,filtered);
   await click('Previous diagnostic');await wait(n=>globalThis.__editorSceneState?.SelectionStart===n,filtered);
@@ -34,11 +39,12 @@ export async function checkDiagnosticNavigation({page,state,wait,textIs,click,fi
   s=await state();const caret=s.CaretOffset;
   await page.keyboard.press('F8');await page.keyboard.press('Shift+F8');
   assert.equal((await state()).CaretOffset,caret);await textIs(text);
-  await click('Clear diagnostic filter');await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===300);
+  await click('Clear diagnostic filter');await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===3);
   await click('Reset diagnostic columns and order');await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.SortColumn==='ProviderOrder');
-  // Return the list to its first row through actual navigation, avoiding a stale
-  // scroll offset for the independent column/navigation tests which follow.
   await focusEditor();await page.keyboard.press('F8');
   await wait(n=>globalThis.__editorSceneState?.SelectionStart===n,offsets[0]);
   checks.push('Empty filtered diagnostic results ignore F8 without moving the source caret and recover after clearing');
+  await command('File','New');
+  await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===0);
+  await click('Error List');await wait(()=>globalThis.__editorSceneState?.ToolPaneOpen===false);await focusEditor();
 }
