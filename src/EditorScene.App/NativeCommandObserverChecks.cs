@@ -1,6 +1,7 @@
 using EditorScene.Controls;
 using EditorScene.LanguageServices;
 using EditorScene.Text;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace EditorScene.App;
@@ -28,13 +29,20 @@ internal static class NativeCommandObserverChecks
         Check(next.IsEnabled && clear.IsEnabled,
             "The new document's indicator collection drives its bound native commands");
         var find = new Button(); bindings.Bind(find, EditorCommand.Find);
+        var pointerShield = ((Grid)editor.Content).Children.OfType<Border>().Single();
         editor.MacroRecording.Record(); var recordingDisabled = !find.IsEnabled;
+        var recordingShielded = pointerShield.Visibility == Visibility.Visible;
         editor.MacroRecording.Pause();
         Check(recordingDisabled && find.IsEnabled && !editor.GetCommandState(EditorCommand.Find).IsEnabled,
             "Paused recording permits interactive command surfaces while context-menu policy remains suspended");
+        Check(recordingShielded && pointerShield.Visibility == Visibility.Collapsed,
+            "Pausing recording removes the native pointer shield so search fields and buttons can receive input");
+        editor.Search.Open(); var searchOpened = editor.Search.IsOpened;
         editor.MacroRecording.Resume(); var resumedDisabled = !find.IsEnabled;
+        Check(searchOpened && !editor.Search.IsOpened && pointerShield.Visibility == Visibility.Visible,
+            "Resuming recording closes interactive search before restoring native pointer shielding");
         editor.MacroRecording.Cancel();
-        Check(resumedDisabled && find.IsEnabled,
+        Check(resumedDisabled && find.IsEnabled && pointerShield.Visibility == Visibility.Collapsed,
             "Resuming recording disables interactive commands and cancellation restores their normal state");
         bindings.Dispose(); queries = bindings.QueryCount; replacement.Indicators.Clear();
         Check(bindings.Count == 0 && bindings.QueryCount == queries && !editor.IsDisposed && replacement.Buffer.Text == "second",
