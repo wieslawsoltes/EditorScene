@@ -8,9 +8,11 @@ This increment follows the merged diagnostic-navigation work in PR #8. It adds a
 
 The panel includes font size, line numbers, word wrap, visible whitespace, indentation guides, ruler visibility/column, tab/indent size, spaces-versus-tabs, bracket completion and automatic IntelliPrompt. Restore defaults changes only that draft. Cancel preserves the editor and document. Apply validates every value before the first setter runs and rejects a replaced document/provider or changed options target.
 
-At a section width below 480 device-independent pixels, the same Display and Tabs/input controls stack vertically in the existing scroll view. Check labels wrap instead of overflowing their column. Crossing the breakpoint changes grid placement rather than reconstructing controls, preserving numeric drafts and native focus. `EditorOptionsView.UsesStackedLayout` exposes the current layout choice. The width is an independent implementation choice, not an original-product dimension guarantee.
+At a section width below 480 device-independent pixels, the same Display and Tabs/input controls stack vertically. Check labels wrap instead of overflowing their column. Crossing the breakpoint changes grid placement rather than reconstructing controls, preserving numeric drafts and native focus. `EditorOptionsView.UsesStackedLayout` exposes the current layout choice. This is an independent responsive-layout policy, not an original-product dimension guarantee.
 
-Cancel restores typing focus only to an unchanged, surviving editor target. The dialog also hides if its editor unloads. A new document/provider, changed caret/selection, changed options or active macro session must not be overwritten by the old dialog. Apply uses the existing post-menu focus helper after acceptance. The browser regression types and undoes text immediately after Cancel rather than merely observing that the dialog disappeared.
+**Restore Defaults stays in a fixed footer outside the scrolling settings.** This prevents the button from being clipped below a tall settings section, where its logical coordinates can overlap the native dialog action area. `RestoreDefaultsButton` and `SettingsScroller` expose the actual controls for reusable hosts. Scrolling does not remove the reset action. Validation messages remain outside the scrolling section as well.
+
+Cancel restores typing focus only to an unchanged, surviving editor target. The dialog hides if its editor unloads. A new document/provider, changed caret/selection, changed options or active macro session must not be overwritten by the old dialog. Post-close focus also checks that a synchronous host callback did not open a new dialog or move the source selection. Apply uses the existing post-menu focus helper after acceptance. Browser tests type and undo immediately after Cancel rather than merely observing that the dialog disappeared.
 
 Settings are view-owned. Document rebinding preserves them, and a newly created split copies tab/space/ruler settings along with its existing display options; subsequent changes to either view remain independent. Existing text is never converted merely by changing settings. Use the existing Convert Indentation commands for text conversion.
 
@@ -51,6 +53,14 @@ For multiple carets, each caret computes its required insertion string. `MultiSe
 
 The increment does not redefine all rectangular selection, multi-caret backward-indentation, language-specific smart indentation or soft-tab Backspace behavior. These remain separate compatibility boundaries.
 
+### Permission callback review
+
+The shared editor edit-preflight helper previously queried `CanInsert` twice for an insertion-only edit and did not recheck its context after callbacks. A callback could make the editor read-only or replace the permission/language provider, yet the prior planned edit could continue.
+
+The helper now makes one insertion-permission query and then checks the captured document, revision, language provider, protection-provider identity and both wrapper/native read-only flags. Deletion permission enumeration is followed by the same context checks. It does not allocate a context-capturing closure on every permission query. A late denial or changed context stops the planned operation, including all carets in a multi-caret indentation transaction.
+
+Seven native regressions cover wrapper and native read-only transitions, protection/language replacement, exactly one ordinary insertion-permission query, read-only changes at a later caret, and deletion callbacks. These run in the actual Uno host, not a mock document-only loop. The latest native suite minimum is 235 assertions. This strengthens the shared helper used by EditorScene commands; it is not a claim that arbitrary external direct buffer writes are prohibited or rolled back.
+
 ## Sparse tab-column mapping
 
 `EditorScene.Text.TabColumnMap` maps one immutable snapshot line between line-local UTF-16 offsets and zero-based tab-expanded logical columns:
@@ -73,9 +83,15 @@ The status bar distinguishes **Col**, a one-based tab-expanded UTF-16 logical co
 
 Headless tests compare tab maps to a direct oracle, check reader-boundary cases, reverse affinity, CRLF exclusion, sparse storage, cancellation, invalid coordinates and detached use. Per-range replacement tests cover distinct strings, primary identity, atomic undo, invalid counts/nulls, permission denial, captured arrays and selection interference.
 
-Actual Uno-host checks cover status columns, unchanged-line cache counters, apply/no-op validation, mixed-tab insertion, per-caret strings, undo, macro replay, split inheritance, private drafts and synchronous callbacks changing documents/providers/options/lifetime. Published-browser tests use actual View-menu activation, NumberBox input, checkboxes and Apply/Cancel. They exercise immediate typing after Cancel and narrow-window scrolling/input as well as screenshots in both themes. The bridge observes state/coordinates only. Prior editing, snippets, macros, LSP, diagnostic-grid and large-document cases remain in every complete browser run.
+Actual Uno-host checks cover status columns, unchanged-line cache counters, apply/no-op validation, mixed-tab insertion, per-caret strings, undo, macro replay, split inheritance, private drafts, permission checks and synchronous callbacks changing documents/providers/options/lifetime. Published-browser tests use actual View-menu activation, NumberBox input, checkboxes and Apply/Cancel. They exercise immediate typing after Cancel, reset before/after scrolling, and narrow-window input, with screenshots under both themes. The bridge observes state/coordinates only. Prior editing, snippets, macros, LSP, diagnostic-grid and large-document cases remain in every complete browser run.
 
-Isolated package consumers execute text mapping/replacement APIs and compile native options/control APIs from the built packages without source references. Describing intended test coverage is not proof of a pending workflow's success: inspect its source revision and job conclusions.
+### Browser failures and test actionability
+
+An early run exposed the reset action inside the scrolling content; the source now places it in the fixed footer. A subsequent run stopped before numeric input because a single wheel event left the last five pixels of the field outside its viewport. The test had assumed wheel delta and native layout displacement were identical.
+
+The test now uses bounded, real wheel gestures guided by updated native geometry. Every gesture must move the input, and the input must be fully visible before the actual click. At most eight gestures may reveal an input; the test does not invoke control internals, change values through the bridge, repeat failed test cases, or allow clipped input. Reset is checked separately to remain outside the scroll area and above the dialog's Apply button. Historical failed runs stay failed; only successful final runs certify the replacement behavior.
+
+Isolated package consumers execute text mapping/replacement APIs and compile native options/control APIs from built packages without source references. Describing intended test coverage is not proof of a pending workflow's success: inspect its source revision and job conclusions.
 
 ### Measured sparse-map costs
 
