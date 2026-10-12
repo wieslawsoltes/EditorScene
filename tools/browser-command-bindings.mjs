@@ -46,13 +46,15 @@ export async function checkCommandBindings({page,state,wait,textIs,paste,click,c
   await command('Macros','Pause Recording');
   await wait(()=>globalThis.__editorSceneState?.MacroState==='Paused'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===true);
   await click('Toolbar Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
+  // A pointer shield left active while paused previously swallowed this real click.
   await click('PART_close');await wait(()=>globalThis.__editorSceneState?.SearchOpen===false);
+  await click('Toolbar Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
   await command('Macros','Resume Recording');
-  await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===false);
+  await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===false&&globalThis.__editorSceneState.SearchOpen===false);
   await command('Macros','Cancel Recording');
   await wait(()=>globalThis.__editorSceneState?.MacroState==='Idle'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===true);
-  await textIs('alpha');
-  checks.push('Paused macro recording permits real toolbar Find interaction and resuming restores recording restrictions');
+  await textIs('alpha');assert.equal((await state()).MacroStepCount,0,'Paused search interactions must not become recorded steps');
+  checks.push('Paused macro recording permits actual search button input and resuming closes interactive search before restoring recording restrictions');
   await click('Language');await click('Choice Plain text');await wait(()=>globalThis.__editorSceneState?.Language==='plaintext');
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Complete word'],false);
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Format document'],false);
