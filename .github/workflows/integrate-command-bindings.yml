@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.ref_name }}
       - name: Apply reviewed integration and remove this one-shot helper
         shell: bash
         run: |
