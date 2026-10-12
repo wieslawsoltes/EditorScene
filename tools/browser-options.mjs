@@ -52,7 +52,25 @@ export async function checkEditorOptions({page,state,wait,textIs,paste,click,com
   }
   async function number(name,value) {
     const key='Option input '+name;await reveal(key);await click(key);
-    await page.keyboard.press('Control+a');await page.keyboard.type(String(value));await page.keyboard.press('Tab');
+    // Native focus/select-all and TextChanged are asynchronous. The old helper
+    // sent both digits before selection synchronization completed (trace: "80"
+    // became "0"). Observe the real focused input, never inject/retry text.
+    await page.evaluate(()=>{globalThis.__numberFocusProbe={last:null,count:0};});
+    await wait(label=>{
+      const s=globalThis.__editorSceneState,p=globalThis.__numberFocusProbe;
+      if(s===p.last)return false;p.last=s;
+      if(!s?.OptionInputs?.[label]?.Focused){p.count=0;return false;}
+      return ++p.count>=2;
+    },name);
+    await page.keyboard.press('Control+a');
+    await wait(label=>{const n=globalThis.__editorSceneState?.OptionInputs?.[label];return n?.Focused&&n.SelectionStart===0&&n.SelectionLength===n.Text.length;},name);
+    let entered='';
+    for(const digit of String(value)) {
+      entered+=digit;await page.keyboard.type(digit);
+      await wait(({name,entered})=>{const n=globalThis.__editorSceneState?.OptionInputs?.[name];return n?.Focused&&n.Text===entered&&n.SelectionLength===0&&n.SelectionStart===entered.length;},{name,entered});
+    }
+    await page.keyboard.press('Tab');
+    await wait(({name,text})=>globalThis.__editorSceneState?.OptionInputs?.[name]?.Text===text,{name,text:String(value)});
   }
   async function toggle(name) { await reveal('Visible '+name);await click('Visible '+name); }
   async function reset() {
@@ -73,7 +91,10 @@ export async function checkEditorOptions({page,state,wait,textIs,paste,click,com
   await textIs('\tX');
   await page.keyboard.type('Y');await textIs('\tXY');await page.keyboard.press('Control+z');await textIs('\tX');
   checks.push('Native options Cancel preserves the draft target and returns focus for real typing and undo');
-  await open();await number('Tab and indent size',8);await number('Ruler column',80);
+  await open();await number('Ruler column',0);await click('Dialog Apply');
+  await wait(()=>globalThis.__editorSceneState?.OptionsDialogOpen&&globalThis.__editorSceneState.OptionsValidation.length>0);
+  assert.equal((await state()).RulerColumn,original.RulerColumn,'Invalid numeric draft must not be silently clamped/applied');
+  await number('Tab and indent size',8);await number('Ruler column',80);
   await toggle('Insert spaces instead of tabs');await toggle('Show column ruler');
   await click('Dialog Apply');await wait(()=>globalThis.__editorSceneState?.OptionsDialogOpen===false&&globalThis.__editorSceneState.TabSize===8&&globalThis.__editorSceneState.ConvertTabsToSpaces&&globalThis.__editorSceneState.RulerColumn===80);
   await page.keyboard.press('Control+End');await page.keyboard.press('Tab');await textIs('\tX       ');

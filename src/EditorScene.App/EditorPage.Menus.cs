@@ -82,6 +82,8 @@ public sealed partial class EditorPage
         var bookmarks = Menu("Bookmarks");
         Command(bookmarks, "Toggle Bookmark", EditorCommand.ToggleBookmark, "Ctrl+F2"); Command(bookmarks, "Next Bookmark", EditorCommand.NextBookmark, "F2"); Command(bookmarks, "Previous Bookmark", EditorCommand.PreviousBookmark, "Shift+F2"); Command(bookmarks, "Clear All Bookmarks", EditorCommand.ClearBookmarks); Separator(bookmarks); Command(bookmarks, "Toggle Breakpoint Indicator", EditorCommand.ToggleBreakpoint, "F9");
         Separator(view);
+        Toggle(view, "Default Context Menu", () => _active.IsDefaultContextMenuEnabled, () => _active.IsDefaultContextMenuEnabled = !_active.IsDefaultContextMenuEnabled);
+        Toggle(view, "Right-click Moves Caret", () => _active.CanMoveCaretForSecondaryPointerButton, () => _active.CanMoveCaretForSecondaryPointerButton = !_active.CanMoveCaretForSecondaryPointerButton);
         Item(view, "Editor Options…", () => _active.ShowViewOptionsAsync());
         var window = Menu("Window");
         Toggle(window, "Split Editor", () => _secondary is not null, ToggleSplit);

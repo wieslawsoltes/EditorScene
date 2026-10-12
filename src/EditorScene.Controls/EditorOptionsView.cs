@@ -29,6 +29,7 @@ public sealed class EditorOptionsView : UserControl, IDisposable
         HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
     private readonly ScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    public string ValidationMessage => _validation.Text;
     public bool UsesStackedLayout => _stacked;
     public Button RestoreDefaultsButton => _reset;
     public ScrollViewer SettingsScroller => _scroll;
@@ -100,7 +101,9 @@ public sealed class EditorOptionsView : UserControl, IDisposable
     }
     private static NumberBox Number(string name, double min, double max)
     {
-        var control = new NumberBox { Header = name, Minimum = min, Maximum = max, SmallChange = 1, LargeChange = 4,
+        // Do not silently coerce an invalid draft to its minimum on losing focus.
+        // TryGetOptions validates the entire draft and keeps the dialog open instead.
+        var control = new NumberBox { ValidationMode = NumberBoxValidationMode.Disabled, Header = name, Minimum = min, Maximum = max, SmallChange = 1, LargeChange = 4,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, FontSize = 12, MinWidth = 100 };
         AutomationProperties.SetName(control, name); return control;
     }

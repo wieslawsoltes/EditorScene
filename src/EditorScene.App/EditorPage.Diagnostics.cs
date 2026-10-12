@@ -56,6 +56,9 @@ public sealed partial class EditorPage
         var root = XamlRoot ?? throw new InvalidOperationException("Diagnostics require a loaded XAML root.");
         var area = _active.NativeEditor.TextArea; var view = area.TextView; var doc = _active.Document; var analysis = _active.Analysis;
         var controls = new Dictionary<string, double[]>(StringComparer.Ordinal);
+        var optionInputs = new Dictionary<string, NumericOptionState>(StringComparer.Ordinal);
+        string optionsValidation = "";
+        var contextItems = new Dictionary<string, bool>(StringComparer.Ordinal);
         void Add(string name, FrameworkElement element)
         {
             if (element.XamlRoot is null || element.Visibility != Visibility.Visible || element.ActualWidth <= 0 || element.ActualHeight <= 0) return;
@@ -78,9 +81,14 @@ public sealed partial class EditorPage
         foreach (var popup in popups)
             foreach (var element in popup.Child is FrameworkElement child ? Descendants(child).Prepend(child) : Enumerable.Empty<FrameworkElement>())
             {
+                if (element is EditorOptionsView optionsView) optionsValidation = optionsView.ValidationMessage;
                 var name = AutomationProperties.GetName(element);
                 if (!string.IsNullOrEmpty(name)) Add("Visible " + name, element);
-                if (element is MenuFlyoutItem item) Add("Visible command " + item.Text, item);
+                if (element is MenuFlyoutItem item)
+                {
+                    Add("Visible command " + item.Text, item);
+                    if (name.StartsWith("Editor context ", StringComparison.Ordinal)) contextItems[item.Text] = item.IsEnabled;
+                }
                 else if (element is MenuFlyoutSubItem sub) Add("Visible submenu " + sub.Text, sub);
                 else if (element is Button button && button.Content is string caption) Add("Dialog " + caption, button);
                 else if (element is ComboBoxItem choice) Add("Choice " + (choice.Content?.ToString() ?? ""), choice);
@@ -88,7 +96,12 @@ public sealed partial class EditorPage
                 {
                     if (input.Name.Length > 0) Add("Dialog input " + input.Name, input);
                     for (DependencyObject? parent = VisualTreeHelper.GetParent(input); parent is not null; parent = VisualTreeHelper.GetParent(parent))
-                        if (parent is NumberBox number) { Add("Option input " + AutomationProperties.GetName(number), input); break; }
+                        if (parent is NumberBox number)
+                        {
+                            var label = AutomationProperties.GetName(number); Add("Option input " + label, input);
+                            optionInputs[label] = new() { Text = input.Text, SelectionStart = input.SelectionStart, SelectionLength = input.SelectionLength,
+                                Focused = ReferenceEquals(FocusManager.GetFocusedElement(root), input) }; break;
+                        }
                 }
             }
         return new BrowserState
@@ -127,6 +140,10 @@ public sealed partial class EditorPage
             TabSize = _active.TabSize, ConvertTabsToSpaces = _active.ConvertTabsToSpaces, RulerColumn = _active.RulerColumn,
             OptionsDialogOpen = _active.IsOptionsDialogOpen, ColumnMapBuilds = _active.ColumnMapBuildCount,
             StatusPosition = _editorStatus.PositionText, StatusRefreshes = _editorStatus.RefreshCount, OverwriteMode = _active.IsOverstrike,
+            OptionInputs = optionInputs, OptionsValidation = optionsValidation, ContextMenuOpen = _active.IsEditorContextMenuOpen, ContextMenuBuilds = _active.ContextMenuBuildCount,
+            ContextMenuEnabled = _active.IsDefaultContextMenuEnabled, SecondaryPointerMovesCaret = _active.CanMoveCaretForSecondaryPointerButton, ContextItems = contextItems,
+            ActiveView = ReferenceEquals(_active, _primary) ? "Primary" : "Secondary",
+            ContextCommands = Enum.GetValues<EditorCommand>().ToDictionary(c => c.ToString(), c => _active.GetCommandState(c).IsEnabled),
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
     }
@@ -142,8 +159,24 @@ public sealed partial class EditorPage
         catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; App.MainWindow.Close(); }
     }
 }
+internal sealed class NumericOptionState
+{
+    public string Text { get; set; } = "";
+    public int SelectionStart { get; set; }
+    public int SelectionLength { get; set; }
+    public bool Focused { get; set; }
+}
 internal sealed class BrowserState
 {
+    public Dictionary<string, NumericOptionState> OptionInputs { get; set; } = [];
+    public string OptionsValidation { get; set; } = "";
+    public bool ContextMenuOpen { get; set; }
+    public bool ContextMenuEnabled { get; set; }
+    public bool SecondaryPointerMovesCaret { get; set; }
+    public string ActiveView { get; set; } = "";
+    public Dictionary<string, bool> ContextItems { get; set; } = [];
+    public long ContextMenuBuilds { get; set; }
+    public Dictionary<string, bool> ContextCommands { get; set; } = [];
     public DiagnosticGridState DiagnosticGrid { get; set; } = new();
     public string SplitOrientation { get; set; } = "";
     public double SplitRatio { get; set; }
