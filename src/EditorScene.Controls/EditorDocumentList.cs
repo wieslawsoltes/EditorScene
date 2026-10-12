@@ -35,7 +35,9 @@ public sealed class EditorDocumentList : MenuFlyout, IDisposable
             if (_selected == value) return;
             var old = _selected; _selected = value;
             if (old is { } previous && _entries.TryGetValue(previous, out var before)) before.Item.IsChecked = false;
-            if (value is { } current) _entries[current].Item.IsChecked = true;
+            // Native DP callbacks can replace membership, change selection or dispose.
+            if (!_disposed && _selected == value && value is { } current && _entries.TryGetValue(current, out var after))
+                after.Item.IsChecked = true;
         }
     }
 
@@ -44,15 +46,13 @@ public sealed class EditorDocumentList : MenuFlyout, IDisposable
     public void SetDocuments(IEnumerable<EditorDocumentListEntry> documents)
     {
         Verify(); ArgumentNullException.ThrowIfNull(documents);
-        var snapshot = documents.ToArray(); var ids = new HashSet<Guid>();
+        var snapshot = documents.ToArray(); Verify(); var ids = new HashSet<Guid>();
         foreach (var document in snapshot)
         {
             ArgumentNullException.ThrowIfNull(document);
             if (document.Id == Guid.Empty || !ids.Add(document.Id)) throw new ArgumentException("Document IDs must be nonempty and unique.", nameof(documents));
             if (string.IsNullOrWhiteSpace(document.Title)) throw new ArgumentException("Document titles must not be blank.", nameof(documents));
         }
-        // Construct new controls before replacing membership. External data callbacks are
-        // only evaluated during the validated snapshot above, never during native reconciliation.
         var next = new Dictionary<Guid, Registration>(snapshot.Length);
         foreach (var document in snapshot)
         {
@@ -63,17 +63,26 @@ public sealed class EditorDocumentList : MenuFlyout, IDisposable
         _entries = next;
         if (_selected is { } selected && !next.ContainsKey(selected)) _selected = null;
         for (var i = Items.Count - 1; i >= 0; i--)
+        {
             if (Items[i] is not ToggleMenuFlyoutItem item || item.Tag is not Guid id || !next.TryGetValue(id, out var entry) || !ReferenceEquals(item, entry.Item)) Items.RemoveAt(i);
+            if (!IsCurrent(next)) return;
+        }
         for (var i = 0; i < snapshot.Length; i++)
         {
             var entry = next[snapshot[i].Id]; entry.Update(snapshot[i]);
-            entry.Item.IsChecked = _selected == snapshot[i].Id;
+            if (!IsCurrent(next)) return;
+            var selected = _selected == snapshot[i].Id;
+            if (entry.Item.IsChecked != selected) entry.Item.IsChecked = selected;
+            if (!IsCurrent(next)) return;
             if (i < Items.Count && ReferenceEquals(Items[i], entry.Item)) continue;
             var oldIndex = Items.IndexOf(entry.Item); if (oldIndex >= 0) Items.RemoveAt(oldIndex);
+            if (!IsCurrent(next)) return;
             Items.Insert(i, entry.Item);
+            if (!IsCurrent(next)) return;
         }
         if (snapshot.Length == 0) Hide();
     }
+    private bool IsCurrent(Dictionary<Guid, Registration> entries) => !_disposed && ReferenceEquals(entries, _entries);
 
     /// <summary>Update only one caption/dirty marker. False means the identity is no longer present.</summary>
     public bool UpdateDocument(EditorDocumentListEntry document)
@@ -127,9 +136,12 @@ public sealed class EditorDocumentList : MenuFlyout, IDisposable
         }
         private void UpdateCaption()
         {
-            Item.Text = Document.Title + (Document.IsModified ? " *" : "");
-            AutomationProperties.SetName(Item, "Activate document " + Document.Title);
-            ToolTipService.SetToolTip(Item, Document.Title);
+            var document = Document;
+            Item.Text = document.Title + (document.IsModified ? " *" : "");
+            if (_owner is null || _owner._disposed || !ReferenceEquals(Document, document)) return;
+            AutomationProperties.SetName(Item, "Activate document " + document.Title);
+            if (_owner is null || _owner._disposed || !ReferenceEquals(Document, document)) return;
+            ToolTipService.SetToolTip(Item, document.Title);
         }
         private void OnClick(object sender, RoutedEventArgs args)
         {
