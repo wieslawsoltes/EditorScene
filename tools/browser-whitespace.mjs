@@ -14,6 +14,18 @@ export async function checkWhitespace({page,state,wait,textIs,paste,click,comman
     await click('Visible command '+label);
     await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
   }
+  await paste('ready');await page.keyboard.press('Control+End');
+  let unchanged=(await state()).Revision;
+  await whitespace('Convert Selected Spaces to Tabs');
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea'));
+  assert.equal((await state()).Revision,unchanged);
+  await page.keyboard.type('!');await textIs('ready!');await page.keyboard.press('Control+z');await textIs('ready');
+  await paste('\tvalue');await page.keyboard.press('Control+End');unchanged=(await state()).Revision;
+  await whitespace('Tabify Selected Lines');
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea'));
+  assert.equal((await state()).Revision,unchanged);
+  await page.keyboard.type('!');await textIs('\tvalue!');await page.keyboard.press('Control+z');await textIs('\tvalue');
+  checks.push('No-op whitespace menu actions return keyboard focus without changing revisions and allow immediate typing/undo');
   const source='\tfirst\tvalue\n\tsecond\tvalue\n';
   await paste(source);await page.keyboard.press('Control+Home');await page.keyboard.press('Shift+End');
   await whitespace('Convert Selected Tabs to Spaces','whitespace-menu-dark.png');
@@ -40,8 +52,10 @@ export async function checkWhitespace({page,state,wait,textIs,paste,click,comman
   await click('Theme');await click('Choice Dark');await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');
   await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly);
   const before=(await state()).Revision;
-  await whitespace('Convert Selected Tabs to Spaces');await textIs('a\tb');assert.equal((await state()).Revision,before);
+  await whitespace('Convert Selected Tabs to Spaces');
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea'));
+  await page.keyboard.type('BLOCKED');await textIs('a\tb');assert.equal((await state()).Revision,before);
   await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);
   await focusEditor();
-  checks.push('Whitespace submenu renders in both palettes and read-only commands are harmless no-ops');
+  checks.push('Whitespace submenu renders in both palettes and read-only commands return focus without permitting input');
 }
