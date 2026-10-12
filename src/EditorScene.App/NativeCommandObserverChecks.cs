@@ -27,6 +27,15 @@ internal static class NativeCommandObserverChecks
         replacement.Indicators.Add(0, 0, IndicatorKind.Bookmark);
         Check(next.IsEnabled && clear.IsEnabled,
             "The new document's indicator collection drives its bound native commands");
+        var find = new Button(); bindings.Bind(find, EditorCommand.Find);
+        editor.MacroRecording.Record(); var recordingDisabled = !find.IsEnabled;
+        editor.MacroRecording.Pause();
+        Check(recordingDisabled && find.IsEnabled && !editor.GetCommandState(EditorCommand.Find).IsEnabled,
+            "Paused recording permits interactive command surfaces while context-menu policy remains suspended");
+        editor.MacroRecording.Resume(); var resumedDisabled = !find.IsEnabled;
+        editor.MacroRecording.Cancel();
+        Check(resumedDisabled && find.IsEnabled,
+            "Resuming recording disables interactive commands and cancellation restores their normal state");
         bindings.Dispose(); queries = bindings.QueryCount; replacement.Indicators.Clear();
         Check(bindings.Count == 0 && bindings.QueryCount == queries && !editor.IsDisposed && replacement.Buffer.Text == "second",
             "Disposal releases indicator subscriptions without disposing the current editor or document");
