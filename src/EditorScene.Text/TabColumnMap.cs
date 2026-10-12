@@ -50,8 +50,15 @@ public sealed class TabColumnMap
     public long GetColumn(int offset)
     {
         if ((uint)offset > (uint)Length) throw new ArgumentOutOfRangeException(nameof(offset));
-        var index = Array.BinarySearch(_tabs, offset);
-        index = index >= 0 ? index - 1 : ~index - 1;
+        // Last tab strictly before the requested offset. Direct comparisons avoid
+        // generic comparer/helper initialization on this repeated UI query path.
+        var low = 0; var high = _tabs.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (_tabs[middle] < offset) low = middle + 1; else high = middle;
+        }
+        var index = low - 1;
         return index < 0 ? offset : offset + _after[index] - (_tabs[index] + 1L);
     }
     /// <summary>Map a nonnegative logical column to an offset; columns inside a tab snap to its
@@ -60,9 +67,14 @@ public sealed class TabColumnMap
     {
         if (column < 0) throw new ArgumentOutOfRangeException(nameof(column));
         if (column >= ColumnLength) return Length;
-        var index = Array.BinarySearch(_after, column);
-        if (index >= 0) return _tabs[index] + 1;
-        var next = ~index; var previous = next - 1;
+        var low = 0; var high = _after.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (_after[middle] < column) low = middle + 1; else high = middle;
+        }
+        if (low < _after.Length && _after[low] == column) return _tabs[low] + 1;
+        var next = low; var previous = next - 1;
         var extra = previous < 0 ? 0 : _after[previous] - (_tabs[previous] + 1L);
         var offset = column - extra;
         if (next < _tabs.Length && offset > _tabs[next]) return _tabs[next] + (afterTab ? 1 : 0);
