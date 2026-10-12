@@ -1,0 +1,49 @@
+{
+  "sourceRevision": "c7c3cba6fe0ef7b8712dc321a04fee36f3e0f63d",
+  "baselineRevision": "d80936a12a6af376ac1311c4bd811c84f6d5f8c9",
+  "workflowRun": 38248336394,
+  "testJob": 114807987214,
+  "artifactId": 11747935009,
+  "artifactName": "regression-tests",
+  "fullReportPath": "performance.json",
+  "artifactZipSha256ReportedByCI": "9662510ae2658b9832f7a559596772a0f23c5b5f42493cd877bbe6df7ff24fa6",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "statusAtCapture": "The exact test/benchmark job completed successfully. Native and isolated-package jobs also passed; the browser job was still running when this evidence was recorded. Benchmark success alone is not a complete-workflow/deployment claim.",
+  "methodology": "The baseline reproduces d80936a ConvertIndentation/EditSelectedLines whole-line reads, transformations and comparisons. Both conversion paths produce equal final text, checked outside timing. Forty lines each contain four leading spaces, 100000 ordinary characters, two trailing spaces and LF (4000280 UTF-16 units). The current path emits forty four-space-to-one-tab replacements. Document/snapshot/line-index setup, equivalence verification and actual edit application/undo are excluded. The pool is warm. Three warmups, eleven samples in sequential implementation groups. Current-thread managed allocations only; not native UI, frame rate, input latency, GPU, power or Actipro performance.",
+  "unresolvedCosts": "The same complete report still records slower model-only compiler construction (4.7392 to 15.2426 ms median) and slower dense-tab mapping construction (0.2107 to 0.5315 ms). This whitespace increment does not claim to fix those separate paths.",
+  "rows": [
+    {
+      "scenario": "indent_conversion_40_long_lines",
+      "implementation": "previous_full_line_edits",
+      "p50Milliseconds": 7.8904,
+      "p95Milliseconds": 25.3149,
+      "medianAllocatedBytes": 32007688,
+      "sortedElapsedMilliseconds": [2.2071,2.3634,2.5028,4.3135,4.8481,7.8904,14.2321,14.4885,15.7748,16.4791,25.3149],
+      "sortedAllocatedBytes": [32007688,32007688,32007688,32007688,32007688,32007688,32007688,32007688,32007688,32007912,32014056]
+    },
+    {
+      "scenario": "indent_conversion_40_long_lines",
+      "implementation": "current_whitespace_run_edits",
+      "p50Milliseconds": 0.6457,
+      "p95Milliseconds": 0.7616,
+      "medianAllocatedBytes": 4136,
+      "sortedElapsedMilliseconds": [0.6007,0.617,0.6211,0.6229,0.6237,0.6457,0.6584,0.6825,0.7101,0.7518,0.7616],
+      "sortedAllocatedBytes": [4136,4136,4136,4136,4136,4136,4136,4136,4136,4136,4384]
+    },
+    {
+      "scenario": "whitespace_scan_4000000_unchanged",
+      "implementation": "current",
+      "p50Milliseconds": 0.56,
+      "p95Milliseconds": 8.6017,
+      "medianAllocatedBytes": 648,
+      "sortedElapsedMilliseconds": [0.5413,0.5422,0.5422,0.5451,0.5536,0.56,0.568,0.5756,0.6381,0.6445,8.6017],
+      "sortedAllocatedBytes": [648,648,648,648,648,648,648,648,648,648,648],
+      "note": "Separate current-only fixture: scans a four-million-unit ordinary-code line and emits no edits. No older-version speedup claim. The high observed p95 is retained rather than omitted."
+    }
+  ]
+}

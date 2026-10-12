@@ -59,6 +59,10 @@ using EditorScene.LanguageServices;
 using System.Reflection;
 using var document = new EditorDocument("using System; class C { int M() => Math.Abs(-1); }", "consumer.cs");
 var snapshot = document.Snapshot();
+using var whitespaceDocument = new EditorDocument("a" + (char)9 + "b"); var whitespaceSnapshot = whitespaceDocument.Snapshot();
+var whitespacePlan = WhitespaceEditPlan.Create(whitespaceSnapshot.GetSpan(0, whitespaceSnapshot.Length), WhitespaceConversion.Spaces);
+whitespacePlan.Apply(whitespaceDocument);
+if (whitespaceDocument.Buffer.Text != "a   b" || whitespacePlan.Edits.Length != 1) throw new Exception("Packaged whitespace planning failed.");
 using var tabsDocument = new EditorDocument("\tX");
 var tabs = new TabColumnMap(tabsDocument.Snapshot(), 0, 8);
 if (tabs.GetColumn(2) != 9 || tabs.GetOffset(7) != 0 || tabs.GetIndentation(2, true).Length != 7) throw new Exception("Packaged tab mapping failed.");
@@ -135,6 +139,8 @@ public sealed class ConsumerControl : UserControl
     public SyntaxEditor Editor { get; } = new() { Document = new EditorDocument("{}", "consumer.json"), SyntaxLanguage = new JsonLanguage() };
     public Task<bool> ExpandAsync() => Editor.ExpandSelectionAsync();
     public bool Contract() => Editor.ContractSelection();
+    public bool ConvertWhitespace() => Editor.ConvertSelectedWhitespace(false);
+    public bool TabifyLines() => Editor.TabifySelectedLines(true);
     public ConsumerControl()
     {
         Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());
