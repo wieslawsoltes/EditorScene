@@ -1,0 +1,47 @@
+name: Repair empty filter input regression
+on:
+  push:
+    branches: [feat/diagnostic-grid-review]
+    paths: [.github/workflows/repair-empty-filter-input.yml]
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.repository == 'wieslawsoltes/EditorScene'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply exact reviewed keyboard-helper fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          edits = {}
+          def replace(path, old, new):
+              text = edits.setdefault(path, Path(path).read_text())
+              assert text.count(old) == 1, path + ': ' + old[:90]
+              edits[path] = text.replace(old, new)
+          replace('tools/browser-smoke.mjs',
+              "const fill=async(name,text)=>{await click(name);await page.keyboard.press('Control+a');await page.keyboard.type(text);};",
+              "const fill=async(name,text)=>{await click(name);await page.keyboard.press('Control+a');if(text.length===0)await page.keyboard.press('Backspace');else await page.keyboard.type(text);};")
+          replace('tools/browser-workspace.mjs',
+              "  await fill('Filter diagnostics','');await click('Error List');await wait(()=>globalThis.__editorSceneState?.ToolPaneOpen===false);",
+              "  await fill('Filter diagnostics','');\n  await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.FilterText==='' && globalThis.__editorSceneState.DiagnosticGrid.ClearEnabled===false);\n  await click('Error List');await wait(()=>globalThis.__editorSceneState?.ToolPaneOpen===false);")
+          replace('tools/browser-diagnostics.mjs',
+              "  if(!(await state()).ToolPaneOpen)await click('Error List');",
+              "  if(!(await state()).ToolPaneOpen)await click('Error List');\n  if((await state()).DiagnosticGrid.FilterText.length>0)await click('Clear diagnostic filter');\n  await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.FilterText==='');")
+          for path, text in edits.items(): Path(path).write_text(text)
+          PY
+          node --check tools/browser-smoke.mjs
+          node --check tools/browser-workspace.mjs
+          node --check tools/browser-diagnostics.mjs
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/repair-empty-filter-input.yml
+          git add tools
+          git commit -m 'test(browser): clear empty inputs with real Backspace and await diagnostic filter publication'
+          git push origin HEAD:feat/diagnostic-grid-review
+          git rev-parse HEAD
