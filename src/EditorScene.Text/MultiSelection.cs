@@ -78,11 +78,23 @@ public sealed class MultiSelection
         if (_generation == generation) Publish(normalized.Ranges, normalized.Primary);
     }
     public void Delete(bool backwards, Func<TextEdit, bool>? canEdit = null)
+        => DeleteCore(backwards, null, canEdit);
+    /// <summary>Backspace empty carets through leading spaces to their previous tab stops.
+    /// Selections, literal tabs, graphemes and line joins retain ordinary deletion rules.
+    /// Overlapping deletion spans are merged before one atomic permission-checked edit.</summary>
+    public void DeleteToPreviousTabStop(int tabSize, Func<TextEdit, bool>? canEdit = null)
+    {
+        if (tabSize is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(tabSize));
+        DeleteCore(true, tabSize, canEdit);
+    }
+    private void DeleteCore(bool backwards, int? tabSize, Func<TextEdit, bool>? canEdit)
     {
         _document.VerifyAccess();
         var revision = _document.Revision; var generation = _generation;
         var doc = _document.Buffer;
         var lines = new Dictionary<int, (string Text, int[] Starts)>();
+        var maps = tabSize.HasValue ? new Dictionary<int, TabColumnMap>() : null;
+        var snapshot = tabSize.HasValue ? _document.Snapshot() : null;
         var candidates = new SelectionRange[_ranges.Length];
         for (var i = 0; i < _ranges.Length; i++)
         {
@@ -93,6 +105,13 @@ public sealed class MultiSelection
             { candidates[i] = new(line.PreviousLine.EndOffset, offset); continue; }
             if (local > line.Length || (!backwards && local == line.Length && line.DelimiterLength > 0))
             { candidates[i] = new(line.EndOffset, line.Offset + line.TotalLength); continue; }
+            if (maps is not null)
+            {
+                if (!maps.TryGetValue(line.LineNumber, out var map))
+                { map = new TabColumnMap(snapshot!, line.LineNumber - 1, tabSize!.Value); maps.Add(line.LineNumber, map); }
+                var count = map.GetSoftTabBackspaceLength(local);
+                if (count > 0) { candidates[i] = new(offset - count, offset); continue; }
+            }
             if (!lines.TryGetValue(line.LineNumber, out var data))
             {
                 var text = doc.GetText(line.Offset, line.Length);

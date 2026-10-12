@@ -44,7 +44,8 @@ public sealed partial class SyntaxEditor
         return new() { TabSize = TabSize, ConvertTabsToSpaces = ConvertTabsToSpaces, FontSize = FontSize,
             WordWrap = WordWrap, ShowLineNumbers = ShowLineNumbers, ShowWhitespace = ShowWhitespace,
             ShowIndentGuides = ShowIndentGuides, ShowRuler = ShowRuler, RulerColumn = RulerColumn,
-            AutoCompleteBrackets = AutoCompleteBrackets, AutoShowCompletion = AutoShowCompletion };
+            AutoCompleteBrackets = AutoCompleteBrackets, AutoShowCompletion = AutoShowCompletion,
+            CanBackspaceOverSpacesToTabStop = CanBackspaceOverSpacesToTabStop };
     }
     /// <summary>Validate all values before applying. Stops if a synchronous host callback changes
     /// the target document, provider or any already-observed option. Completed changes are not rolled back.</summary>
@@ -59,7 +60,7 @@ public sealed partial class SyntaxEditor
         _applyingViewOptions = true;
         try
         {
-            for (var step = 0; step < 11; step++)
+            for (var step = 0; step < 12; step++)
             {
                 if (!Current()) return false;
                 switch (step)
@@ -75,6 +76,8 @@ public sealed partial class SyntaxEditor
                     case 8: expected = expected with { AutoCompleteBrackets = desired.AutoCompleteBrackets }; AutoCompleteBrackets = desired.AutoCompleteBrackets; break;
                     case 9: expected = expected with { AutoShowCompletion = desired.AutoShowCompletion }; AutoShowCompletion = desired.AutoShowCompletion; break;
                     case 10: if (expected.FontSize != desired.FontSize) { expected = expected with { FontSize = desired.FontSize }; FontSize = desired.FontSize; } break;
+                    case 11: if (expected.CanBackspaceOverSpacesToTabStop != desired.CanBackspaceOverSpacesToTabStop)
+                        { expected = expected with { CanBackspaceOverSpacesToTabStop = desired.CanBackspaceOverSpacesToTabStop }; CanBackspaceOverSpacesToTabStop = desired.CanBackspaceOverSpacesToTabStop; } break;
                 }
             }
             if (!Current()) return false;
@@ -100,8 +103,6 @@ public sealed partial class SyntaxEditor
     private void IndentWithTabStops()
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess();
-        // Match the native editor: Tab in a read-only view neither edits nor reports
-        // an operation failure merely because the key was pressed.
         if (IsReadOnly) return;
         if (!Selections.IsActive && SelectionLength != 0) { _editor.TextArea.Session.Indent(); return; }
         var document = Document; var snapshot = document.Snapshot(); var language = SyntaxLanguage;

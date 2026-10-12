@@ -1,0 +1,100 @@
+{
+  "sourceRevision": "fdf7b71ef72a7bcde4e215bc8d2f17ad55dc4b67",
+  "baselineSourceRevision": "75a81960a1bbd6cb1c7d88179b1d639af3af4d5b",
+  "workflowRun": 38239558955,
+  "job": 114779106874,
+  "artifact": 11742226660,
+  "artifactReportedSha256": "120ef7686c35bf62100c50744ff82d3c2b9433027eb406f18cddf0db403be089",
+  "workflowUrl": "https://github.com/wieslawsoltes/EditorScene/actions/runs/38239558955",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "warmups": 3,
+  "samples": 11,
+  "note": "Selected rows transcribed from the exact-source completed CI job's performance.json output. The complete report, including unfavorable compiler workloads, is in the linked regression artifact. No independent local ZIP/hash verification is claimed. PreviousScalarMap reproduces the prior constructor and field shape; current span mapping also records leading indentation. Both use the same snapshot, tab size four, pooled 4096-character reader and cleared buffer return. Setup excluded, result checks included, sequential baseline/current groups, warm pool, current-thread managed allocations. No UI/frame/input-latency/physical-GPU or Actipro comparison. Dense-tab construction is slower in this run; no all-path improvement is claimed.",
+  "rows": [
+    {
+      "scenario": "tab_build_sparse_100003",
+      "implementation": "previous_scalar",
+      "p50Milliseconds": 0.1205,
+      "p95Milliseconds": 0.1538,
+      "medianAllocatedBytes": 712,
+      "sortedElapsedMilliseconds": [0.1183,0.119,0.1195,0.1198,0.1204,0.1205,0.1231,0.1252,0.1289,0.1319,0.1538],
+      "sortedAllocatedBytes": [712,712,712,712,712,712,712,712,712,712,712]
+    },
+    {
+      "scenario": "tab_build_sparse_100003",
+      "implementation": "current_span",
+      "p50Milliseconds": 0.0323,
+      "p95Milliseconds": 0.0349,
+      "medianAllocatedBytes": 720,
+      "sortedElapsedMilliseconds": [0.0317,0.0319,0.0321,0.0321,0.0323,0.0323,0.033,0.033,0.0337,0.0343,0.0349],
+      "sortedAllocatedBytes": [720,720,720,720,720,720,720,720,720,720,720]
+    },
+    {
+      "scenario": "tab_build_no_tabs_100000",
+      "implementation": "previous_scalar",
+      "p50Milliseconds": 0.1143,
+      "p95Milliseconds": 0.136,
+      "medianAllocatedBytes": 544,
+      "sortedElapsedMilliseconds": [0.1112,0.1113,0.1113,0.1114,0.1115,0.1143,0.1144,0.1145,0.1152,0.127,0.136],
+      "sortedAllocatedBytes": [544,544,544,544,544,544,544,544,544,544,544]
+    },
+    {
+      "scenario": "tab_build_no_tabs_100000",
+      "implementation": "current_span",
+      "p50Milliseconds": 0.0314,
+      "p95Milliseconds": 0.0412,
+      "medianAllocatedBytes": 488,
+      "sortedElapsedMilliseconds": [0.031,0.0313,0.0313,0.0313,0.0313,0.0314,0.0319,0.032,0.0322,0.0369,0.0412],
+      "sortedAllocatedBytes": [488,488,488,488,488,488,488,488,488,488,488]
+    },
+    {
+      "scenario": "tab_build_indentation_100000",
+      "implementation": "previous_scalar",
+      "p50Milliseconds": 0.111,
+      "p95Milliseconds": 0.1195,
+      "medianAllocatedBytes": 544,
+      "sortedElapsedMilliseconds": [0.1103,0.1104,0.1106,0.1107,0.1108,0.111,0.1114,0.1115,0.1119,0.1121,0.1195],
+      "sortedAllocatedBytes": [544,544,544,544,544,544,544,544,544,544,544]
+    },
+    {
+      "scenario": "tab_build_indentation_100000",
+      "implementation": "current_span",
+      "p50Milliseconds": 0.0475,
+      "p95Milliseconds": 0.0711,
+      "medianAllocatedBytes": 488,
+      "sortedElapsedMilliseconds": [0.047,0.0471,0.0474,0.0474,0.0474,0.0475,0.0477,0.0477,0.0478,0.0481,0.0711],
+      "sortedAllocatedBytes": [488,488,488,488,488,488,488,488,488,488,488]
+    },
+    {
+      "scenario": "tab_build_dense_100000",
+      "implementation": "previous_scalar",
+      "p50Milliseconds": 0.2732,
+      "p95Milliseconds": 0.3032,
+      "medianAllocatedBytes": 1087648,
+      "sortedElapsedMilliseconds": [0.2571,0.2592,0.2669,0.2682,0.2724,0.2732,0.2747,0.2751,0.2763,0.2815,0.3032],
+      "sortedAllocatedBytes": [1087648,1087648,1087648,1087648,1087648,1087648,1087648,1087648,1087648,1087648,1087648]
+    },
+    {
+      "scenario": "tab_build_dense_100000",
+      "implementation": "current_span",
+      "p50Milliseconds": 0.3491,
+      "p95Milliseconds": 0.371,
+      "medianAllocatedBytes": 1087656,
+      "sortedElapsedMilliseconds": [0.3342,0.3439,0.3442,0.3455,0.3485,0.3491,0.354,0.3562,0.3574,0.3584,0.371],
+      "sortedAllocatedBytes": [1087656,1087656,1087656,1087656,1087656,1087656,1087656,1087656,1087656,1087656,1087656]
+    },
+    {
+      "scenario": "soft_tab_queries_10000",
+      "implementation": "current",
+      "p50Milliseconds": 0.0543,
+      "p95Milliseconds": 0.0767,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0.0524,0.0527,0.0528,0.0529,0.0537,0.0543,0.0563,0.0565,0.0572,0.0573,0.0767],
+      "sortedAllocatedBytes": [0,0,0,0,0,0,0,0,0,0,0],
+      "note": "10000 distinct leading-space offsets on a prebuilt 100000-unit line. Map construction, document edits and native UI are excluded. This is a new operation without a prior-version query baseline."
+    }
+  ]
+}

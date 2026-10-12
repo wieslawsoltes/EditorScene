@@ -7,6 +7,7 @@ public readonly record struct EditorViewOptions
     public EditorViewOptions() { }
     public int TabSize { get; init; } = 4;
     public bool ConvertTabsToSpaces { get; init; }
+    public bool CanBackspaceOverSpacesToTabStop { get; init; } = true;
     public double FontSize { get; init; } = 13;
     public bool WordWrap { get; init; }
     public bool ShowLineNumbers { get; init; } = true;

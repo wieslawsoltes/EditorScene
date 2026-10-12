@@ -65,6 +65,14 @@ if (tabs.GetColumn(2) != 9 || tabs.GetOffset(7) != 0 || tabs.GetIndentation(2, t
 var multi = new MultiSelection(tabsDocument); multi.Set([new SelectionRange(0, 0), new SelectionRange(2, 2)]);
 multi.ReplaceEach(["a", "bc"]);
 if (tabsDocument.Buffer.Text != "a\tXbc") throw new Exception("Packaged per-caret replacement failed.");
+using var softDocument = new EditorDocument("      x");
+var softMap = new TabColumnMap(softDocument.Snapshot(), 0, 4);
+if (softMap.LeadingWhitespaceLength != 6 || softMap.GetSoftTabBackspaceLength(6) != 2) throw new Exception("Packaged soft-tab mapping failed.");
+var softSelections = new MultiSelection(softDocument); softSelections.Set([new SelectionRange(2, 2), new SelectionRange(6, 6)]);
+softSelections.DeleteToPreviousTabStop(4);
+if (softDocument.Buffer.Text != "  x") throw new Exception("Packaged atomic soft-tab Backspace failed.");
+softDocument.Buffer.UndoStack.Undo();
+if (softDocument.Buffer.Text != "      x") throw new Exception("Packaged soft-tab Undo failed.");
 if (snapshot.GetLine(0).Length != snapshot.Length) throw new Exception("Packaged snapshot line index failed.");
 document.Buffer.Insert(0, " "); var changed = document.Snapshot();
 var minimal = SnapshotTextChanges.GetMinimalChange(snapshot, changed);
@@ -107,7 +115,7 @@ CodeSnippetSerializer.Save(stream, catalog.Entries.Select(e => e.Snippet)); stre
 if (CodeSnippetSerializer.Load(stream).Length != 16) throw new Exception("Packaged snippets failed.");
 if (EditorTheme.Light.ColorFor("keyword") == EditorTheme.Light.Foreground) throw new Exception("Packaged rendering palette failed.");
 if (Assembly.Load("EditorScene.Protocol").GetExportedTypes().Length == 0) throw new Exception("Protocol package is empty.");
-Console.WriteLine("Package-only document, compiler, JSON, snippet, rendering, diagnostic query and protocol consumer passed.");
+Console.WriteLine("Package-only document, compiler, JSON, snippet, rendering, diagnostic query, soft-tab and protocol consumer passed.");
 ''')
         run('dotnet','run','--project',console/'Headless.csproj','-c','Release',cwd=directory,env=env)
         native=directory/'Native'; native.mkdir()
@@ -131,10 +139,13 @@ public sealed class ConsumerControl : UserControl
     {
         Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());
         Editor.NavigateToMatchingBracket();
-        var options = new EditorViewOptions { TabSize = 8, ConvertTabsToSpaces = true };
+        var options = new EditorViewOptions { TabSize = 8, ConvertTabsToSpaces = true, CanBackspaceOverSpacesToTabStop = true };
         Editor.ApplyViewOptions(options);
         _ = Editor.GetCaretTabColumn();
+        Editor.CanBackspaceOverSpacesToTabStop = true;
+        Editor.Backspace();
         var optionsPanel = new EditorOptionsView(options);
+        _ = optionsPanel.SoftTabBackspaceInput;
         _ = optionsPanel.TryGetOptions(out var captured);
         optionsPanel.Dispose();
         var navigation = new NavigableSymbolSelector { Editor = Editor };

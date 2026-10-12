@@ -165,6 +165,7 @@ public sealed partial class SyntaxEditor
                     throw new InvalidOperationException("The macro target changed during playback.");
                 if (step.Command == "text") InsertMacroText(step.Argument);
                 else if (step.Command == "native.Tab") IndentWithTabStops();
+                else if (step.Command == "native.Backspace") BackspaceWithTabStops();
                 else if (step.Command == "clearSelection") { ClearMultiSelection(); _editor.TextArea.ClearSelection(); }
                 else if (step.Command.StartsWith("editor.", StringComparison.Ordinal)) await ExecuteCommandCoreAsync(Enum.Parse<EditorCommand>(step.Command[7..]));
                 else

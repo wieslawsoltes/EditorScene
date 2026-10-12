@@ -56,6 +56,10 @@ public sealed partial class SyntaxEditor
         }
         if (!command && !alt && !shift && e.Key == VirtualKey.Tab && !IsSnippetActive && !IsCompletionOpen && _editor.Options.AcceptsTab)
         { e.Handled = true; _ = ExecuteAsync(EditorCommand.Indent); return; }
+        // Native Shift+Backspace is also ordinary deletion. Preserve that mapping
+        // while leaving word deletion and interactive snippet/completion policy alone.
+        if (!command && !alt && e.Key == VirtualKey.Back && !IsSnippetActive && !IsCompletionOpen)
+        { e.Handled = true; Backspace(); return; }
         EditorCommand? action = null;
         if (alt && shift && !command && e.Key is VirtualKey.Right or VirtualKey.Left)
         { _chord = null; e.Handled = true; _ = ExecuteAsync(e.Key == VirtualKey.Right ? EditorCommand.ExpandSelection : EditorCommand.ContractSelection); return; }
@@ -81,7 +85,11 @@ public sealed partial class SyntaxEditor
         else if (!command && !alt)
         {
             action = e.Key switch { VirtualKey.F2 => shift ? EditorCommand.PreviousBookmark : EditorCommand.NextBookmark, VirtualKey.F9 => EditorCommand.ToggleBreakpoint, _ => null };
-            if (e.Key == VirtualKey.Insert) { MacroRecording.NotifyEditAction(new("native.Overstrike")); IsOverstrike = !IsOverstrike; e.Handled = true; return; }
+            if (e.Key == VirtualKey.Insert)
+            {
+                if (MacroRecording.State == MacroRecordingState.Recording) MacroRecording.NotifyEditAction(new("native.Overstrike"));
+                IsOverstrike = !IsOverstrike; e.Handled = true; return;
+            }
         }
         if (action is { } selected) { e.Handled = true; _ = ExecuteAsync(selected); return; }
         if (e.Key == VirtualKey.Escape)
@@ -117,7 +125,9 @@ public sealed partial class SyntaxEditor
     {
         if (_disposed || args.Handled || IsReadOnly) return;
         if (MacroRecording.State == MacroRecordingState.Playing && !_replayingText) { args.Handled = true; return; }
-        try { MacroRecording.NotifyEditAction(MacroStep.InsertText(args.Text)); }
+        // Normal input must not allocate a discarded macro step or inherit the
+        // recorder's text-size limit. Recording still validates before any edit.
+        try { if (MacroRecording.State == MacroRecordingState.Recording) MacroRecording.NotifyEditAction(MacroStep.InsertText(args.Text)); }
         catch (Exception error) { args.Handled = true; ReportError(error); return; }
         if (Selections.IsActive)
         {

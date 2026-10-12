@@ -70,5 +70,6 @@ internal static class NativeOptionsChecks
             var applied = target.ApplyViewOptions(new() { TabSize = 8, FontSize = 30 });
             Check(touched && !applied && (target.IsDisposed || target.FontSize == (interference == "options" ? 19 : 13)), "Option application preserves synchronous host " + interference + " changes");
         }
+        await NativeSoftTabChecks.RunAsync(checks);
     }
 }
