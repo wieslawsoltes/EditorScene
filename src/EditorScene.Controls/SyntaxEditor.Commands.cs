@@ -36,14 +36,14 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.Uncomment: CommentLines(true); break;
                 case EditorCommand.Uppercase: TransformSelection(s => s.ToUpperInvariant()); break;
                 case EditorCommand.Lowercase: TransformSelection(s => s.ToLowerInvariant()); break;
-                case EditorCommand.TrimTrailingWhitespace: if (TrimTrailingWhitespace()) FocusAfterEditCommand(); return;
+                case EditorCommand.TrimTrailingWhitespace: ExecuteWhitespaceCommand(WhitespaceConversion.TrimTrailing, true, false, true); return;
                 case EditorCommand.SortLines: SortSelectedLines(); break;
-                case EditorCommand.TabsToSpaces: if (ChangeWhitespace(WhitespaceConversion.Spaces, true, true, true)) FocusAfterEditCommand(); return;
-                case EditorCommand.SpacesToTabs: if (ChangeWhitespace(WhitespaceConversion.Tabs, true, true, true)) FocusAfterEditCommand(); return;
-                case EditorCommand.TabifySelectedLines: if (TabifySelectedLines(true)) FocusAfterEditCommand(); return;
-                case EditorCommand.UntabifySelectedLines: if (TabifySelectedLines(false)) FocusAfterEditCommand(); return;
-                case EditorCommand.ConvertSelectedSpacesToTabs: if (ConvertSelectedWhitespace(true)) FocusAfterEditCommand(); return;
-                case EditorCommand.ConvertSelectedTabsToSpaces: if (ConvertSelectedWhitespace(false)) FocusAfterEditCommand(); return;
+                case EditorCommand.TabsToSpaces: ExecuteWhitespaceCommand(WhitespaceConversion.Spaces, true, true, true); return;
+                case EditorCommand.SpacesToTabs: ExecuteWhitespaceCommand(WhitespaceConversion.Tabs, true, true, true); return;
+                case EditorCommand.TabifySelectedLines: ExecuteWhitespaceCommand(WhitespaceConversion.Tabs, true, true, false); return;
+                case EditorCommand.UntabifySelectedLines: ExecuteWhitespaceCommand(WhitespaceConversion.Spaces, true, true, false); return;
+                case EditorCommand.ConvertSelectedSpacesToTabs: ExecuteWhitespaceCommand(WhitespaceConversion.Tabs, false, false, false); return;
+                case EditorCommand.ConvertSelectedTabsToSpaces: ExecuteWhitespaceCommand(WhitespaceConversion.Spaces, false, false, false); return;
                 case EditorCommand.CompleteWord: await ShowCompletionAsync(); return;
                 case EditorCommand.QuickInfo: await ShowQuickInfoAsync(); return;
                 case EditorCommand.SignatureHelp: await ShowSignatureHelpAsync(); return;
@@ -77,6 +77,22 @@ public sealed partial class SyntaxEditor
                 default: throw new ArgumentOutOfRangeException(nameof(command));
             }
             SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusAfterEditCommand();
+    }
+    private void ExecuteWhitespaceCommand(WhitespaceConversion conversion, bool expandToLines, bool leadingOnly, bool wholeDocumentWhenEmpty)
+    {
+        if (_whitespaceEditing) return;
+        var document = Document; var revision = document.Revision; var language = SyntaxLanguage;
+        var session = _editor.TextArea.Session; var anchor = session.AnchorOffset; var active = session.SelectionEndOffset; var caret = CaretOffset;
+        var options = GetViewOptions(); var protection = _editor.TextArea.ReadOnlySectionProvider;
+        var readOnly = IsReadOnly; var nativeReadOnly = _editor.IsReadOnly;
+        if (ChangeWhitespace(conversion, expandToLines, leadingOnly, wholeDocumentWhenEmpty)) { FocusAfterEditCommand(); return; }
+        // Empty selections, already canonical input and read-only commands still
+        // close a native menu. Return keyboard focus only if this was a genuine
+        // unchanged operation, not a callback which replaced its target state.
+        if (!_disposed && ReferenceEquals(Document, document) && document.Revision == revision && ReferenceEquals(SyntaxLanguage, language)
+            && ReferenceEquals(_editor.TextArea.Session, session) && session.AnchorOffset == anchor && session.SelectionEndOffset == active && CaretOffset == caret
+            && ReferenceEquals(_editor.TextArea.ReadOnlySectionProvider, protection) && IsReadOnly == readOnly && _editor.IsReadOnly == nativeReadOnly && GetViewOptions() == options)
+            FocusAfterEditCommand();
     }
     private bool CanEdit(TextEdit edit) => CanEditWithCurrentPermissions(edit);
     private void ApplyUserEdits(IEnumerable<TextEdit> changes, long? expectedRevision = null)
