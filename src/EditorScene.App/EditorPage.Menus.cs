@@ -81,6 +81,8 @@ public sealed partial class EditorPage
         BuildLspMenu(languageMenu);
         var bookmarks = Menu("Bookmarks");
         Command(bookmarks, "Toggle Bookmark", EditorCommand.ToggleBookmark, "Ctrl+F2"); Command(bookmarks, "Next Bookmark", EditorCommand.NextBookmark, "F2"); Command(bookmarks, "Previous Bookmark", EditorCommand.PreviousBookmark, "Shift+F2"); Command(bookmarks, "Clear All Bookmarks", EditorCommand.ClearBookmarks); Separator(bookmarks); Command(bookmarks, "Toggle Breakpoint Indicator", EditorCommand.ToggleBreakpoint, "F9");
+        Separator(view);
+        Item(view, "Editor Options…", () => _active.ShowViewOptionsAsync());
         var window = Menu("Window");
         Toggle(window, "Split Editor", () => _secondary is not null, ToggleSplit);
         Item(window, "Split Horizontally", () => { SetSplitOrientation(Orientation.Vertical); return Task.CompletedTask; });

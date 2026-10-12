@@ -23,20 +23,20 @@ python3 tools/package.py
 
 The SDK and package versions are pinned in `global.json` and project files: .NET SDK 10.0.401, Uno.Sdk 6.7.30. Open `EditorScene.slnx` to work with all libraries and the sample. `tools/build.py browser` produces `artifacts/site`, configured for the `/EditorScene/` URL prefix. Serve the directory at that prefix; opening `index.html` with `file://` is not supported. Use `--base-path /` when publishing to a local web root instead.
 
-The app supports new/open/save documents, tabs, independently resizable split views sharing one document, language selection, navigable symbols, document outline, filtered tabular diagnostics, event log, bookmarks, breakpoint indicators, themes, snippets, macro recording/playback, explicit language-server connections and text export. Its controls are native Uno controls, not a JavaScript editor embedded in a WebView.
+The app supports new/open/save documents, tabs, independently resizable split views sharing one document, language selection, navigable symbols, document outline, sorted/filtered tabular diagnostics, event log, bookmarks, breakpoint indicators, themes, editor options, snippets, macro recording/playback, explicit language-server connections and text export. Its controls are native Uno controls, not a JavaScript editor embedded in a WebView.
 
 ## Reusable packages
 
 | Package | Responsibility |
 | --- | --- |
-| `EditorScene.Text` | Versioned documents, immutable snapshots, bounded readers and literal search, atomic edits, multi-selection, indicators, tracked ranges, data-only macros, HTML/RTF export. |
-| `EditorScene.LanguageServices` | Provider contracts, cancellable/debounced analysis, provider invalidation, completion edit plans, structural selection, bracket/range indexes and immutable diagnostic-table projections. |
+| `EditorScene.Text` | Versioned documents, immutable snapshots, bounded readers and literal search, sparse tab-column maps, atomic edits and per-range replacements, multi-selection, indicators, tracked ranges, data-only macros, HTML/RTF export. |
+| `EditorScene.LanguageServices` | Provider contracts, cancellable/debounced analysis, provider invalidation, completion edit plans, structural selection, bracket/range indexes, immutable diagnostic projections/query caches and navigation cursors. |
 | `EditorScene.Languages.DotNet` | Roslyn-backed C#/VB diagnostics, classifications, symbols, completion, quick info, signatures, formatting and structural ranges; bounded incremental model and completed-analysis caches. |
 | `EditorScene.Languages.Structured` | Strict JSON and safe XML/XAML analysis, structural navigation, folding and conservative formatting. |
 | `EditorScene.Protocol` | Bounded JSON-RPC stream/WebSocket transports, negotiated synchronization, validated result conversion and document-scoped `LspSyntaxLanguage`, including semantic-token deltas and selection ranges. |
 | `EditorScene.Rendering.Skia` | Semantic/lexical styling, palettes, viewport adornments and disposable cached original vector-glyph rendering. |
 | `EditorScene.Snippets` | UI-independent Visual Studio snippet XML, immutable declarations/tokens, folder catalog, atomic import and 16 built-in snippets. |
-| `EditorScene.Controls` | `SyntaxEditor`, `NavigableSymbolSelector`, `DocumentOutline`, `SnippetPicker`, `DiagnosticList`, `EditorStatusBar`, `ResizableSplitView`, scoped `EditorChrome` resources and original `EditorIcon` controls. |
+| `EditorScene.Controls` | `SyntaxEditor`, `NavigableSymbolSelector`, `DocumentOutline`, `SnippetPicker`, `DiagnosticList`, `EditorStatusBar`, `ResizableSplitView`, `EditorOptionsView`, immutable `EditorViewOptions`, scoped `EditorChrome` resources and original `EditorIcon` controls. |
 
 The feed also includes the pinned MIT dependencies `UnoEdit.Core`, `UnoEdit.Rendering.Skia` and `UnoEdit.Uno`; do not omit these when consuming a downloaded local feed. The package job builds all 11 packages and uses a fresh NuGet cache outside the repository to execute a headless consumer and compile desktop/browser control consumers. It verifies that no source `ProjectReference` was used and that restored package bytes match the built artifacts. Package artifacts are not a claim of publication to nuget.org.
 
@@ -67,7 +67,7 @@ The host owns externally supplied documents and should dispose views and documen
 
 The workspace uses Actipro's public **SDI Code Editor** layout as a reference: compact menus and grouped toolbar commands, paired symbol selectors, a readable Document Outline tab, bottom tool windows and neutral status/zoom controls. All icons are original vectors. The reference is not a claim of pixel-identical styling or proprietary control compatibility.
 
-**Window → Split Horizontally / Split Vertically** creates top/bottom or side-by-side views. Drag the separator, use its arrow keys or double-click to center it. New splits copy read-only and visual preferences, then keep their caret/viewport and subsequent preference changes independent. The Error List exposes Code, Line, Char and Description columns with severity/text filters and current-revision row navigation. The status slider changes the active editor's zoom; the percentage resets it, and the INS/OVR button toggles insertion mode.
+**Window → Split Horizontally / Split Vertically** creates top/bottom or side-by-side views. Drag the separator, use its arrow keys or double-click to center it. New splits copy read-only and visual preferences, then keep their caret/viewport and subsequent preference changes independent. The Error List has original severity vectors and Code, Line, Char, File and Description columns with stable sorting, column resizing, severity/text filters and current-revision navigation. **F8 / Shift+F8** and its Previous/Next buttons traverse the displayed order. The status slider changes the active view's zoom; the percentage resets it, and INS/OVR toggles insertion mode.
 
 ```csharp
 using Microsoft.UI.Xaml.Controls;
@@ -88,9 +88,30 @@ var status = new EditorStatusBar { Editor = editor };
 // Resources.MergedDictionaries.Add(EditorChrome.Create(EditorTheme.Light));
 ```
 
-`ResizableSplitView` detaches, but does not dispose, externally supplied pane contents. `DiagnosticList` and `EditorStatusBar` detach prior editor subscriptions when rebound or disposed. The headless `DiagnosticTable` validates immutable diagnostics and caches positions once; its unfiltered path reuses the original row array. `EditorGlyphRenderer` records one native picture per instance/kind/palette and replays it without rebuilding paints or paths on each draw.
+`ResizableSplitView` detaches, but does not dispose, externally supplied pane contents. `DiagnosticList` and `EditorStatusBar` detach prior editor subscriptions when rebound or disposed. The headless `DiagnosticTable` validates immutable diagnostics and caches positions once; `DiagnosticTableView` retains one ordering and one query result. `EditorGlyphRenderer` records one native picture per instance/kind/palette and replays it without rebuilding paints or paths on each draw.
 
-See [classic workspace APIs, reference and review](docs/classic-workspace.md). Full floating/docking/auto-hide behavior, workspace persistence, printing and pixel-level equivalence remain unfinished. Status `Ch` is line-local UTF-16; `Col` is not yet a full tab/grapheme-expanded display-column model.
+See [classic workspace](docs/classic-workspace.md), [diagnostic grid](docs/diagnostic-grid.md) and [keyboard navigation](docs/diagnostic-navigation.md) for APIs and limitations. Full floating/docking/auto-hide behavior, workspace persistence, printing and pixel-level equivalence remain unfinished. Status `Ch` is raw line-local UTF-16; `Col` is tab-expanded logical UTF-16, not shaped glyph, bidi or grapheme-cell position.
+
+## Editor options and tab stops
+
+**View → Editor Options…** exposes font, wrapping, line numbers, whitespace, guides, ruler position, tab/indent width, spaces mode and bracket/completion preferences. The panel edits a private draft; **Cancel** leaves the view unchanged and **Restore defaults** remains a draft until **Apply**. Existing text is not converted by changing preferences.
+
+```csharp
+var options = editor.GetViewOptions();
+editor.ApplyViewOptions(options with
+{
+    TabSize = 8,
+    ConvertTabsToSpaces = true,
+    ShowRuler = true,
+    RulerColumn = 80
+});
+// In a loaded view:
+await editor.ShowViewOptionsAsync();
+```
+
+The native engine uses one width for tab stops and indentation; these are not independently configurable. New splits copy the options, while later changes remain view-local. Ordinary Tab measures expanded tab stops even after an existing tab, and multiple carets can insert different strings in one undo group through `MultiSelection.ReplaceEach`. Read-only Tab remains a non-editing operation.
+
+`TabColumnMap` builds a sparse immutable index of tabs for one snapshot line without flattening the document. Current-line caret movement reuses that map; cold construction or a changed line still requires a scan. Settings are not persisted across restarts. Apply guards synchronous host interference but does not roll back setters already completed. See [options, mapping semantics, tests and limits](docs/editor-options.md).
 
 ## Language servers
 
@@ -132,7 +153,7 @@ editor.MacroRecording.Stop();
 await editor.RunMacroAsync(repeat: 1);
 ```
 
-The reusable `EditorScene.Text.Macros` model has no UI dependency. Its versioned `.esmacro` XML stores command IDs and text, not activatable .NET types. Native playback preflights all command IDs before editing, observes cancellation and rejects recursive playback. Completed actions retain normal native undo behavior; playback is not one all-or-nothing edit. Interactive popups, snippets, file/workspace actions and arbitrary external handler effects are outside recording scope. See [macro behavior, API and boundaries](docs/macros.md).
+The reusable `EditorScene.Text.Macros` model has no UI dependency. Its versioned `.esmacro` XML stores command IDs and text, not activatable .NET types. Native playback preflights all command IDs before editing, observes cancellation and rejects recursive playback. Completed actions retain normal native undo behavior; playback is not one all-or-nothing edit. Interactive popups, snippets, file/workspace/options actions and arbitrary external handler effects are outside recording scope. See [macro behavior, API and boundaries](docs/macros.md).
 
 ## Snapshot tracking and reading
 
@@ -154,13 +175,13 @@ Point and span tracking have explicit insertion affinity, handle reverse history
 
 Snapshot position and line queries use a persistent, bounded-chunk AVL line index without flattening the snapshot. `GetLine` and `GetLineFromOffset` expose immutable zero-based line descriptors. Unchanged snapshot capture reuses the same object, and edits reuse completed indexes. `SnapshotTextChanges.GetMinimalChange` uses bounded edit history to avoid comparing unchanged multi-megabyte text for small LSP changes.
 
-LSP semantic-token deltas retain validated result IDs and immutable data, recover once from an invalid base, and use allocation-light typed decoding. Timing/allocation comparisons run in the regression job and are retained as `performance.json`. See [performance architecture, reproducible benchmarks and limits](docs/performance.md), [editor hot-path review](docs/editor-review.md), [compiler cache tradeoffs](docs/structural-selection.md), and [workspace control measurements](docs/performance/workspace-e09ade7.json). The documented model-only compiler regression is not hidden by the workspace improvements. These CPU measurements do not claim physical-GPU or end-to-end frame-rate improvements.
+LSP semantic-token deltas retain validated result IDs and immutable data, recover once from an invalid base, and use allocation-light typed decoding. Timing/allocation comparisons run in the regression job and are retained as `performance.json`. See [performance architecture](docs/performance.md), [editor hot-path review](docs/editor-review.md), [compiler cache tradeoffs](docs/structural-selection.md), [workspace measurements](docs/performance/workspace-e09ade7.json), [diagnostic navigation](docs/diagnostic-navigation.md) and [sparse-column mapping](docs/editor-options.md). The documented model-only compiler regression is not hidden by improvements elsewhere. These CPU measurements do not claim physical-GPU or end-to-end frame-rate improvements.
 
 **Alt+Shift+Right / Left** and the Edit menu expand/contract selection through C#/VB syntax ranges or negotiated LSP ranges, restoring exact selection/caret state. The reusable selection core and completed-analysis fast path avoid repeated work, while asynchronous replies are rejected if the document, provider or user selection has changed. See [structural selection](docs/structural-selection.md).
 
 ## Validation and rendering
 
-`tools/browser-smoke.mjs` and its macro, LSP, review, structural-selection and workspace modules drive the exact published .NET/Uno application through pointer, keyboard, clipboard, file upload and download. LSP tests use a synthetic WebSocket protocol peer, not a mocked language-provider return value. The optional `?test=1` bridge exposes observation only; it has no document mutation commands. Pointer tests wait for stable geometry across distinct native observations. CI runs the complete suite three times in fresh browser contexts and retains all result files, screenshots, protocol transcripts and traces.
+`tools/browser-smoke.mjs` and its macro, LSP, review, structural-selection, workspace, diagnostic and options modules drive the exact published .NET/Uno application through pointer, keyboard, clipboard, file upload and download. LSP tests use a synthetic WebSocket protocol peer, not a mocked language-provider return value. The optional `?test=1` bridge exposes observation only; it has no document mutation commands. Pointer tests wait for stable geometry across distinct native observations. CI runs the complete suite three times in fresh browser contexts and retains all result files, screenshots, protocol transcripts and traces.
 
 Browser CI creates a real WebGL2 Skia context using **software SwiftShader**. That validates the graphics path, not physical-GPU throughput, battery usage or driver compatibility. The host chooses acceleration; this repository does not claim a direct WebGPU renderer. Desktop execution checks currently use Linux/X11. Windows/macOS runtime, device-specific IME/accessibility and pixel-by-pixel Actipro equivalence need separate validation.
 

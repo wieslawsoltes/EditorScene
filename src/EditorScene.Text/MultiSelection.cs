@@ -41,9 +41,20 @@ public sealed class MultiSelection
         _document.VerifyAccess(); ArgumentNullException.ThrowIfNull(text);
         ReplaceCore(_ranges, PrimaryIndex, text, canEdit, _document.Revision, _generation);
     }
-    private void ReplaceCore(SelectionRange[] ranges, int primary, string text, Func<TextEdit, bool>? canEdit, long revision, long generation)
+    /// <summary>Replace each normalized range with its corresponding string. Inputs are copied and
+    /// validated before permission callbacks; all edits share one undo group and keep the primary caret.</summary>
+    public void ReplaceEach(IReadOnlyList<string> texts, Func<TextEdit, bool>? canEdit = null)
     {
-        var edits = ranges.Select(r => new TextEdit(r.Start, r.Length, text)).Where(e => e.Length != 0 || e.NewText.Length != 0).ToArray();
+        _document.VerifyAccess(); ArgumentNullException.ThrowIfNull(texts);
+        var revision = _document.Revision; var generation = _generation;
+        var ranges = _ranges; var primary = PrimaryIndex; var copy = texts.ToArray();
+        EnsureUnchanged(revision, generation);
+        if (copy.Length != ranges.Length || copy.Any(t => t is null)) throw new ArgumentException("Supply one non-null string for each normalized range.", nameof(texts));
+        ReplaceCore(ranges, primary, string.Empty, canEdit, revision, generation, copy);
+    }
+    private void ReplaceCore(SelectionRange[] ranges, int primary, string text, Func<TextEdit, bool>? canEdit, long revision, long generation, string[]? texts = null)
+    {
+        var edits = ranges.Select((r, i) => new TextEdit(r.Start, r.Length, texts is null ? text : texts[i])).Where(e => e.Length != 0 || e.NewText.Length != 0).ToArray();
         if (canEdit is not null)
             foreach (var edit in edits)
             {
@@ -54,22 +65,23 @@ public sealed class MultiSelection
         var next = new SelectionRange[ranges.Length]; var delta = 0;
         for (var i = 0; i < ranges.Length; i++)
         {
-            var caret = checked(ranges[i].Start + delta + text.Length);
-            next[i] = new(caret, caret); delta = checked(delta + text.Length - ranges[i].Length);
+            var length = texts is null ? text.Length : texts[i].Length;
+            var caret = checked(ranges[i].Start + delta + length);
+            next[i] = new(caret, caret); delta = checked(delta + length - ranges[i].Length);
         }
         var nextLength = checked(_document.Buffer.TextLength + delta);
         var normalized = Normalize(next, primary, nextLength);
         EnsureUnchanged(revision, generation);
         _document.ApplyEdits(edits, revision);
-        Publish(normalized.Ranges, normalized.Primary);
+        // A synchronous host edit notification may intentionally replace selections.
+        // Do not overwrite that newer selection state with this operation's old plan.
+        if (_generation == generation) Publish(normalized.Ranges, normalized.Primary);
     }
     public void Delete(bool backwards, Func<TextEdit, bool>? canEdit = null)
     {
         _document.VerifyAccess();
         var revision = _document.Revision; var generation = _generation;
         var doc = _document.Buffer;
-        // Several carets commonly share a line. Segment its graphemes once per
-        // operation, not once per caret. Delimiters are handled separately.
         var lines = new Dictionary<int, (string Text, int[] Starts)>();
         var candidates = new SelectionRange[_ranges.Length];
         for (var i = 0; i < _ranges.Length; i++)
@@ -101,7 +113,6 @@ public sealed class MultiSelection
             }
             candidates[i] = new(line.Offset + start, line.Offset + end);
         }
-        // Do not publish expanded deletion ranges before the read-only preflight.
         var normalized = Normalize(candidates, PrimaryIndex, doc.TextLength);
         ReplaceCore(normalized.Ranges, normalized.Primary, "", canEdit, revision, generation);
     }
@@ -122,8 +133,6 @@ public sealed class MultiSelection
         foreach (var item in ordered)
         {
             var range = item.Range;
-            // Adjacency is not overlap. Duplicate carets and shared starts must
-            // merge, but two neighboring word selections remain independent.
             if (result.Count > 0 && (range.Start < result[^1].End || range.Start == result[^1].Start))
             {
                 var start = result[^1].Start; var end = Math.Max(result[^1].End, range.End);

@@ -59,6 +59,12 @@ using EditorScene.LanguageServices;
 using System.Reflection;
 using var document = new EditorDocument("using System; class C { int M() => Math.Abs(-1); }", "consumer.cs");
 var snapshot = document.Snapshot();
+using var tabsDocument = new EditorDocument("\tX");
+var tabs = new TabColumnMap(tabsDocument.Snapshot(), 0, 8);
+if (tabs.GetColumn(2) != 9 || tabs.GetOffset(7) != 0 || tabs.GetIndentation(2, true).Length != 7) throw new Exception("Packaged tab mapping failed.");
+var multi = new MultiSelection(tabsDocument); multi.Set([new SelectionRange(0, 0), new SelectionRange(2, 2)]);
+multi.ReplaceEach(["a", "bc"]);
+if (tabsDocument.Buffer.Text != "a\tXbc") throw new Exception("Packaged per-caret replacement failed.");
 if (snapshot.GetLine(0).Length != snapshot.Length) throw new Exception("Packaged snapshot line index failed.");
 document.Buffer.Insert(0, " "); var changed = document.Snapshot();
 var minimal = SnapshotTextChanges.GetMinimalChange(snapshot, changed);
@@ -125,6 +131,12 @@ public sealed class ConsumerControl : UserControl
     {
         Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());
         Editor.NavigateToMatchingBracket();
+        var options = new EditorViewOptions { TabSize = 8, ConvertTabsToSpaces = true };
+        Editor.ApplyViewOptions(options);
+        _ = Editor.GetCaretTabColumn();
+        var optionsPanel = new EditorOptionsView(options);
+        _ = optionsPanel.TryGetOptions(out var captured);
+        optionsPanel.Dispose();
         var navigation = new NavigableSymbolSelector { Editor = Editor };
         var outline = new DocumentOutline { Editor = Editor };
         var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);

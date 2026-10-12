@@ -30,7 +30,7 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.FindNext: Search.FindNext(); break;
                 case EditorCommand.FindPrevious: Search.FindPrevious(); break;
                 case EditorCommand.GoToLine: GoToLineRequested?.Invoke(this, EventArgs.Empty); return;
-                case EditorCommand.Indent: _editor.TextArea.Session.Indent(); break;
+                case EditorCommand.Indent: IndentWithTabStops(); break;
                 case EditorCommand.Outdent: _editor.TextArea.Session.Indent(true); break;
                 case EditorCommand.Comment: CommentLines(false); break;
                 case EditorCommand.Uncomment: CommentLines(true); break;
@@ -74,13 +74,7 @@ public sealed partial class SyntaxEditor
             }
             SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusAfterEditCommand();
     }
-    private bool CanEdit(TextEdit edit)
-    {
-        if (IsReadOnly || (edit.NewText.Length > 0 && !_editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset))) return false;
-        if (edit.Length == 0) return _editor.TextArea.ReadOnlySectionProvider.CanInsert(edit.Offset);
-        var ranges = _editor.TextArea.GetDeletableSegments(new SimpleSegment(edit.Offset, edit.Length));
-        return ranges.Length == 1 && ranges[0].Offset == edit.Offset && ranges[0].Length == edit.Length;
-    }
+    private bool CanEdit(TextEdit edit) => CanEditWithCurrentPermissions(edit);
     private void ApplyUserEdits(IEnumerable<TextEdit> changes, long? expectedRevision = null)
     {
         var document = Document; var revision = expectedRevision ?? document.Revision;
