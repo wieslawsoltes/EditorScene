@@ -41,6 +41,18 @@ export async function checkCommandBindings({page,state,wait,textIs,paste,click,c
   await page.keyboard.press('Escape');await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
   checks.push('Read-only availability agrees across toolbar, main Edit menu and overflow while disabled native commands cannot mutate text');
   await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);
+  await command('Macros','Start Recording');
+  await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===false);
+  await command('Macros','Pause Recording');
+  await wait(()=>globalThis.__editorSceneState?.MacroState==='Paused'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===true);
+  await click('Toolbar Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
+  await click('PART_close');await wait(()=>globalThis.__editorSceneState?.SearchOpen===false);
+  await command('Macros','Resume Recording');
+  await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===false);
+  await command('Macros','Cancel Recording');
+  await wait(()=>globalThis.__editorSceneState?.MacroState==='Idle'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===true);
+  await textIs('alpha');
+  checks.push('Paused macro recording permits real toolbar Find interaction and resuming restores recording restrictions');
   await click('Language');await click('Choice Plain text');await wait(()=>globalThis.__editorSceneState?.Language==='plaintext');
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Complete word'],false);
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Format document'],false);
