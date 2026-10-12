@@ -57,13 +57,13 @@ public sealed class EditorDocumentTabMenu : MenuFlyout, IDisposable
     public bool CanInvoke(DocumentCloseScope scope)
     {
         Verify();
-        return _target is not null && _enabled && scope switch
+        return _target is not null && _enabled && (scope switch
         {
             DocumentCloseScope.Current or DocumentCloseScope.All => true,
             DocumentCloseScope.Others => _count > 1,
             DocumentCloseScope.ToRight => _index < _count - 1,
             _ => false
-        };
+        });
     }
     public bool TryInvoke(DocumentCloseScope scope)
     {

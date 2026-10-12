@@ -23,6 +23,7 @@ public sealed partial class EditorPage
 
     private Grid BuildDocumentStrip()
     {
+        InitializeDocumentClosing();
         var strip = new Grid { MinHeight = 27 };
         strip.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         strip.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -79,6 +80,7 @@ public sealed partial class EditorPage
     private void OnDocumentNavigationPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
         if (args.Handled || !_loaded || _dialog is not null) return;
+        if (HandleDocumentClosingKey(args)) { args.Handled = true; return; }
         var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         if (control && HandleDocumentNavigationKey(args)) args.Handled = true;
     }

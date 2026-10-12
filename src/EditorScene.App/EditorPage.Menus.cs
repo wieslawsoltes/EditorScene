@@ -21,7 +21,9 @@ public sealed partial class EditorPage
         Item(file, "Open…", OpenDocumentAsync, "Ctrl+O");
         Item(file, "Save", async () => { await SaveDocumentAsync(false); }, "Ctrl+S");
         Item(file, "Save As…", async () => { await SaveDocumentAsync(true); });
-        Item(file, "Close", CloseDocumentAsync, "Ctrl+W"); Separator(file);
+        Item(file, "Close", CloseDocumentAsync, "Ctrl+W");
+        Item(file, "Close Other Documents", () => CloseCurrentDocumentsAsync(DocumentCloseScope.Others));
+        Item(file, "Close All Documents", () => CloseCurrentDocumentsAsync(DocumentCloseScope.All)); Separator(file);
         var examples = new MenuFlyoutSubItem { Text = "Open sample", FontSize = 12 };
         Sample(examples, "C# — SensorMonitor", "SensorMonitor.cs", Samples.CSharp, "csharp");
         Sample(examples, "Visual Basic — SensorMonitor", "SensorMonitor.vb", Samples.VisualBasic, "vb");
@@ -94,6 +96,7 @@ public sealed partial class EditorPage
         Item(window, "Next Document", () => { NavigateDocument(1); return Task.CompletedTask; }, "Ctrl+PageDown");
         Item(window, "Previous Document", () => { NavigateDocument(-1); return Task.CompletedTask; }, "Ctrl+PageUp");
         Item(window, "Documents…", () => { DispatcherQueue.TryEnqueue(ShowDocumentList); return Task.CompletedTask; }, "Ctrl+Alt+Down");
+        Item(window, "Tab Context Menu", () => { DispatcherQueue.TryEnqueue(ShowCurrentDocumentTabMenu); return Task.CompletedTask; }, "Alt+-");
         return bar;
     }
     private MenuFlyoutItem Item(MenuBarItem menu, string label, Func<Task> action, string shortcut = "")
@@ -169,9 +172,9 @@ public sealed partial class EditorPage
             AddEvent("Opened " + file.Name);
         }
     }
-    private async Task<bool> SaveDocumentAsync(bool saveAs)
+    private async Task<bool> SaveDocumentCoreAsync(WorkspaceDocument entry, bool saveAs)
     {
-        var entry = _current; if (entry is null) return false;
+        if (!_documents.Contains(entry)) return false;
         var file = entry.File;
 #if __WASM__
         // Upload-picker files are private temporary copies, not writable handles to the user's original file.
@@ -183,6 +186,7 @@ public sealed partial class EditorPage
             var extension = Path.GetExtension(entry.Document.FileName); if (string.IsNullOrEmpty(extension)) extension = ".txt";
             picker.FileTypeChoices.Add("Text document", new List<string> { extension }); file = await picker.PickSaveFileAsync(); if (file is null) return false;
         }
+        if (!_documents.Contains(entry)) return false;
         var snapshot = entry.Document.Snapshot(); var encoding = entry.Document.Encoding;
         var bytes = encoding.GetPreamble().Concat(encoding.GetBytes(snapshot.Text)).ToArray();
         CachedFileManager.DeferUpdates(file); await FileIO.WriteBytesAsync(file, bytes);

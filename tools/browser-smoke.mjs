@@ -17,6 +17,7 @@ import {checkWhitespace} from './browser-whitespace.mjs';
 import {checkContextMenu} from './browser-context-menu.mjs';
 import {checkCommandBindings} from './browser-command-bindings.mjs';
 import {checkDocumentNavigation} from './browser-document-navigation.mjs';
+import {checkDocumentClosing} from './browser-document-closing.mjs';
 const root = path.resolve(process.argv[2] ?? 'artifacts/site');
 const base = '/EditorScene/';
 const output = path.resolve('artifacts/browser-tests');
@@ -84,7 +85,7 @@ try {
     },name);
     return (await state()).Controls[name];
   };
-  const click=async name=>{const b=await stableBounds(name);await page.mouse.click(b[0]+b[2]/2,b[1]+b[3]/2);};
+  const click=async(name,options={})=>{const b=await stableBounds(name);await page.mouse.click(b[0]+b[2]/2,b[1]+b[3]/2,options);};
   const focusEditor=async()=>{const b=await stableBounds('Editor');await page.mouse.click(b[0]+100,b[1]+10);};
   const paste=async text=>{await focusEditor();await page.keyboard.press('Escape');await page.keyboard.press('Control+a');await page.evaluate(t=>navigator.clipboard.writeText(t),text);await page.keyboard.press('Control+v');await textIs(text);};
   const fill=async(name,text)=>{await click(name);await page.keyboard.press('Control+a');if(text.length===0)await page.keyboard.press('Backspace');else await page.keyboard.type(text);};
@@ -145,6 +146,7 @@ try {
   await checkContextMenu({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
   await checkCommandBindings({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
   await checkDocumentNavigation({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
+  await checkDocumentClosing({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
   const snippetXml='<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet"><CodeSnippet Format="1.0.0"><Header><Title>Browser Imported</Title><Shortcut>custom</Shortcut></Header><Snippet><Declarations><Literal><ID>value</ID><Default>imported</Default></Literal></Declarations><Code Language="CSharp"><![CDATA[$value$-$value$$end$]]></Code></Snippet></CodeSnippet></CodeSnippets>';
   const snippetChooser=page.waitForEvent('filechooser');await command('IntelliPrompt','Import Snippets…');
   await(await snippetChooser).setFiles({name:'browser-custom.snippet',mimeType:'application/xml',buffer:Buffer.from(snippetXml)});

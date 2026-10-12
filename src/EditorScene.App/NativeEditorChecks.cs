@@ -74,5 +74,6 @@ internal static class NativeEditorChecks
         await NativeCommandBindingChecks.RunAsync(checks);
         NativeCommandObserverChecks.Run(checks);
         NativeDocumentListChecks.Run(checks);
+        NativeDocumentTabMenuChecks.Run(checks);
     }
 }

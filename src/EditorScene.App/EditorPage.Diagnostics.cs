@@ -150,6 +150,9 @@ public sealed partial class EditorPage
             VisibleCommandEnabled = visibleCommandEnabled, CommandBindingCount = _commandBindings.Count, CommandBindingDistinct = _commandBindings.DistinctCommandCount,
             CommandBindingQueries = _commandBindings.QueryCount, CommandBindingWrites = _commandBindings.PropertyWriteCount,
             DocumentTabBuilds = _tabBuildCount, DocumentMenuBuilds = _documentList.ItemBuildCount,
+            DocumentOrder = _documents.Select(d => d.Document.FileName).ToArray(), DocumentOperationBusy = _documentOperations.IsBusy,
+            DocumentTabMenuBuilds = _documentTabMenuBuilds,
+            DocumentClosePrompt = (_dialog?.Title as string) == "Save changes?" ? _dialog.Content as string : null,
             DocumentMenuCheckCount = _documentList.Items.OfType<ToggleMenuFlyoutItem>().Count(item => item.IsChecked),
             DocumentTabOffset = _tabScroll.HorizontalOffset, DocumentTabExtent = _tabScroll.ExtentWidth, DocumentTabViewportWidth = _tabScroll.ViewportWidth,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
@@ -184,6 +187,10 @@ internal sealed class BrowserState
     public long CommandBindingQueries { get; set; }
     public long CommandBindingWrites { get; set; }
     public long DocumentTabBuilds { get; set; }
+    public string[] DocumentOrder { get; set; } = [];
+    public bool DocumentOperationBusy { get; set; }
+    public int DocumentTabMenuBuilds { get; set; }
+    public string? DocumentClosePrompt { get; set; }
     public long DocumentMenuBuilds { get; set; }
     public int DocumentMenuCheckCount { get; set; }
     public double DocumentTabOffset { get; set; }
