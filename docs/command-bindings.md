@@ -32,11 +32,15 @@ By default Bind also subscribes to native Click and delegates to the current edi
 
 A removed registration leaves its target at the last displayed state; the host can then repurpose it. Disposal detaches handlers and releases the editor/registration arrays without disposing native targets or documents. The app disconnects its collection on page unload and reconnects on load. No application-global registry retains a closed page or old split view.
 
-## Query reuse and callback safety
+## Query reuse, observers and callback safety
 
 Registration changes construct a grouped snapshot. A refresh traverses those prebuilt command groups and queries each distinct command once, then visits all its target controls. Only differing IsEnabled, IsChecked or optional glyph Opacity values are written. No per-refresh LINQ enumeration or registration-array rebuild is needed on the warm path.
 
-The cache is not a promise to skip state queries forever: the collection reevaluates commands on editor StateChanged/AnalysisUpdated, and hosts can call Refresh for changes without those notifications, such as directly changing NativeEditor.IsReadOnly. It retains O(binding count) state rather than caching every document, selection or command result. Register/unregister operations allocate fresh group snapshots; those are not part of the warm-refresh allocation claim.
+The collection listens to editor StateChanged/AnalysisUpdated, direct read-only/wrap/line-number dependency-property transitions, and the active document's IndicatorCollection. Host bookmark additions/removals therefore update navigation commands without editing text or invoking an editor command. When the same editor is rebound to another document, the old indicator subscription is detached. Rebinding or disposing the collection also unregisters its dependency-property tokens and event handlers.
+
+The first integrated native run (38280540165) exposed that the wrapper's direct IsReadOnly setter forwards to its native control without raising StateChanged. The test correctly failed because Cut remained enabled. Explicit wrapper dependency-property observers fix that path, including XAML-set values, without requiring a host to manually refresh or changing the editor's existing general event contract. The original assertion remains enforced. Wrap and line-number checked states use the same observer mechanism.
+
+This is not a promise to skip all future state queries: every notification reevaluates the command groups. Hosts can call Refresh for changes outside the observed contract, such as directly changing NativeEditor.IsReadOnly or ordinary properties that emit no general event. The collection retains O(binding count) state rather than caching every document or selection. Register/unregister/rebind operations allocate structural snapshots/tokens; those are not part of the warm-refresh allocation claim.
 
 Native property updates can synchronously invoke host code. Each registration/active-editor change advances a generation. If a callback rebinds, unregisters or disposes the collection, the old traversal stops before writing remaining stale controls. A bounded refresh loop settles on the new context; feedback that cannot settle within eight passes throws rather than looping forever. Reentrant Refresh requests are coalesced into that loop. This does not guarantee arbitrary malicious or blocking host callbacks will succeed.
 
@@ -50,7 +54,7 @@ The previous advice grouped Indent with commands requiring nonempty text. This w
 
 ## Validation and measurements
 
-Actual Uno-host regressions cover duplicate command groups, read-only behavior, glyph restoration, native checked-state controls, command execution/undo, unavailable commands, empty-document indentation, recording/playback, duplicate target validation, rebinding/unbinding, unregistering, property-callback reentrancy and disposal. A warm-loop assertion checks that 1,000 refreshes perform exactly one query per registered command group, allocate no managed objects on the current thread, and leave unchanged native properties unwritten.
+Actual Uno-host regressions cover duplicate command groups, read-only behavior, glyph restoration, native checked-state controls, command execution/undo, unavailable commands, empty-document indentation, recording/playback, duplicate target validation, rebinding/unbinding, unregistering, property-callback reentrancy and disposal. Observer regressions additionally cover direct bookmark changes and old-document detachment. A warm-loop assertion checks that 1,000 refreshes perform exactly one query per registered command group, allocate no managed objects on the current thread, and leave unchanged native properties unwritten.
 
 The browser suite observes native IsEnabled and glyph Opacity rather than only advice-model booleans. It clicks enabled and disabled toolbar/menu commands, reads the actual clipboard after Copy, exercises overflow state, switches language and independent split views, and checks that ordinary caret moves do not cause redundant property writes. Light/dark screenshots are retained. All prior full-suite scenarios remain in each of the three fresh published-browser runs; the observation bridge has no source/option mutation operations.
 
