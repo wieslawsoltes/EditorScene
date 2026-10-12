@@ -1,0 +1,15 @@
+<ResourceDictionary
+    x:Class="EditorScene.Controls.DiagnosticTemplates"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:EditorScene.Controls">
+    <DataTemplate x:Key="DiagnosticRowTemplate">
+        <local:DiagnosticRowPresenter Row="{Binding}" />
+    </DataTemplate>
+    <Style x:Key="DiagnosticRowContainerStyle" TargetType="ListViewItem">
+        <Setter Property="MinHeight" Value="24" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+</ResourceDictionary>

@@ -1,0 +1,44 @@
+{
+  "sourceRevision": "e60db4cec2c66b0a03f8dfb866dc69084d57dda1",
+  "workflowRun": 38204584970,
+  "testJob": 114665131708,
+  "artifactId": 11727365161,
+  "artifactName": "regression-tests",
+  "fullReportPath": "performance.json",
+  "artifactZipSha256ReportedByCI": "7fd6043b6f8cff165e7ad467380f14a28162508c3bf789e140653f19f4df9c91",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "description": "Exact new diagnostic-order rows extracted from the completed successful regression/benchmark job. Other named workloads remain in the original full report. This file does not certify the status of the separate browser job or overall workflow.",
+  "methodology": "Ten identical ordering requests over 10,000 preprojected immutable diagnostic rows per sample. fresh_stable_sort constructs a fresh query view and stable ordering for each request; cached_order_lookup returns an existing array from one warm view. These are two modes of the SAME new implementation, not a prior implementation, vendor comparison or faster fresh sort. Snapshot/projection construction and initial cached ordering are excluded. Stopwatch timings and current-thread managed allocations only. Native memory, other threads, UI binding, layout, input latency, painting and physical-GPU performance are not measured.",
+  "rows": [
+    {
+      "scenario": "diagnostic_order_10000_requests_10",
+      "implementation": "fresh_stable_sort",
+      "p50Milliseconds": 22.3498,
+      "p95Milliseconds": 33.0686,
+      "medianAllocatedBytes": 1601760,
+      "sortedElapsedMilliseconds": [10.8394, 10.9751, 10.9862, 11.4136, 22.2767, 22.3498, 22.557, 22.6489, 22.6494, 25.9496, 33.0686],
+      "sortedAllocatedBytes": [1601760, 1601760, 1601760, 1601760, 1601760, 1601760, 1601760, 1601760, 1601760, 1601760, 1602264]
+    },
+    {
+      "scenario": "diagnostic_order_10000_requests_10",
+      "implementation": "cached_order_lookup",
+      "p50Milliseconds": 0.0006,
+      "p95Milliseconds": 0.0008,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0.0006, 0.0006, 0.0006, 0.0006, 0.0006, 0.0006, 0.0006, 0.0006, 0.0007, 0.0008, 0.0008],
+      "sortedAllocatedBytes": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+  ],
+  "otherResultsNotHidden": {
+    "csharpModelOnlyPreviousP50Milliseconds": 15.9033,
+    "csharpModelOnlyCurrentP50Milliseconds": 32.2377,
+    "csharpBoundModelPreviousP95Milliseconds": 129.019,
+    "csharpBoundModelCurrentP95Milliseconds": 142.9852,
+    "note": "The pre-existing model-only compiler regression and worse semantic-warm tail latency remain in the complete report; this diagnostic cache increment does not resolve them or imply uniform editor/compiler speedups."
+  }
+}

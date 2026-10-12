@@ -15,6 +15,21 @@ internal static class WorkspaceBenchmarks
         var table = new DiagnosticTable(snapshot, analysis);
         Measure("diagnostic_rows_10000", "rebuild_projection", () => GC.KeepAlive(new DiagnosticTable(snapshot, analysis)), "Constructs all 10,000 position-bound data rows. Snapshot line index is warm; rendering and collection binding are excluded.");
         Measure("diagnostic_rows_10000", "reuse_unfiltered_projection", () => { if (table.Filter() != table.Rows) throw new InvalidOperationException("Expected immutable diagnostic reuse"); }, "Returns the existing unfiltered 10,000-row immutable projection, as used on unchanged UI state. This avoids work, not a faster fresh projection; filtered queries still scan their source.");
+        var orderedView = new DiagnosticTableView(table);
+        var ordered = orderedView.Query(column: DiagnosticSortColumn.Code);
+        Measure("diagnostic_order_10000_requests_10", "fresh_stable_sort", () =>
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                var result = new DiagnosticTableView(table).Query(column: DiagnosticSortColumn.Code);
+                if (result.Length != 10000 || result[0].Code != "D0") throw new InvalidOperationException("Incorrect ordered fixture");
+            }
+        }, "Ten fresh query views each stably sort the same preprojected 10,000 rows. Includes view, scratch and immutable-order allocation. This is a same-implementation uncached control experiment, not an older implementation or vendor benchmark. Snapshot/projection construction and UI binding are excluded.");
+        Measure("diagnostic_order_10000_requests_10", "cached_order_lookup", () =>
+        {
+            for (var i = 0; i < 10; i++) if (orderedView.Query(column: DiagnosticSortColumn.Code) != ordered) throw new InvalidOperationException("Expected retained ordering");
+            if (orderedView.SortBuildCount != 1) throw new InvalidOperationException("Unnecessary sorting");
+        }, "Ten exact requests reuse the retained 10,000-row ordering. Initial sorting is excluded. Measures avoiding repeated work, not the cost of a new sort, changed filter, UI layout or painting.");
         using var bitmap = new SKBitmap(16, 16); using var canvas = new SKCanvas(bitmap); using var cached = new EditorGlyphRenderer();
         cached.Draw(canvas, 16, 16, EditorGlyph.Save);
         Measure("glyph_draws_1000", "record_each_draw", () =>

@@ -55,6 +55,7 @@ using EditorScene.Languages.DotNet;
 using EditorScene.Languages.Structured;
 using EditorScene.Snippets;
 using EditorScene.Rendering.Skia;
+using EditorScene.LanguageServices;
 using System.Reflection;
 using var document = new EditorDocument("using System; class C { int M() => Math.Abs(-1); }", "consumer.cs");
 var snapshot = document.Snapshot();
@@ -79,6 +80,11 @@ if (!expansion.TryContract(snapshot, selected, out var original) || original != 
 var analysis = await new DotNetLanguage().AnalyzeAsync(snapshot);
 var diagnosticTable = new EditorScene.LanguageServices.DiagnosticTable(snapshot, analysis);
 if (diagnosticTable.Filter() != diagnosticTable.Rows || !diagnosticTable.IsCurrent(snapshot)) throw new Exception("Packaged diagnostic table failed.");
+var queryTable = new DiagnosticTable(snapshot, analysis with { Diagnostics = [new("B", "second", IssueSeverity.Warning, new(1, 1)), new("A", "first", IssueSeverity.Error, new(0, 1))] });
+var queryView = new DiagnosticTableView(queryTable);
+var sorted = queryView.Query(column: DiagnosticSortColumn.Code);
+if (sorted[0].Code != "A" || sorted[1].Code != "B" || queryView.Query(column: DiagnosticSortColumn.Code) != sorted || queryView.SortBuildCount != 1) throw new Exception("Packaged diagnostic ordering/cache failed.");
+if (queryView.Query(DiagnosticVisibility.Warning, "second", DiagnosticSortColumn.Code).Single().Code != "B" || queryView.SortBuildCount != 1) throw new Exception("Packaged ordered filtering failed.");
 using var glyphBitmap = new SkiaSharp.SKBitmap(16, 16); using var glyphCanvas = new SkiaSharp.SKCanvas(glyphBitmap);
 using var glyphRenderer = new EditorGlyphRenderer();
 glyphRenderer.Draw(glyphCanvas, 16, 16, EditorGlyph.Save); glyphRenderer.Draw(glyphCanvas, 16, 16, EditorGlyph.Save);
@@ -92,7 +98,7 @@ CodeSnippetSerializer.Save(stream, catalog.Entries.Select(e => e.Snippet)); stre
 if (CodeSnippetSerializer.Load(stream).Length != 16) throw new Exception("Packaged snippets failed.");
 if (EditorTheme.Light.ColorFor("keyword") == EditorTheme.Light.Foreground) throw new Exception("Packaged rendering palette failed.");
 if (Assembly.Load("EditorScene.Protocol").GetExportedTypes().Length == 0) throw new Exception("Protocol package is empty.");
-Console.WriteLine("Package-only document, compiler, JSON, snippet, rendering and protocol consumer passed.");
+Console.WriteLine("Package-only document, compiler, JSON, snippet, rendering, diagnostic query and protocol consumer passed.");
 ''')
         run('dotnet','run','--project',console/'Headless.csproj','-c','Release',cwd=directory,env=env)
         native=directory/'Native'; native.mkdir()
@@ -102,6 +108,7 @@ Console.WriteLine("Package-only document, compiler, JSON, snippet, rendering and
           </PropertyGroup><ItemGroup><PackageReference Include="EditorScene.Controls" Version="{VERSION}"/>
           <PackageReference Include="EditorScene.Languages.Structured" Version="{VERSION}"/></ItemGroup></Project>''')
         (native/'ConsumerControl.cs').write_text('''using EditorScene.Controls;
+using EditorScene.LanguageServices;
 using EditorScene.Languages.Structured;
 using EditorScene.Snippets;
 using EditorScene.Text;
@@ -120,6 +127,11 @@ public sealed class ConsumerControl : UserControl
         var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);
         Editor.CopyViewSettingsFrom(Editor);
         var diagnostics = new DiagnosticList { Editor = Editor };
+        diagnostics.SortBy(DiagnosticSortColumn.Line, DiagnosticSortDirection.Descending);
+        diagnostics.SetColumnWidth(DiagnosticSortColumn.File, 180);
+        _ = diagnostics.GetSortButton(DiagnosticSortColumn.Code);
+        _ = diagnostics.GetColumnGrip(DiagnosticSortColumn.File);
+        Resources.MergedDictionaries.Add(new DiagnosticTemplates());
         var status = new EditorStatusBar { Editor = Editor };
         var split = new ResizableSplitView { First = Editor, Ratio = .4 };
         Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
@@ -143,7 +155,9 @@ public sealed class ConsumerControl : UserControl
                 'dependencyRevision':PIN,'packages':packages,'consumers':['net10.0 executable (executed)','net10.0-desktop control library (compiled)','net10.0-browserwasm control library (compiled)'],'usesProjectReferences':False}
         (OUT/'validation.json').write_text(json.dumps(report,indent=2)+'\n')
         shutil.copyfile(console/'Headless.csproj',OUT/'headless-consumer.csproj.example')
+        shutil.copyfile(console/'Program.cs',OUT/'headless-consumer.cs.example')
         shutil.copyfile(native/'Native.csproj',OUT/'native-consumer.csproj.example')
+        shutil.copyfile(native/'ConsumerControl.cs',OUT/'native-consumer.cs.example')
     (OUT/'SHA256SUMS.txt').write_text(''.join(f"{item['sha256']}  {item['file']}\n" for _,item in sorted(packages.items())))
     print(json.dumps(report,indent=2),flush=True)
 if __name__=='__main__': main()
