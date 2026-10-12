@@ -1,4 +1,5 @@
 using EditorScene.LanguageServices;
+using EditorScene.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -14,6 +15,7 @@ public sealed class EditorCommandBindings : IDisposable
     private Registration[] _registrations = [];
     private Group[] _groups = [];
     private SyntaxEditor? _editor;
+    private IndicatorCollection? _indicators;
     private long _generation;
     private bool _refreshing, _pending, _disposed;
     public int Count => _registrations.Length;
@@ -65,6 +67,7 @@ public sealed class EditorCommandBindings : IDisposable
             {
                 _pending = false;
                 if (_editor?.IsDisposed == true) { DetachEditor(); _editor = null; _generation++; }
+                WatchIndicators();
                 var generation = _generation; var editor = _editor; var groups = _groups;
                 foreach (var group in groups)
                 {
@@ -118,8 +121,22 @@ public sealed class EditorCommandBindings : IDisposable
     }
     private void OnStateChanged(object? sender, EventArgs args) { if (!_disposed) { _generation++; Refresh(); } }
     private void OnAnalysisUpdated(object? sender, LanguageAnalysis analysis) => OnStateChanged(sender, EventArgs.Empty);
+    private void WatchIndicators()
+    {
+        // Hosts may add/remove bookmarks without executing an editor command.
+        // Rebinding the same view to another document must also detach this source.
+        var indicators = _editor?.Document.Indicators;
+        if (ReferenceEquals(indicators, _indicators)) return;
+        if (_indicators is not null) _indicators.Changed -= OnStateChanged;
+        _indicators = indicators;
+        if (_indicators is not null) _indicators.Changed += OnStateChanged;
+    }
     private void DetachEditor()
-    { if (_editor is { } editor) { editor.StateChanged -= OnStateChanged; editor.AnalysisUpdated -= OnAnalysisUpdated; } }
+    {
+        if (_editor is { } editor) { editor.StateChanged -= OnStateChanged; editor.AnalysisUpdated -= OnAnalysisUpdated; }
+        if (_indicators is not null) _indicators.Changed -= OnStateChanged;
+        _indicators = null;
+    }
     private void RebuildGroups()
     {
         _groups = _registrations.GroupBy(r => r.Command).Select(g => new Group(g.Key, g.ToArray())).ToArray();
