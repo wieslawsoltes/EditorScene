@@ -33,7 +33,7 @@ The public navigation operation runs on the document/view owner thread. It retur
 var cursor = new DiagnosticNavigationCursor(visibleRows);
 if (cursor.TryMove(out DiagnosticTableRow? row))
 {
-    // The UI host must verify the current document/revision before selecting row.Range.
+    // Verify the current document/revision before selecting row.Diagnostic.Range.
 }
 cursor.SelectIndex(-1); // no current row; the next move starts at an end
 ```
@@ -44,9 +44,11 @@ The cursor retains the supplied immutable row array and a zero-based current ind
 
 The native view recreates the cursor only when its immutable visible result changes. Before movement it synchronizes the cursor with the native selected index, avoiding a search through all rows for ordinary Next/Previous commands. Sorting and filtering retain the existing query cache; traversal does not rebuild projections or orderings.
 
-Navigation captures the editor, document, analysis, visible result, publication generation and source selection before selecting the next row. Native SelectedIndex changes can invoke host callbacks, so those captured values and the chosen row are checked again before touching source selection.
+Navigation captures the editor, document, analysis, visible result, publication generation and source selection before selecting the next row. Native SelectedIndex changes can invoke host callbacks, so those captured values and the chosen row are checked again before touching source selection. A recursion guard covers the entire request, including Refresh and result publication, not just the final caret change.
 
 Source navigation is staged: clear extra carets, set the insertion caret, set the selected source range, scroll and focus. Current-result and native endpoint checks run between stages. A synchronous callback which changes the document, provider, caret, selection, multi-selection, source text or lifetime stops the remaining operation. Macro state is checked as well. This protects both new cursor navigation and existing row-click/Enter navigation from bypassing macro recording or overwriting a newer host selection.
+
+The first native regression run found that the new guard assumed selection endpoints always remained unchanged during caret movement. The pinned UnoEdit session actually moves empty selection endpoints with a changed insertion caret; nonempty selections retain their endpoints. The guard now computes the expected endpoints before the caret change, preserving this behavior without removing the independent host-callback checks. Regressions for both ordinary navigation and callback interference remain enforced.
 
 These guards do not promise rollback of arbitrary external callback side effects, and callback code which throws remains host code. Navigation remains current-document only. It does not aggregate projects or resolve stale diagnostic offsets speculatively.
 
@@ -58,10 +60,14 @@ Browser coverage uses actual F8/Shift+F8 and native arrow buttons against compil
 
 Isolated package consumers execute the cursor API and compile the native navigation controls from built packages. All ordinary regression, native, package and three-pass browser gates remain required before main deployment. Workflow results and source revisions determine actual pass/fail; describing intended coverage here does not certify an unfinished run.
 
+Generated Python bytecode briefly introduced by integration validation was removed from the final source, and `.gitignore` now excludes `__pycache__` and Python bytecode. Temporary integration workflows are removed. Existing source dependency pins and the normal CI/deployment gates are unchanged.
+
 ## Performance boundaries
 
 `DiagnosticNavigationBenchmarks` records `diagnostic_cursor_cycles_10000`: 10,000 Next/Previous pairs over a preconstructed cursor containing 10,000 rows, with three warmups and eleven samples. It retains raw timings and current-thread managed allocations in `artifacts/tests/performance.json`.
 
-Initial table projection and cursor construction/validation are excluded. This measures the reusable cursor only, **not** native ListView selection, callbacks, source navigation, scrolling, painting, input latency or physical-GPU work. Native navigation may allocate while selecting/laying out controls. Prior fresh-sort costs and the documented compiler construction regressions are not eliminated by this navigation increment.
+[Retained measurements at f39c1d49](performance/diagnostic-navigation-f39c1d4.json) report **0.0261 ms median, 0.0291 ms observed p95 and zero managed bytes** for that whole batch of 10,000 pairs. It is a new operation without a previous-version baseline, not a speedup comparison.
+
+Initial table projection and cursor construction/validation are excluded. This measures the reusable cursor only, **not** native ListView selection, callbacks, source navigation, scrolling, painting, input latency or physical-GPU work. Native navigation may allocate while selecting/laying out controls. Prior fresh-sort costs and the documented compiler construction regressions are not eliminated by this navigation increment; the complete report retains their measurements, including unfavorable allocation and tail-latency results.
 
 See [compatibility.md](compatibility.md) for remaining product scope: full project language/refactoring services, schemas/grammar tooling, printing, docking/persistence, broader protocol capabilities, full DataGrid automation and complete original-product API/visual/IME/accessibility parity.
