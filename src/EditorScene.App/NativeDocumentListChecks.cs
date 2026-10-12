@@ -61,5 +61,35 @@ internal static class NativeDocumentListChecks
         menu.Dispose(); rejected = false;
         try { menu.SetDocuments([a]); } catch (ObjectDisposedException) { rejected = true; }
         Check(rejected && menu.DocumentCount == 0 && a.Title == "same.cs", "Disposal rejects future mutation without modifying caller-owned document metadata");
+
+        using var rebound = new EditorDocumentList(); rebound.SetDocuments([a, b]); rebound.SelectedDocumentId = a.Id;
+        var old = (ToggleMenuFlyoutItem)rebound.Items[0];
+        var token = old.RegisterPropertyChangedCallback(ToggleMenuFlyoutItem.IsCheckedProperty, (_, _) =>
+        { if (!old.IsChecked) rebound.SetDocuments([c]); });
+        try { rebound.SelectedDocumentId = b.Id; }
+        finally { old.UnregisterPropertyChangedCallback(ToggleMenuFlyoutItem.IsCheckedProperty, token); }
+        Check(rebound.DocumentCount == 1 && rebound.SelectedDocumentId is null && (Guid)rebound.Items[0].Tag == c.Id,
+            "A native check-state callback can replace membership without stale selection writes");
+
+        rebound.SetDocuments([a, b]); old = (ToggleMenuFlyoutItem)rebound.Items[0];
+        token = old.RegisterPropertyChangedCallback(MenuFlyoutItem.TextProperty, (_, _) => rebound.SetDocuments([c]));
+        try { rebound.SetDocuments([renamed, b]); }
+        finally { old.UnregisterPropertyChangedCallback(MenuFlyoutItem.TextProperty, token); }
+        Check(rebound.DocumentCount == 1 && rebound.Items.Count == 1 && (Guid)rebound.Items[0].Tag == c.Id,
+            "A native caption callback can replace the menu without the prior traversal reintroducing removed items");
+
+        using var disposed = new EditorDocumentList(); disposed.SetDocuments([a, b]); disposed.SelectedDocumentId = a.Id;
+        old = (ToggleMenuFlyoutItem)disposed.Items[0];
+        token = old.RegisterPropertyChangedCallback(ToggleMenuFlyoutItem.IsCheckedProperty, (_, _) =>
+        { if (!old.IsChecked) disposed.Dispose(); });
+        try { disposed.SelectedDocumentId = b.Id; }
+        finally { old.UnregisterPropertyChangedCallback(ToggleMenuFlyoutItem.IsCheckedProperty, token); }
+        Check(disposed.DocumentCount == 0 && disposed.Items.Count == 0 && disposed.SelectedDocumentId is null,
+            "Disposal from a native selection callback safely terminates the remaining state update");
+
+        using var invoked = new EditorDocumentList(); invoked.SetDocuments([a]);
+        invoked.DocumentInvoked += (_, _) => invoked.Dispose();
+        Check(invoked.TryInvoke(a.Id) && invoked.DocumentCount == 0 && invoked.Items.Count == 0,
+            "Disposal from an activation callback does not revive the invoked item or its check mark");
     }
 }
