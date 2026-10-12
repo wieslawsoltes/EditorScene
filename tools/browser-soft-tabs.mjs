@@ -11,10 +11,12 @@ export async function checkSoftTabs({page,state,wait,textIs,paste,open,toggle,cl
   await replace('          word'); await caret(10); await page.keyboard.press('Backspace');
   await textIs('        word'); assert.equal((await state()).CaretOffset,8);
   await page.keyboard.press('Control+z'); await textIs('          word');
+  await caret(10); await page.keyboard.press('Shift+Backspace'); await textIs('        word');
+  await page.keyboard.press('Control+z'); await textIs('          word');
   await replace('\t   word'); await caret(4); await page.keyboard.press('Backspace');
   await textIs('\tword'); assert.equal((await state()).CaretOffset,1);
   await page.keyboard.press('Control+z'); await textIs('\t   word');
-  checks.push('Actual Backspace reaches preceding stops in spaces and mixed-tab indentation with one Undo');
+  checks.push('Actual Backspace and Shift+Backspace reach preceding stops in spaces and mixed-tab indentation with one Undo');
 
   await open(); await toggle('Backspace over spaces to tab stop'); await click('Dialog Apply');
   await wait(()=>globalThis.__editorSceneState?.OptionsDialogOpen===false);

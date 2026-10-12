@@ -71,6 +71,18 @@ internal static class NativeSoftTabChecks
             var rejected = false; try { target.Backspace(); } catch (InvalidOperationException) { rejected = true; }
             Check(rejected && doc.Buffer.Text == "    x", "Soft-tab deletion rejects synchronous " + interference + " interference before editing");
         }
+        using var inputDocument = new EditorDocument(""); using var inputEditor = new SyntaxEditor();
+        inputEditor.SetDocumentAndLanguage(inputDocument, new PlainTextLanguage());
+        var payload = new string('x', EditorScene.Text.Macros.EditorMacro.MaxTextLength + 1);
+        Exception? inputError = null; inputEditor.OperationFailed += (_, error) => inputError = error;
+        inputEditor.InsertText(payload);
+        Check(inputError is null && inputDocument.Buffer.TextLength == payload.Length,
+            "Ordinary native text insertion is not restricted by the inactive macro recorder text limit");
+        inputEditor.Text = string.Empty; inputEditor.Select(0, 0); inputEditor.MacroRecording.Record();
+        inputEditor.InsertText(payload);
+        Check(inputError is ArgumentOutOfRangeException && inputDocument.Buffer.TextLength == 0 && inputEditor.MacroRecording.RecordedStepCount == 0,
+            "Active macro recording still rejects an oversized text step before editing or recording it");
+        inputEditor.MacroRecording.Cancel();
     }
     private sealed class CallbackProvider(Action callback) : IReadOnlySectionProvider
     {
