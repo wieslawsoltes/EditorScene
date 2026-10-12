@@ -58,6 +58,10 @@ export async function checkContextMenu({page,state,wait,textIs,paste,click,comma
   await command('View','Default Context Menu');await wait(()=>globalThis.__editorSceneState?.ContextMenuEnabled);
   await focusEditor();await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
   await click('Theme');await click('Choice Light');await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
+  // A ComboBox correctly keeps keyboard focus after selecting a theme. Return
+  // to the editor through real input before testing its keyboard context menu.
+  await focusEditor();await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea')&&globalThis.__editorSceneState.SelectionLength===5);
   await keyboardOpen();await page.screenshot({path:path.join(output,'editor-context-light.png')});
   assert.equal((await state()).ContextMenuBuilds,1,'Repeated requests must reuse one menu, including after theme changes');
   await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
