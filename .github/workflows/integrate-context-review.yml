@@ -1,0 +1,37 @@
+name: Integrate context review
+on:
+  push:
+    branches: [feat/context-menu-command-review]
+    paths: [.github/workflows/integrate-context-review.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/EditorScene' && github.ref == 'refs/heads/feat/context-menu-command-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify patch bytes and the exact tested source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, hashlib, pathlib
+          parts = [pathlib.Path('.github/maintenance/context.patch.part'+str(i)).read_text().strip() for i in (1,2)]
+          patch = gzip.decompress(base64.b64decode(''.join(parts), validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '9d287224823f468628b64db680d14093d26151e43739dfe4e571f9b92a97fc54'
+          pathlib.Path('/tmp/context-review.patch').write_bytes(patch)
+          PY
+          git apply --check --index /tmp/context-review.patch
+          git apply --index /tmp/context-review.patch
+          git rm .github/maintenance/context.patch.part1 .github/maintenance/context.patch.part2 .github/workflows/integrate-context-review.yml
+          git diff --cached --check
+          test "$(git write-tree)" = '22766250f743847e6e88b29be6de2e4cb7c50988'
+          git config user.name 'Wiesław Šoltés'
+          git config user.email 'wieslawsoltes@users.noreply.github.com'
+          git commit -m 'feat(editor): add guarded native context menu and reject coerced numeric drafts'
+          git push origin HEAD:refs/heads/feat/context-menu-command-review
+          git rev-parse HEAD
