@@ -1,0 +1,60 @@
+name: Integrate diagnostic navigation validation
+on:
+  push:
+    branches: [feat/diagnostic-keyboard-navigation]
+    paths: [.github/workflows/integrate-diagnostic-navigation-checks.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/EditorScene'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply exact validation integration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          edits = {}
+          def replace(path, old, new):
+              text = edits.setdefault(path, Path(path).read_text())
+              assert text.count(old) == 1, path + ': ' + old[:100]
+              edits[path] = text.replace(old, new)
+          replace('src/EditorScene.App/NativeEditorChecks.cs',
+              '        await NativeWorkspaceChecks.RunAsync(checks);',
+              '        await NativeWorkspaceChecks.RunAsync(checks);\n        await NativeDiagnosticNavigationChecks.RunAsync(checks);')
+          replace('tools/build.py', 'if len(checks) < 182', 'if len(checks) < 206')
+          replace('tools/browser-smoke.mjs',
+              "import {checkWorkspace} from './browser-workspace.mjs';",
+              "import {checkWorkspace} from './browser-workspace.mjs';\nimport {checkDiagnosticNavigation} from './browser-diagnostic-navigation.mjs';")
+          replace('tools/browser-smoke.mjs',
+              '  await checkWorkspace({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});',
+              '  await checkWorkspace({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});\n  await checkDiagnosticNavigation({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});')
+          replace('tools/EditorScene.Benchmarks/WorkspaceBenchmarks.cs',
+              '        var table = new DiagnosticTable(snapshot, analysis);',
+              '        var table = new DiagnosticTable(snapshot, analysis);\n        DiagnosticNavigationBenchmarks.Add(rows, table);')
+          replace('tools/package.py',
+              'var sorted = queryView.Query(column: DiagnosticSortColumn.Code);',
+              '''var sorted = queryView.Query(column: DiagnosticSortColumn.Code);
+          var cursor = new DiagnosticNavigationCursor(sorted);
+          if (!cursor.TryMove(out var firstDiagnostic) || firstDiagnostic.Code != "A" || !cursor.TryMove(out var secondDiagnostic) || secondDiagnostic.Code != "B") throw new Exception("Packaged diagnostic cursor failed.");
+          if (cursor.TryMove(out _, wrap: false) || !cursor.TryMove(out firstDiagnostic) || firstDiagnostic.Code != "A") throw new Exception("Packaged diagnostic cursor boundaries failed.");''')
+          replace('tools/package.py',
+              '        diagnostics.SetColumnWidth(DiagnosticSortColumn.File, 180);',
+              '        diagnostics.SetColumnWidth(DiagnosticSortColumn.File, 180);\n        _ = diagnostics.NavigateNextDiagnostic(backwards: true, wrap: false);\n        _ = diagnostics.PreviousDiagnosticButton;\n        _ = diagnostics.NextDiagnosticButton;')
+          for path, text in edits.items(): Path(path).write_text(text)
+          PY
+          node --check tools/browser-diagnostic-navigation.mjs
+          node --check tools/browser-smoke.mjs
+          python3 -m py_compile tools/build.py tools/package.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-diagnostic-navigation-checks.yml
+          git add src tools
+          git commit -m 'test(navigation): integrate native callback guards, real F8 browser paths, cursor benchmarks and isolated consumers'
+          git push origin HEAD:feat/diagnostic-keyboard-navigation
+          git rev-parse HEAD
