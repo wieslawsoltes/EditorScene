@@ -1,0 +1,33 @@
+name: Export review source
+on:
+  push:
+    branches: [feat/context-menu-command-review]
+    paths: [.github/workflows/export-review-source.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle reviewed source without credentials or build artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/editor-review
+          git bundle create /tmp/editor-review/EditorScene.bundle --all
+          git archive --format=tar HEAD | gzip > /tmp/editor-review/source.tar.gz
+          git -C external/UnoEdit archive --format=tar HEAD | gzip > /tmp/editor-review/unoedit.tar.gz
+          git rev-parse HEAD > /tmp/editor-review/source-revision.txt
+          git -C external/UnoEdit rev-parse HEAD > /tmp/editor-review/dependency-revision.txt
+          cd /tmp/editor-review
+          sha256sum *.bundle *.tar.gz > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: review-source
+          path: /tmp/editor-review
+          retention-days: 7
