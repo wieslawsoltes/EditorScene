@@ -25,6 +25,11 @@ export async function checkEditorOptions({page,state,wait,textIs,paste,click,com
   await page.keyboard.press('Control+z');await textIs('\tX');
   await wait(()=>globalThis.__editorSceneState?.StatusPosition.includes('Col 10')&&globalThis.__editorSceneState.StatusPosition.includes('Ch 3'));
   checks.push('Applied tab stops drive actual Tab input and tab-aware Col/UTF-16 Ch status with atomic undo');
+  await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly);
+  await click('Editor');await page.keyboard.press('Tab');await textIs('\tX');
+  assert.equal((await state()).Error,null,'Read-only Tab must not report an editing exception');
+  await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);
+  checks.push('Configured Tab in a read-only native view preserves text without reporting an operation failure');
   await command('Window','Split Editor');await wait(()=>globalThis.__editorSceneState?.Split&&globalThis.__editorSceneState.SecondaryTabSize===8&&globalThis.__editorSceneState.SecondaryConvertTabsToSpaces&&globalThis.__editorSceneState.SecondaryRulerColumn===80);
   await command('Window','Split Editor');await wait(()=>globalThis.__editorSceneState?.Split===false);
   checks.push('New native split views inherit configured tab conversion and ruler position');
