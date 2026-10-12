@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+
+// All interactions use native keys/pointer/clipboard. State bridge is observation-only.
+export async function checkContextMenu({page,state,wait,textIs,paste,click,command,focusEditor,output,checks}) {
+  await command('File','New');
+  const text='alpha beta\nsecond line';
+  await paste(text);await page.keyboard.press('Control+Home');
+  for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
+  const keyboardOpen=async()=>{
+    await page.keyboard.press('Shift+F10');
+    await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen&&!!globalThis.__editorSceneState.ContextItems['Copy']);
+  };
+  await keyboardOpen();
+  let s=await state();assert.equal(s.SelectionStart,0);assert.equal(s.SelectionLength,5);
+  assert.equal(s.ContextItems.Cut,true);assert.equal(s.ContextItems.Paste,true);
+  await page.screenshot({path:path.join(output,'editor-context-dark.png')});
+  await click('Visible Editor context Copy');
+  await wait(()=>!globalThis.__editorSceneState?.ContextMenuOpen&&globalThis.__editorSceneState.FocusedControl?.endsWith('.TextArea'));
+  assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'alpha');await textIs(text);
+  checks.push('Keyboard context menu preserves selection and its real Copy command writes selected text to the clipboard');
+  await keyboardOpen();await click('Visible Editor context Cut');await textIs(' beta\nsecond line');
+  await page.keyboard.press('Control+z');await textIs(text);
+  await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
+  await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly);
+  await keyboardOpen();s=await state();
+  for(const label of ['Cut','Paste','Delete','Undo','Redo'])assert.equal(s.ContextItems[label],false,`${label} must be a disabled native item`);
+  assert.equal(s.ContextItems.Copy,true);
+  await click('Visible Editor context Cut');
+  await textIs(text);assert.equal((await state()).ContextMenuOpen,true,'A disabled native command must not close or execute');
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
+  await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);
+  checks.push('Native context Cut uses normal undo, while read-only menus disable mutations and keep Copy available');
+  await focusEditor();await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
+  s=await state();let view=s.Controls.Editor;
+  await page.mouse.click(view[0]+12,view[1]+8,{button:'right'});
+  await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen);
+  assert.equal((await state()).SelectionLength,5,'Right-click inside selection must not discard it');
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
+  await command('View','Right-click Moves Caret');await wait(()=>globalThis.__editorSceneState?.SecondaryPointerMovesCaret===false);
+  view=(await state()).Controls.Editor;
+  await page.mouse.click(view[0]+140,view[1]+28,{button:'right'});await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen);
+  assert.equal((await state()).SelectionLength,5,'Disabled pointer relocation must preserve selection');
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
+  await command('View','Right-click Moves Caret');await wait(()=>globalThis.__editorSceneState?.SecondaryPointerMovesCaret);
+  view=(await state()).Controls.Editor;
+  await page.mouse.click(view[0]+140,view[1]+28,{button:'right'});await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen&&globalThis.__editorSceneState.SelectionLength===0);
+  assert.ok((await state()).CaretOffset>=11,'Outside selection right-click must move to hit-tested second line');
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
+  checks.push('Real right-click input retains a containing selection and honors optional outside-selection caret movement');
+  await command('View','Default Context Menu');await wait(()=>globalThis.__editorSceneState?.ContextMenuEnabled===false);
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea'));
+  const caret=(await state()).CaretOffset;await page.keyboard.press('Shift+F10');
+  // Require actual editor navigation after the disabled key request, not a
+  // repaint counter or an immediate stale read. Do not manually restore focus.
+  await page.keyboard.press('ArrowLeft');await wait(n=>globalThis.__editorSceneState?.CaretOffset===n-1,caret);
+  assert.equal((await state()).ContextMenuOpen,false);assert.equal((await state()).OpenMenuCount,0);
+  await command('View','Default Context Menu');await wait(()=>globalThis.__editorSceneState?.ContextMenuEnabled);
+  await focusEditor();await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
+  await click('Theme');await click('Choice Light');await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
+  // A ComboBox correctly keeps keyboard focus after selecting a theme. Return
+  // to the editor through real input before testing its keyboard context menu.
+  await focusEditor();await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea')&&globalThis.__editorSceneState.SelectionLength===5);
+  await keyboardOpen();await page.screenshot({path:path.join(output,'editor-context-light.png')});
+  assert.equal((await state()).ContextMenuBuilds,1,'Repeated requests must reuse one menu, including after theme changes');
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
+  checks.push('Default context menus can be disabled without an ancestor fallback and one lazily built menu serves both themes');
+  await command('Window','Split Editor');await wait(()=>globalThis.__editorSceneState?.Split);
+  const secondary=(await state()).Controls['Secondary editor'];
+  await page.mouse.click(secondary[0]+60,secondary[1]+10,{button:'right'});
+  await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen&&globalThis.__editorSceneState.ActiveView==='Secondary');
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
+  await command('Window','Split Editor');await wait(()=>globalThis.__editorSceneState?.Split===false);
+  await click('Theme');await click('Choice Dark');await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');
+  await textIs(text);await focusEditor();
+  checks.push('A secondary split right-click activates that view before opening its own guarded native menu');
+}

@@ -70,5 +70,6 @@ internal static class NativeEditorChecks
         await NativeOptionsChecks.RunAsync(checks);
         await NativePermissionReviewChecks.RunAsync(checks);
         await NativeWhitespaceChecks.RunAsync(checks);
+        await NativeContextMenuChecks.RunAsync(checks);
     }
 }

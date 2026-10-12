@@ -50,7 +50,7 @@ def native_checks(configuration):
         run('xvfb-run', '-a', 'dotnet', files[0], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
     text = (OUT/'native-checks.log').read_text()
     checks = [line[6:] for line in text.splitlines() if line.startswith('PASS: ')]
-    if len(checks) < 276 or 'EditorScene native checks passed.' not in text: raise RuntimeError('Native check evidence is incomplete.')
+    if len(checks) < 306 or 'EditorScene native checks passed.' not in text: raise RuntimeError('Native check evidence is incomplete.')
     (OUT/'native-checks.json').write_text(json.dumps({'passed': True, 'count': len(checks), 'checks': checks}, indent=2)+'\n')
     print(f'{len(checks)} actual Uno-host checks passed.', flush=True)
 

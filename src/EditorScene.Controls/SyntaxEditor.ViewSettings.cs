@@ -25,7 +25,7 @@ public sealed partial class SyntaxEditor
         {
             // Each setter can synchronously invoke host code. Compare the entire
             // previously observed settings between stages, not merely this property.
-            for (var step = 0; step < 14; step++)
+            for (var step = 0; step < 16; step++)
             {
                 if (!Current()) return;
                 switch (step)
@@ -44,6 +44,8 @@ public sealed partial class SyntaxEditor
                     case 11: expected = expected with { Spaces = desired.Spaces }; ConvertTabsToSpaces = desired.Spaces; break;
                     case 12: expected = expected with { RulerColumn = desired.RulerColumn }; RulerColumn = desired.RulerColumn; break;
                     case 13: expected = expected with { SoftBackspace = desired.SoftBackspace }; CanBackspaceOverSpacesToTabStop = desired.SoftBackspace; break;
+                    case 14: expected = expected with { ContextMenu = desired.ContextMenu }; IsDefaultContextMenuEnabled = desired.ContextMenu; break;
+                    case 15: expected = expected with { MoveCaret = desired.MoveCaret }; CanMoveCaretForSecondaryPointerButton = desired.MoveCaret; break;
                 }
             }
         }
@@ -51,7 +53,7 @@ public sealed partial class SyntaxEditor
     }
     private static CopiedViewSettings CaptureViewSettings(SyntaxEditor editor) => new(editor.IsReadOnly, editor.WordWrap, editor.ShowLineNumbers,
         editor.ShowWhitespace, editor.ShowIndentGuides, editor.ShowRuler, editor.AutoCompleteBrackets, editor.AutoShowCompletion, editor.FontSize, editor.Theme,
-        editor.TabSize, editor.ConvertTabsToSpaces, editor.RulerColumn, editor.CanBackspaceOverSpacesToTabStop);
+        editor.TabSize, editor.ConvertTabsToSpaces, editor.RulerColumn, editor.CanBackspaceOverSpacesToTabStop, editor.IsDefaultContextMenuEnabled, editor.CanMoveCaretForSecondaryPointerButton);
     private readonly record struct CopiedViewSettings(bool ReadOnly, bool Wrap, bool Numbers, bool Whitespace, bool Guides, bool Ruler,
-        bool Brackets, bool Completion, double FontSize, EditorTheme Theme, int TabSize, bool Spaces, int RulerColumn, bool SoftBackspace);
+        bool Brackets, bool Completion, double FontSize, EditorTheme Theme, int TabSize, bool Spaces, int RulerColumn, bool SoftBackspace, bool ContextMenu, bool MoveCaret);
 }

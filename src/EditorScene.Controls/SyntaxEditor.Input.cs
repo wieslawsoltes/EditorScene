@@ -46,6 +46,8 @@ public sealed partial class SyntaxEditor
             or VirtualKey.LeftWindows or VirtualKey.RightWindows) return;
         var command = IsKeyDown(VirtualKey.Control) || IsKeyDown(VirtualKey.LeftWindows) || IsKeyDown(VirtualKey.RightWindows);
         var shift = IsKeyDown(VirtualKey.Shift); var alt = IsKeyDown(VirtualKey.Menu);
+        if (!command && !alt && (e.Key == VirtualKey.Application || shift && e.Key == VirtualKey.F10))
+        { if (IsDefaultContextMenuEnabled) { e.Handled = true; _chord = null; ShowEditorContextMenu(); } return; }
         if (command && !alt && _chord == "K" && Environment.TickCount64 - _chordTime < 2000 && e.Key is VirtualKey.X or VirtualKey.S)
         {
             _chord = null; e.Handled = true; _ = ShowSnippetPickerAsync(e.Key == VirtualKey.S); return;

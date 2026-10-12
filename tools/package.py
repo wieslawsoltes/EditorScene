@@ -141,9 +141,13 @@ public sealed class ConsumerControl : UserControl
     public bool Contract() => Editor.ContractSelection();
     public bool ConvertWhitespace() => Editor.ConvertSelectedWhitespace(false);
     public bool TabifyLines() => Editor.TabifySelectedLines(true);
+    public EditorCommandState QueryCopy() => Editor.GetCommandState(EditorCommand.Copy);
+    public bool ShowContext() => Editor.ShowEditorContextMenu();
     public ConsumerControl()
     {
         Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());
+        Editor.IsDefaultContextMenuEnabled = true; Editor.CanMoveCaretForSecondaryPointerButton = false;
+        Editor.EditorContextMenu.Requested += (_, args) => { if (Editor.IsReadOnly) args.Cancel = true; };
         Editor.NavigateToMatchingBracket();
         var options = new EditorViewOptions { TabSize = 8, ConvertTabsToSpaces = true, CanBackspaceOverSpacesToTabStop = true };
         Editor.ApplyViewOptions(options);
