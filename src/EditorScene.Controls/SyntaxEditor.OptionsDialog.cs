@@ -24,7 +24,11 @@ public sealed partial class SyntaxEditor
         // A default ContentDialog is too narrow for two useful options columns even
         // on a desktop. Scope the width to this dialog, not all application dialogs.
         dialog.Resources["ContentDialogMaxWidth"] = 664d;
-        void UpdateOptionsWidth() => view.Width = Math.Max(0, Math.Min(560, root.Size.Width - 104));
+        void UpdateOptionsWidth()
+        {
+            var width = Math.Max(0, Math.Min(560, root.Size.Width - 104));
+            if (view.Width != width) view.Width = width;
+        }
         void OnOptionsRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => UpdateOptionsWidth();
         UpdateOptionsWidth();
         dialog.PrimaryButtonClick += (_, args) => { if (!view.TryGetOptions(out desired)) args.Cancel = true; };

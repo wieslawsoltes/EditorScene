@@ -44,6 +44,20 @@ public sealed partial class SyntaxEditor
             throw new InvalidOperationException("The Backspace target changed during edit preflight.");
         return allowed;
     }
+    private void BackspaceMultiple(BackspaceContext context, bool soft)
+    {
+        // Keep the permission delegate's captured context in the multiple-caret
+        // method so a single-caret keypress never allocates that closure.
+        var selections = context.Selections;
+        _multiEditing = true;
+        try
+        {
+            if (soft) selections.DeleteToPreviousTabStop(context.Options.TabSize, edit => CanBackspaceEdit(edit, context));
+            else selections.Delete(true, edit => CanBackspaceEdit(edit, context));
+            if (!_disposed && ReferenceEquals(Document, context.Document) && ReferenceEquals(Selections, selections)) SynchronizeMultiSelection();
+        }
+        finally { _multiEditing = false; }
+    }
     private void BackspaceWithTabStops()
     {
         ObjectDisposedException.ThrowIf(_disposed, this); Document.VerifyAccess();
@@ -57,18 +71,7 @@ public sealed partial class SyntaxEditor
             var context = new BackspaceContext(document, document.Revision, SyntaxLanguage, options, selections,
                 CaretOffset, session.AnchorOffset, session.SelectionEndOffset);
             var soft = options.ConvertTabsToSpaces && options.CanBackspaceOverSpacesToTabStop;
-            if (selections.IsActive)
-            {
-                _multiEditing = true;
-                try
-                {
-                    if (soft) selections.DeleteToPreviousTabStop(options.TabSize, edit => CanBackspaceEdit(edit, context));
-                    else selections.Delete(true, edit => CanBackspaceEdit(edit, context));
-                    if (!_disposed && ReferenceEquals(Document, document) && ReferenceEquals(Selections, selections)) SynchronizeMultiSelection();
-                }
-                finally { _multiEditing = false; }
-                return;
-            }
+            if (selections.IsActive) { BackspaceMultiple(context, soft); return; }
             if (soft && SelectionLength == 0)
             {
                 var snapshot = document.Snapshot(); var line = snapshot.GetLineFromOffset(context.Caret);
