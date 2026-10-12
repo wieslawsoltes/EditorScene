@@ -22,8 +22,8 @@ public sealed partial class SyntaxEditor
     private bool MacroSessionActive => MacroRecording.State != MacroRecordingState.Idle;
     private void InitializeMacroSupport()
     {
-        // Cover pointer selection, not keyboard input. The shield restores focus
-        // without forwarding the pointer hit test that would move the caret.
+        // Cover unrecordable pointer selection during recording/playback, not
+        // paused interaction or keyboard input. Do not forward blocked hit tests.
         Content = null;
         _macroPointerShield = new Border { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Visibility = Visibility.Collapsed };
         _macroPointerShield.PointerPressed += (_, args) => { args.Handled = true; if (!_disposed) { CancelPendingMacroFocus(); FocusEditor(); } };
@@ -35,16 +35,20 @@ public sealed partial class SyntaxEditor
     private void OnMacroStateChanged(object? sender, EventArgs e)
     {
         if (_disposed) return;
+        var capturesInput = MacroRecording.State is MacroRecordingState.Recording or MacroRecordingState.Playing;
         if (MacroSessionActive)
         {
-            if (MacroRecording.State is MacroRecordingState.Recording or MacroRecordingState.Playing)
-            { ClosePopups(); EndSnippet(false); ClearMultiSelection(); }
+            if (capturesInput)
+            { Search.Close(); ClosePopups(); EndSnippet(false); ClearMultiSelection(); }
             if (!_macroPopupsSuppressed)
             { _macroAutoCompletion = AutoShowCompletion; _macroPopupsSuppressed = true; ClosePopups(); EndSnippet(false); ClearMultiSelection(); }
             AutoShowCompletion = false;
         }
         else if (_macroPopupsSuppressed) { AutoShowCompletion = _macroAutoCompletion; _macroPopupsSuppressed = false; }
-        if (_macroPointerShield is not null) _macroPointerShield.Visibility = MacroSessionActive ? Visibility.Visible : Visibility.Collapsed;
+        // Pausing explicitly permits interactive commands. Leaving the shield
+        // visible intercepted SearchPanel fields/buttons and made Close inert.
+        // Resume hides interactive search before reinstating pointer protection.
+        if (_macroPointerShield is not null) _macroPointerShield.Visibility = capturesInput ? Visibility.Visible : Visibility.Collapsed;
         SetStatus(MacroRecording.State switch
         {
             MacroRecordingState.Recording => "Recording macro — mouse selection and interactive popups suspended",

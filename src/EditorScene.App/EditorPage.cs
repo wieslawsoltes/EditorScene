@@ -65,6 +65,7 @@ public sealed partial class EditorPage : Page
 #endif
         _diagnostics |= Environment.GetEnvironmentVariable("EDITORSCENE_NATIVE_CHECKS") == "1";
         BuildLayout(); WireEditor(_primary); SetActive(_primary);
+        _commandBindings.ExecutionFailed += (_, error) => { _lastError = error.Message; AddEvent("Error: " + error.Message); QueueDiagnostics(); };
         _events.ItemsSource = _eventItems;
         _languagePicker.ItemsSource = _languages.Languages.Select(l => l.DisplayName).ToArray();
         _languagePicker.SelectionChanged += (_, _) =>
@@ -79,10 +80,10 @@ public sealed partial class EditorPage : Page
         _themePicker.SelectionChanged += (_, _) => ApplyTheme(_themePicker.SelectedIndex switch { 1 => EditorTheme.Dark, 2 => EditorTheme.HighContrast, _ => EditorTheme.Light });
         Loaded += async (_, _) =>
         {
-            _loaded = true; ApplyTheme(_theme); _primary.FocusEditor(); QueueDiagnostics();
+            _loaded = true; _commandBindings.Editor = _active; ApplyTheme(_theme); _primary.FocusEditor(); QueueDiagnostics();
             if (Environment.GetEnvironmentVariable("EDITORSCENE_NATIVE_CHECKS") == "1") await RunNativeChecksAsync();
         };
-        Unloaded += (_, _) => _loaded = false;
+        Unloaded += (_, _) => { _loaded = false; _commandBindings.Editor = null; };
         KeyDown += OnPageKeyDown; SizeChanged += (_, _) => QueueDiagnostics();
         AddDocument(new EditorDocument(_diagnostics ? "" : Samples.CSharp, _diagnostics ? "Untitled.cs" : "SensorMonitor.cs"), _languages.Get("csharp")!);
     }
@@ -103,7 +104,7 @@ public sealed partial class EditorPage : Page
     private void SetActive(SyntaxEditor editor)
     {
         if (ReferenceEquals(_active, editor)) return;
-        _active = editor; _navigator.Editor = editor; _outline.Editor = editor; _errors.Editor = editor; _editorStatus.Editor = editor;
+        _active = editor; _navigator.Editor = editor; _outline.Editor = editor; _errors.Editor = editor; _editorStatus.Editor = editor; _commandBindings.Editor = editor;
         if (editor.Analysis is { } analysis) RefreshDiagnostics(analysis); UpdateStatus();
     }
     private void AddDocument(EditorDocument document, ISyntaxLanguage language, StorageFile? file = null)

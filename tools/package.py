@@ -136,6 +136,7 @@ using EditorScene.Text;
 using Microsoft.UI.Xaml.Controls;
 public sealed class ConsumerControl : UserControl
 {
+    public EditorCommandBindings Commands { get; } = new();
     public SyntaxEditor Editor { get; } = new() { Document = new EditorDocument("{}", "consumer.json"), SyntaxLanguage = new JsonLanguage() };
     public Task<bool> ExpandAsync() => Editor.ExpandSelectionAsync();
     public bool Contract() => Editor.ContractSelection();
@@ -162,6 +163,13 @@ public sealed class ConsumerControl : UserControl
         var outline = new DocumentOutline { Editor = Editor };
         var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);
         Editor.CopyViewSettingsFrom(Editor);
+        Commands.Editor = Editor;
+        var copyButton = new Button { Content = "Copy" };
+        Commands.Bind(copyButton, EditorCommand.Copy);
+        Commands.Bind(new MenuFlyoutItem(), EditorCommand.Copy, executeOnClick: false);
+        Commands.Refresh();
+        if (Commands.Count != 2 || Commands.DistinctCommandCount != 1) throw new Exception("Packaged command binding contract failed.");
+        _ = Editor.GetCommandState(EditorCommand.Indent, EditorCommandQueryMode.CommandSurface);
         var diagnostics = new DiagnosticList { Editor = Editor };
         diagnostics.SortBy(DiagnosticSortColumn.Line, DiagnosticSortDirection.Descending);
         diagnostics.SetColumnWidth(DiagnosticSortColumn.File, 180);
@@ -174,7 +182,7 @@ public sealed class ConsumerControl : UserControl
         var status = new EditorStatusBar { Editor = Editor };
         var split = new ResizableSplitView { First = Editor, Ratio = .4 };
         Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
-        Content = new StackPanel { Children = { navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };
+        Content = new StackPanel { Children = { copyButton, navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };
     }
 }
 ''')

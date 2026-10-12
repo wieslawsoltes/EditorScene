@@ -1,0 +1,41 @@
+{
+  "sourceRevision": "2ece1b0bfecc35fd1a16b882997fc8f189ce1190",
+  "workflowRun": 38282458540,
+  "nativeJob": 114923025215,
+  "nativeAssertionsPassed": 334,
+  "artifactId": 11762105914,
+  "artifactName": "native-validation",
+  "artifactZipSha256ReportedByCI": "d9ca626532d342220dfb9a3d20725836c9790bc3eac6b4eed9a158d588a6fe7c",
+  "fullRawReportPath": "artifacts/native-checks.binding-performance.json",
+  "summaryProvenance": "These rounded summaries were read directly from the completed native job log. Eleven full samples per implementation are retained in the artifact, not reproduced or independently inspected here because local filesystem tools failed. At capture the browser gate was still running; native success is not a complete-workflow or deployment claim.",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "warmups": 3,
+  "samples": 11,
+  "fixture": "100 refreshes over 60 caller-owned native Buttons representing Copy, Cut and Paste, using one selected editable SyntaxEditor with no macro session. Both paths compare current states and leave identical final enabled states. Native controls are unmounted for this microbenchmark.",
+  "methodology": "Independent per-surface calls and grouped bindings use the same new advice API. This is a control experiment, not the previous application (which did not synchronize these toolbar controls), not Actipro, and not an end-to-end input/graphics benchmark. Document/editor/control/binding setup, layout, painting, clipboard/protection callbacks and physical GPU are excluded. Current-thread managed allocation only; implementation groups run sequentially.",
+  "rows": [
+    {
+      "implementation": "per_surface_advice",
+      "queriesPerSample": 6000,
+      "p50Milliseconds": 4.6370,
+      "p95Milliseconds": 5.6125,
+      "medianAllocatedBytes": 0
+    },
+    {
+      "implementation": "grouped_binding_advice",
+      "queriesPerSample": 300,
+      "p50Milliseconds": 0.8599,
+      "p95Milliseconds": 1.0363,
+      "medianAllocatedBytes": 0
+    }
+  ],
+  "retainedIndependentQueryProbe": {
+    "scenario": "native_copy_command_queries_10000",
+    "p50Milliseconds": 7.8546,
+    "p95Milliseconds": 8.6475,
+    "medianAllocatedBytes": 0,
+    "note": "Separate current-only workload; not a claim that a single query became faster than the preceding revision."
+  },
+  "limits": "Fresh registration/group construction allocates; each native target still requires comparison. Individual advice can scan markers. The full regression performance report retains earlier compiler/dense-tab workloads, including unfavorable results; this increment does not claim to resolve them."
+}

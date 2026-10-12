@@ -23,20 +23,20 @@ python3 tools/package.py
 
 The SDK and package versions are pinned in `global.json` and project files: .NET SDK 10.0.401, Uno.Sdk 6.7.30. Open `EditorScene.slnx` to work with all libraries and the sample. `tools/build.py browser` produces `artifacts/site`, configured for the `/EditorScene/` URL prefix. Serve the directory at that prefix; opening `index.html` with `file://` is not supported. Use `--base-path /` when publishing to a local web root instead.
 
-The app supports new/open/save documents, tabs, independently resizable split views sharing one document, language selection, navigable symbols, document outline, sorted/filtered tabular diagnostics, event log, bookmarks, breakpoint indicators, themes, editor options, snippets, macro recording/playback, explicit language-server connections and text export. Its controls are native Uno controls, not a JavaScript editor embedded in a WebView.
+The app supports new/open/save documents, tabs, independently resizable split views sharing one document, language selection, navigable symbols, document outline, sorted/filtered tabular diagnostics, event log, bookmarks, breakpoint indicators, themes, editor options, snippets, macro recording/playback, guarded context menus, synchronized command surfaces, explicit language-server connections and text export. Its controls are native Uno controls, not a JavaScript editor embedded in a WebView.
 
 ## Reusable packages
 
 | Package | Responsibility |
 | --- | --- |
-| `EditorScene.Text` | Versioned documents, immutable snapshots, bounded readers and literal search, sparse tab-column/leading-whitespace maps, atomic edits and per-range replacements, multi-selection and soft-tab deletion, indicators, tracked ranges, data-only macros, HTML/RTF export. |
+| `EditorScene.Text` | Versioned documents, immutable snapshots, bounded readers and literal search, sparse tab-column/leading-whitespace maps, atomic edits and per-range replacements, streaming whitespace plans, multi-selection and soft-tab deletion, indicators, tracked ranges, data-only macros, HTML/RTF export. |
 | `EditorScene.LanguageServices` | Provider contracts, cancellable/debounced analysis, provider invalidation, completion edit plans, structural selection, bracket/range indexes, immutable diagnostic projections/query caches and navigation cursors. |
 | `EditorScene.Languages.DotNet` | Roslyn-backed C#/VB diagnostics, classifications, symbols, completion, quick info, signatures, formatting and structural ranges; bounded incremental model and completed-analysis caches. |
 | `EditorScene.Languages.Structured` | Strict JSON and safe XML/XAML analysis, structural navigation, folding and conservative formatting. |
 | `EditorScene.Protocol` | Bounded JSON-RPC stream/WebSocket transports, negotiated synchronization, validated result conversion and document-scoped `LspSyntaxLanguage`, including semantic-token deltas and selection ranges. |
 | `EditorScene.Rendering.Skia` | Semantic/lexical styling, palettes, viewport adornments and disposable cached original vector-glyph rendering. |
 | `EditorScene.Snippets` | UI-independent Visual Studio snippet XML, immutable declarations/tokens, folder catalog, atomic import and 16 built-in snippets. |
-| `EditorScene.Controls` | `SyntaxEditor`, `NavigableSymbolSelector`, `DocumentOutline`, `SnippetPicker`, `DiagnosticList`, `EditorStatusBar`, `ResizableSplitView`, `EditorOptionsView`, immutable `EditorViewOptions`, scoped `EditorChrome` resources and original `EditorIcon` controls. |
+| `EditorScene.Controls` | `SyntaxEditor`, `NavigableSymbolSelector`, `DocumentOutline`, `SnippetPicker`, `DiagnosticList`, `EditorStatusBar`, `ResizableSplitView`, `EditorOptionsView`, immutable `EditorViewOptions`, `EditorContextMenu`, `EditorCommandBindings`, scoped `EditorChrome` resources and original vector icons. |
 
 The feed also includes the pinned MIT dependencies `UnoEdit.Core`, `UnoEdit.Rendering.Skia` and `UnoEdit.Uno`; do not omit these when consuming a downloaded local feed. The package job builds all 11 packages and uses a fresh NuGet cache outside the repository to execute a headless consumer and compile desktop/browser control consumers. It verifies that no source `ProjectReference` was used and that restored package bytes match the built artifacts. Package artifacts are not a claim of publication to nuget.org.
 
@@ -92,9 +92,27 @@ var status = new EditorStatusBar { Editor = editor };
 
 See [classic workspace](docs/classic-workspace.md), [diagnostic grid](docs/diagnostic-grid.md) and [keyboard navigation](docs/diagnostic-navigation.md) for APIs and limitations. Full floating/docking/auto-hide behavior, workspace persistence, printing and pixel-level equivalence remain unfinished. Status `Ch` is raw line-local UTF-16; `Col` is tab-expanded logical UTF-16, not shaped glyph, bidi or grapheme-cell position.
 
+## Context menus and command surfaces
+
+Right-click, **Shift+F10** or the menu key opens the editor's native context menu. A containing selection is preserved; an outside click can relocate the caret according to **View → Right-click Moves Caret**. **View → Default Context Menu** disables the default surface without revealing the pinned ancestor menu. `EditorContextMenu.Requested` supports host customization/cancellation. Menus are created lazily, reused, and reject stale document/provider/selection targets. See [context-menu API and numeric draft review](docs/context-menus.md).
+
+Main command menu items, toolbar buttons and overflow entries now agree on selection, read-only, history and language capability state. Disabled original toolbar glyphs dim and return to their initial opacity when enabled. Changing the active split updates the same controls for that view. Clipboard availability advice never reads the clipboard or calls a protected-range callback; actual command execution remains responsible for authorization.
+
+```csharp
+var commands = new EditorCommandBindings { Editor = editor };
+var copyButton = new Button { Content = "Copy" };
+var copyMenu = new MenuFlyoutItem { Text = "Copy" };
+var buttonBinding = commands.Bind(copyButton, EditorCommand.Copy);
+var menuBinding = commands.Bind(copyMenu, EditorCommand.Copy);
+// Both controls share one state query per refresh.
+// On host teardown: dispose commands, without disposing caller-owned controls/editor.
+```
+
+The collection supports checked states, optional glyph dimming, disposable registrations, state-only bindings and active-view rebinding. It observes relevant wrapper properties and document indicators, detaches old subscriptions and stops stale property writes after interfering host callbacks. Unchanged warm refreshes reuse command groups and avoid redundant native writes. File/workspace actions, macro session controls and explicitly scoped whitespace no-op commands retain their host policies. See [command bindings, measured workload and boundaries](docs/command-bindings.md).
+
 ## Editor options and tab stops
 
-**View → Editor Options…** exposes font, wrapping, line numbers, whitespace, guides, ruler position, tab/indent width, spaces mode, soft-tab Backspace and bracket/completion preferences. The panel edits a private draft; **Cancel** leaves the view unchanged and **Restore defaults** remains a draft until **Apply**. Existing text is not converted by changing preferences. Wide windows show Display and Tabs/input side by side with an IntelliPrompt group; narrow windows stack the same controls without losing their drafts. Restore Defaults remains outside the scrolling content.
+**View → Editor Options…** exposes font, wrapping, line numbers, whitespace, guides, ruler position, tab/indent width, spaces mode, soft-tab Backspace and bracket/completion preferences. The panel edits a private draft; **Cancel** leaves the view unchanged and **Restore defaults** remains a draft until **Apply**. Existing text is not converted by changing preferences. Wide windows show Display and Tabs/input side by side with an IntelliPrompt group; narrow windows stack the same controls without losing their drafts. Restore Defaults remains outside the scrolling content. Apply validates visible numeric text rather than silently accepting a stale value or coercing an invalid draft.
 
 ```csharp
 var options = editor.GetViewOptions();
@@ -115,6 +133,8 @@ The native engine uses one width for tab stops and indentation; these are not in
 In spaces mode, **Backspace and Shift+Backspace** remove leading spaces to the previous tab stop. Set `CanBackspaceOverSpacesToTabStop = false` for single-character deletion. The soft operation never consumes a preceding literal tab; selected text, content-space deletion, graphemes and line joins retain native behavior. `SyntaxEditor.Backspace()` exposes the same operation to hosts, and `native.Backspace` macro steps use the current policy. Multiple carets normalize overlapping deletion spans and apply one undo transaction through `MultiSelection.DeleteToPreviousTabStop`.
 
 `TabColumnMap` builds a sparse immutable index of tabs and the leading ASCII space/tab prefix for one snapshot line without flattening the document. `GetSoftTabBackspaceLength` queries a preceding stop without editing. Current-line caret movement reuses the map; cold construction or a changed line still requires a scan. Settings are not persisted across restarts. Apply guards synchronous host interference but does not roll back setters already completed. See [options and mapping](docs/editor-options.md) and [soft-tab input, responsive UI and review boundaries](docs/soft-tab-backspace.md).
+
+**Advanced → Whitespace** distinguishes selected-line indentation tabification from selected-text conversion that can include inline whitespace. The reusable `WhitespaceEditPlan` emits changed whitespace runs instead of rewriting full code lines, preserving unselected content and existing line delimiters. These explicit text transformations are not language-semantic refactorings; whitespace-sensitive literals can change meaning. See [scope, permissions and streaming performance](docs/whitespace-editing.md).
 
 ## Language servers
 
@@ -144,7 +164,7 @@ editor.Snippets.Register(new CodeSnippet(
 
 ## Macro recording
 
-The **Macros** menu offers Start, Stop, Pause, Resume, Cancel Recording, Run Last Macro, Cancel Playback and XML import/export. Keyboard navigation, selection, typing, deletion, indentation and noninteractive editor commands are recorded as semantic actions. Empty or cancelled recordings preserve the previous saved macro. An editor-local pointer shield prevents mouse selection during active macro sessions; menus remain accessible.
+The **Macros** menu offers Start, Stop, Pause, Resume, Cancel Recording, Run Last Macro, Cancel Playback and XML import/export. Keyboard navigation, selection, typing, deletion, indentation and noninteractive editor commands are recorded as semantic actions. Empty or cancelled recordings preserve the previous saved macro. An editor-local pointer shield prevents mouse selection during recording/playback; menus remain accessible. Pausing releases the shield so interactive controls such as Find receive real input without recording it. Starting/resuming capture closes search before restoring pointer protection. Context menus remain suspended during macro sessions.
 
 ```csharp
 editor.MacroRecording.Record();
@@ -178,7 +198,7 @@ Point and span tracking have explicit insertion affinity, handle reverse history
 
 Snapshot position and line queries use a persistent, bounded-chunk AVL line index without flattening the snapshot. `GetLine` and `GetLineFromOffset` expose immutable zero-based line descriptors. Unchanged snapshot capture reuses the same object, and edits reuse completed indexes. `SnapshotTextChanges.GetMinimalChange` uses bounded edit history to avoid comparing unchanged multi-megabyte text for small LSP changes.
 
-LSP semantic-token deltas retain validated result IDs and immutable data, recover once from an invalid base, and use allocation-light typed decoding. Timing/allocation comparisons run in the regression job and are retained as `performance.json`. See [performance architecture](docs/performance.md), [editor hot-path review](docs/editor-review.md), [compiler cache tradeoffs](docs/structural-selection.md), [workspace measurements](docs/performance/workspace-e09ade7.json), [diagnostic navigation](docs/diagnostic-navigation.md) and [sparse-column mapping](docs/editor-options.md). The documented model-only compiler regression is not hidden by improvements elsewhere. These CPU measurements do not claim physical-GPU or end-to-end frame-rate improvements.
+LSP semantic-token deltas retain validated result IDs and immutable data, recover once from an invalid base, and use allocation-light typed decoding. Timing/allocation comparisons run in the regression job and are retained as `performance.json`. See [performance architecture](docs/performance.md), [editor hot-path review](docs/editor-review.md), [compiler cache tradeoffs](docs/structural-selection.md), [workspace measurements](docs/performance/workspace-e09ade7.json), [diagnostic navigation](docs/diagnostic-navigation.md), [sparse-column mapping](docs/editor-options.md) and [native command-group measurements](docs/command-bindings.md). The documented model-only compiler regression is not hidden by improvements elsewhere. These CPU measurements do not claim physical-GPU or end-to-end frame-rate improvements.
 
 The tab-map constructor uses span searches over non-tab runs and allocates tab lists only when needed. [Exact scanner samples](docs/performance/soft-tabs-fdf7b71.json) compare it with the previous scalar constructor on the same snapshots, including sparse, tab-free, indentation-only and dense-tab lines. Sparse/tab-free construction improved in the recorded run; dense-tab construction was slower. Leading-whitespace metadata adds storage, and new or edited long lines still require scanning. The prebuilt soft-stop query benchmark excludes that construction and all native UI/edit work. See [methodology and limits](docs/soft-tab-backspace.md).
 
@@ -186,7 +206,7 @@ The tab-map constructor uses span searches over non-tab runs and allocates tab l
 
 ## Validation and rendering
 
-`tools/browser-smoke.mjs` and its macro, LSP, review, structural-selection, workspace, diagnostic, options and soft-tab modules drive the exact published .NET/Uno application through pointer, keyboard, clipboard, file upload and download. LSP tests use a synthetic WebSocket protocol peer, not a mocked language-provider return value. The optional `?test=1` bridge exposes observation only; it has no document mutation commands. Pointer tests wait for stable geometry across distinct native observations. CI runs the complete suite three times in fresh browser contexts and retains all result files, screenshots, protocol transcripts and traces. Responsive options tests require the requested native root size and settled contained geometry before checking repeated resize/draft behavior.
+`tools/browser-smoke.mjs` and its macro, LSP, review, structural-selection, workspace, diagnostic, options, soft-tab, whitespace, context-menu and command-binding modules drive the exact published .NET/Uno application through pointer, keyboard, clipboard, file upload and download. LSP tests use a synthetic WebSocket protocol peer, not a mocked language-provider return value. The optional `?test=1` bridge exposes observation only; it has no document mutation commands. Pointer tests wait for stable geometry across distinct native observations. CI runs the complete suite three times in fresh browser contexts and retains all result files, screenshots, protocol transcripts and traces. Responsive options tests require the requested native root size and settled contained geometry before checking repeated resize/draft behavior.
 
 Browser CI creates a real WebGL2 Skia context using **software SwiftShader**. That validates the graphics path, not physical-GPU throughput, battery usage or driver compatibility. The host chooses acceleration; this repository does not claim a direct WebGPU renderer. Desktop execution checks currently use Linux/X11. Windows/macOS runtime, device-specific IME/accessibility and pixel-by-pixel Actipro equivalence need separate validation.
 

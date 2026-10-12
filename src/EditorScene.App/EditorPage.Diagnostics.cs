@@ -59,6 +59,7 @@ public sealed partial class EditorPage
         var optionInputs = new Dictionary<string, NumericOptionState>(StringComparer.Ordinal);
         string optionsValidation = "";
         var contextItems = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var visibleCommandEnabled = new Dictionary<string, bool>(StringComparer.Ordinal);
         void Add(string name, FrameworkElement element)
         {
             if (element.XamlRoot is null || element.Visibility != Visibility.Visible || element.ActualWidth <= 0 || element.ActualHeight <= 0) return;
@@ -86,7 +87,7 @@ public sealed partial class EditorPage
                 if (!string.IsNullOrEmpty(name)) Add("Visible " + name, element);
                 if (element is MenuFlyoutItem item)
                 {
-                    Add("Visible command " + item.Text, item);
+                    Add("Visible command " + item.Text, item); visibleCommandEnabled[item.Text] = item.IsEnabled;
                     if (name.StartsWith("Editor context ", StringComparison.Ordinal)) contextItems[item.Text] = item.IsEnabled;
                 }
                 else if (element is MenuFlyoutSubItem sub) Add("Visible submenu " + sub.Text, sub);
@@ -144,6 +145,10 @@ public sealed partial class EditorPage
             ContextMenuEnabled = _active.IsDefaultContextMenuEnabled, SecondaryPointerMovesCaret = _active.CanMoveCaretForSecondaryPointerButton, ContextItems = contextItems,
             ActiveView = ReferenceEquals(_active, _primary) ? "Primary" : "Secondary",
             ContextCommands = Enum.GetValues<EditorCommand>().ToDictionary(c => c.ToString(), c => _active.GetCommandState(c).IsEnabled),
+            CommandSurfaceEnabled = _ui.Where(p => p.Value is Control && (p.Key.StartsWith("Toolbar ", StringComparison.Ordinal) || p.Key.StartsWith("Command ", StringComparison.Ordinal))).ToDictionary(p => p.Key, p => ((Control)p.Value).IsEnabled),
+            ToolbarGlyphOpacity = _ui.Where(p => p.Key.StartsWith("Toolbar ", StringComparison.Ordinal) && p.Value is Button { Content: UIElement }).ToDictionary(p => p.Key, p => ((UIElement)((Button)p.Value).Content).Opacity),
+            VisibleCommandEnabled = visibleCommandEnabled, CommandBindingCount = _commandBindings.Count, CommandBindingDistinct = _commandBindings.DistinctCommandCount,
+            CommandBindingQueries = _commandBindings.QueryCount, CommandBindingWrites = _commandBindings.PropertyWriteCount,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
     }
@@ -168,6 +173,13 @@ internal sealed class NumericOptionState
 }
 internal sealed class BrowserState
 {
+    public Dictionary<string, bool> CommandSurfaceEnabled { get; set; } = [];
+    public Dictionary<string, bool> VisibleCommandEnabled { get; set; } = [];
+    public Dictionary<string, double> ToolbarGlyphOpacity { get; set; } = [];
+    public int CommandBindingCount { get; set; }
+    public int CommandBindingDistinct { get; set; }
+    public long CommandBindingQueries { get; set; }
+    public long CommandBindingWrites { get; set; }
     public Dictionary<string, NumericOptionState> OptionInputs { get; set; } = [];
     public string OptionsValidation { get; set; } = "";
     public bool ContextMenuOpen { get; set; }
