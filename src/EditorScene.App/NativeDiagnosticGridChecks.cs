@@ -3,6 +3,7 @@ using EditorScene.LanguageServices;
 using EditorScene.Rendering.Skia;
 using EditorScene.Text;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Media;
 
 namespace EditorScene.App;
 
@@ -36,6 +37,9 @@ internal static class NativeDiagnosticGridChecks
         grid.ResetColumnWidths();
         Check(grid.GetColumnWidth(DiagnosticSortColumn.Code) == 82 && grid.GetColumnWidth(DiagnosticSortColumn.File) == 160, "Default diagnostic column layout can be restored");
         Check(DiagnosticList.Columns.All(c => grid.GetColumnGrip(c).UseSystemFocusVisuals && AutomationProperties.GetName(grid.GetSortButton(c)).Contains(c.ToString())), "All native diagnostic headers and resize grips expose keyboard and automation labels");
+        var retainedButtons = DiagnosticList.Columns.Select(grid.GetSortButton).ToArray();
+        var retainedGrips = DiagnosticList.Columns.Select(grid.GetColumnGrip).ToArray();
+        Check(retainedGrips.All(g => ReferenceEquals(g.Template, retainedGrips[0].Template)), "Diagnostic resize grips share one parsed template without sharing visual instances");
         using var otherDocument = new EditorDocument("other", "other.txt"); using var other = new SyntaxEditor(); other.SetDocumentAndLanguage(otherDocument, new PlainTextLanguage());
         var rebound = false;
         void Rebind(object? sender, EventArgs args) { if (rebound) return; rebound = true; grid.Editor = other; }
@@ -49,6 +53,7 @@ internal static class NativeDiagnosticGridChecks
         try { grid.SetColumnWidth(DiagnosticSortColumn.Code, 120); } catch (ObjectDisposedException) { disposedGuards++; }
         try { grid.ApplyTheme(EditorTheme.Dark); } catch (ObjectDisposedException) { disposedGuards++; }
         Check(calls == 0 && disposedGuards == 3 && grid.VisibleCount == 0 && grid.RealizedRowCount == 0, "Disposed diagnostic grids release queries, rows and subscriptions and reject mutation");
+        Check(retainedButtons.All(b => VisualTreeHelper.GetParent(b) is null) && retainedGrips.All(g => VisualTreeHelper.GetParent(g) is null), "Retained diagnostic headers and grips are detached from the disposed grid visual tree");
     }
     private sealed class FixtureLanguage : ISyntaxLanguage
     {
