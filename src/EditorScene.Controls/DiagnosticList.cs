@@ -44,17 +44,17 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
         _layout.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         _layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var tools = new Grid { ColumnSpacing = 2, Padding = new Thickness(3) };
-        for (var i = 0; i < 3; i++) tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        for (var i = 0; i < 5; i++) tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         tools.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var controls = new Control[] { _errors, _warnings, _information, _filter, _clearFilter, _resetLayout };
+        var controls = new Control[] { _previousDiagnostic, _nextDiagnostic, _errors, _warnings, _information, _filter, _clearFilter, _resetLayout };
         for (var i = 0; i < controls.Length; i++) { Grid.SetColumn(controls[i], i); tools.Children.Add(controls[i]); }
         _layout.Children.Add(tools);
         var templates = new DiagnosticTemplates();
         _rows.ItemTemplate = (DataTemplate)templates["DiagnosticRowTemplate"];
         _rows.ItemContainerStyle = (Style)templates["DiagnosticRowContainerStyle"];
-        InitializeColumns();
+        InitializeColumns(); InitializeDiagnosticNavigation();
         Grid.SetRow(_summary, 2); _layout.Children.Add(_summary); Content = _layout;
         AutomationProperties.SetName(_rows, "Diagnostic rows"); AutomationProperties.SetName(_filter, "Filter diagnostics");
         _rows.ItemClick += OnItemClick; _rows.KeyDown += OnRowsKeyDown;
@@ -72,7 +72,7 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
             if (value?.IsDisposed == true) throw new ObjectDisposedException(nameof(value));
             if (ReferenceEquals(value, _editor)) return;
             Detach(); _editor = value;
-            if (_editor is not null) { _editor.AnalysisUpdated += AnalysisUpdated; _editor.StateChanged += StateChanged; }
+            if (_editor is not null) { _editor.AnalysisUpdated += AnalysisUpdated; _editor.StateChanged += StateChanged; _editor.KeyDown += OnDiagnosticNavigationKey; }
             Refresh();
         }
     }
@@ -111,7 +111,7 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
         _heading.Background = SyntaxEditor.Brush(theme.Chrome); _heading.BorderBrush = SyntaxEditor.Brush(theme.Border);
         _rows.Foreground = _filter.Foreground = SyntaxEditor.Brush(theme.Foreground);
         _summary.Foreground = SyntaxEditor.Brush(theme.Muted);
-        ApplyColumnTheme();
+        ApplyColumnTheme(); if (!_disposed) ApplyNavigationTheme();
     }
     private static ToggleButton Toggle(string label, string name)
     {
@@ -137,6 +137,7 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
     {
         if (_disposed) return;
         if (_editor?.IsDisposed == true) { Detach(); _editor = null; }
+        UpdateNavigationAvailability(); if (_disposed) return;
         var analysis = _editor?.Analysis;
         if (ReferenceEquals(analysis, _analysis) && (_table is null || _table.FileName == _editor?.Document.FileName)) return;
         _analysis = analysis; _table = null; _queryView = null;
@@ -151,8 +152,7 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
     {
         if (_disposed) return;
         var rawQuery = _filter.Text ?? string.Empty;
-        // Input chrome follows the raw text even when its normalized query is
-        // unchanged. Spaces must remain clearable without rebuilding any rows.
+        // Raw text controls Clear even when its normalized query is unchanged.
         if (_clearFilter.IsEnabled != (rawQuery.Length != 0)) _clearFilter.IsEnabled = rawQuery.Length != 0;
         if (_disposed) return;
         var visibility = (_errors.IsChecked == true ? DiagnosticVisibility.Error : 0) | (_warnings.IsChecked == true ? DiagnosticVisibility.Warning : 0) | (_information.IsChecked == true ? DiagnosticVisibility.Information : 0);
@@ -163,29 +163,17 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
         var previousSelection = _rows.SelectedItem as DiagnosticTableRow;
         _lastVisibility = visibility; _lastQuery = query; _lastColumn = _sortColumn; _lastDirection = _sortDirection;
         var changed = _visible != result; _visible = result; FilterBuildCount++;
-        if (changed) _rows.ItemsSource = result;
-        // ItemsSource/selection changes can run synchronous host callbacks. Do not
-        // overwrite a newly bound document or touch children after host disposal.
+        if (changed) { _navigation = new(result); _rows.ItemsSource = result; }
+        // ItemsSource/selection changes can synchronously rebind or dispose the grid.
         if (_disposed || generation != _publication) return;
         if (previousSelection is not null && result.Any(r => ReferenceEquals(r, previousSelection))) _rows.SelectedItem = previousSelection;
         if (_disposed || generation != _publication) return;
         _errors.Content = $"{_table?.ErrorCount ?? 0} Errors"; _warnings.Content = $"{_table?.WarningCount ?? 0} Warnings"; _information.Content = $"{_table?.InformationCount ?? 0} Messages";
         _summary.Text = _table is null ? "Waiting for current document analysis" : $"{_visible.Length:N0} of {_table.Rows.Length:N0} diagnostics · current document";
-        RowsChanged?.Invoke(this, EventArgs.Empty);
-    }
-    private void Navigate(DiagnosticTableRow row)
-    {
-        if (_disposed || !_visible.Any(r => ReferenceEquals(r, row))) return;
-        var editor = _editor;
-        if (editor is null || editor.IsDisposed || _table is null || !ReferenceEquals(_analysis, editor.Analysis)) { Refresh(); return; }
-        try { if (!_table.IsCurrent(editor.Document.Snapshot())) { Refresh(); return; } }
-        catch (ObjectDisposedException) { Refresh(); return; }
-        var document = editor.Document; var analysis = _analysis;
-        var range = row.Diagnostic.Range; editor.Select(range.Offset, range.Length);
-        if (!_disposed && !editor.IsDisposed && ReferenceEquals(_editor, editor) && ReferenceEquals(editor.Document, document) && ReferenceEquals(editor.Analysis, analysis) && editor.SelectionStart == range.Offset && editor.SelectionLength == range.Length) editor.FocusEditor();
+        UpdateNavigationAvailability(); if (!_disposed && generation == _publication) RowsChanged?.Invoke(this, EventArgs.Empty);
     }
     private void Detach()
-    { if (_editor is not null) { _editor.AnalysisUpdated -= AnalysisUpdated; _editor.StateChanged -= StateChanged; } }
+    { if (_editor is not null) { _editor.AnalysisUpdated -= AnalysisUpdated; _editor.StateChanged -= StateChanged; _editor.KeyDown -= OnDiagnosticNavigationKey; } }
     public new void Dispose()
     {
         if (_disposed) return;
@@ -193,6 +181,6 @@ public sealed partial class DiagnosticList : UserControl, IDisposable
         _rows.ItemClick -= OnItemClick; _rows.KeyDown -= OnRowsKeyDown;
         foreach (var toggle in new[] { _errors, _warnings, _information }) toggle.Click -= OnFilterToggle;
         _filter.TextChanged -= OnFilterChanged; _clearFilter.Click -= OnClearFilter; _resetLayout.Click -= OnResetLayout;
-        DisposeColumns(); _editor = null; _analysis = null; _table = null; _queryView = null; _visible = []; _rows.ItemsSource = null; base.Dispose();
+        DisposeDiagnosticNavigation(); DisposeColumns(); _editor = null; _analysis = null; _table = null; _queryView = null; _visible = []; _rows.ItemsSource = null; base.Dispose();
     }
 }
