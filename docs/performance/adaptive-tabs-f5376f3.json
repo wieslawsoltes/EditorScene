@@ -1,0 +1,40 @@
+{
+  "sourceRevision": "f5376f36e90bc70b412c651e67a88209a623077a",
+  "workflowRun": 38293385967,
+  "regressionJob": 114959034765,
+  "regressionTestsPassed": 759,
+  "artifactId": 11766614390,
+  "artifactName": "regression-tests",
+  "artifactZipSha256ReportedByCI": "572873d43e62b1abc071b2d4276073eccba01b739862cf13b05f4aea975f5342",
+  "fullRawReportPath": "performance.json",
+  "provenance": "Rounded summaries and raw samples were read directly from the completed regression job log. The full report is retained in the artifact. Local extraction and independent ZIP verification were unavailable. At capture the browser job was still publishing; these regression results are not a claim of a passed full workflow or deployed revision.",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "warmups": 3,
+  "samples": 11,
+  "units": "Milliseconds per line-map construction; current-thread managed bytes.",
+  "baseline": "The unchanged PreviousSpanMap reproduces the immediately preceding constructor and field shape from 5dab80efcf3859922d1066ca87ed5ee36caeeb8b, with lazy tab lists, leading-whitespace metadata, pooled reader and cleared buffer return. The separately labeled historical scalar constructor remains in the complete report.",
+  "current": "Reuse the necessary initial tab search. Tab-free chunks and too-short tails skip density sampling. Skip the ordinary prefix once, then sample up to 128 units starting at the first tab; at least 16 tabs selects a scalar remainder pass, otherwise span searches continue.",
+  "methodology": "Same immutable snapshots and tab width 4, warmed shared reader pool, three warmups and eleven sequential samples per implementation, count/column/leading-metadata verification included. Document/snapshot construction, query methods, native UI layout/painting and GPU are excluded. Current-thread allocation only. Hosted-runner variation and sequential grouping limit inference. Observed p95 is the largest of eleven samples, not a population guarantee.",
+  "rows": [
+    {"scenario":"tab_build_sparse_100003","previousP50":0.0272,"currentP50":0.0272,"previousP95":0.0528,"currentP95":0.0285,"previousBytes":720,"currentBytes":720},
+    {"scenario":"tab_build_no_tabs_100000","previousP50":0.0344,"currentP50":0.0267,"previousP95":0.0381,"currentP95":0.0389,"previousBytes":488,"currentBytes":488},
+    {"scenario":"tab_build_indentation_100000","previousP50":0.0520,"currentP50":0.0436,"previousP95":0.0541,"currentP95":0.0447,"previousBytes":488,"currentBytes":488},
+    {"scenario":"tab_build_dense_100000","previousP50":0.7660,"currentP50":0.5018,"previousP95":2.8678,"currentP95":0.5176,"previousBytes":1087656,"currentBytes":1087656},
+    {"scenario":"tab_build_all_tabs_100000","previousP50":1.3131,"currentP50":0.8683,"previousP95":2.7155,"currentP95":2.3088,"previousBytes":4347048,"currentBytes":4347048},
+    {"scenario":"tab_build_mixed_chunks_98304","previousP50":0.6833,"currentP50":0.5844,"previousP95":1.1960,"currentP95":1.1720,"previousBytes":2163960,"currentBytes":2163960},
+    {"scenario":"tab_build_sparse_prefix_dense_tail_98304","previousP50":1.2856,"currentP50":0.8552,"previousP95":2.4982,"currentP95":3.4422,"previousBytes":4289832,"currentBytes":4289832}
+  ],
+  "interpretation": "The sparse median matches its same-run preceding baseline; tab-free, indentation and dense/mixed medians improve in this fixture. Allocations remain unchanged. Tab-free observed p95 is slightly worse and sparse-prefix/dense-tail observed p95 is worse. These results do not establish a universal speedup. Earlier sampling-overhead results remain in adaptive-tabs-4827e20.json with their own revision and runner provenance, not overwritten by this record.",
+  "unresolvedCompilerProbe": {
+    "scenario": "csharp_small_edit_model",
+    "previousP50Milliseconds": 6.6563,
+    "currentP50Milliseconds": 23.5451,
+    "previousMedianAllocatedBytes": 1333776,
+    "currentMedianAllocatedBytes": 1948872,
+    "note": "This unrelated model-only regression remains visible in the same complete performance report. The tab scanner increment does not resolve it."
+  },
+  "limits": "No whole-editor input-latency, frame-rate, physical-GPU or Actipro performance comparison. The density decision remains heuristic, and construction retains O(tab count) arrays. All prior workloads and unfavorable results remain in the complete report."
+}

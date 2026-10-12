@@ -80,10 +80,10 @@ public sealed partial class EditorPage : Page
         _themePicker.SelectionChanged += (_, _) => ApplyTheme(_themePicker.SelectedIndex switch { 1 => EditorTheme.Dark, 2 => EditorTheme.HighContrast, _ => EditorTheme.Light });
         Loaded += async (_, _) =>
         {
-            _loaded = true; _commandBindings.Editor = _active; ApplyTheme(_theme); _primary.FocusEditor(); QueueDiagnostics();
+            _loaded = true; _commandBindings.Editor = _active; ApplyTheme(_theme); _primary.FocusEditor(); QueueActiveTabReveal(); QueueDiagnostics();
             if (Environment.GetEnvironmentVariable("EDITORSCENE_NATIVE_CHECKS") == "1") await RunNativeChecksAsync();
         };
-        Unloaded += (_, _) => { _loaded = false; _commandBindings.Editor = null; };
+        Unloaded += (_, _) => { _loaded = false; _commandBindings.Editor = null; _documentList.Hide(); };
         KeyDown += OnPageKeyDown; SizeChanged += (_, _) => QueueDiagnostics();
         AddDocument(new EditorDocument(_diagnostics ? "" : Samples.CSharp, _diagnostics ? "Untitled.cs" : "SensorMonitor.cs"), _languages.Get("csharp")!);
     }
@@ -115,31 +115,45 @@ public sealed partial class EditorPage : Page
     }
     private void ActivateDocument(WorkspaceDocument entry)
     {
+        if (_dialog is not null || !_documents.Contains(entry)) return;
+        if (ReferenceEquals(_current, entry)) { _active.FocusEditor(); QueueActiveTabReveal(); return; }
         if (_current is not null) _current.Caret = ReferenceEquals(_active.Document, _current.Document) ? _active.CaretOffset : _primary.CaretOffset;
-        _current = entry; _primary.SetDocumentAndLanguage(entry.Document, entry.Language);
+        _current = entry; _documentList.SelectedDocumentId = entry.Document.Id; _primary.SetDocumentAndLanguage(entry.Document, entry.Language);
         if (_secondary is not null) { _secondary.SetDocumentAndLanguage(entry.Document, entry.Language); }
         _primary.CaretOffset = Math.Clamp(entry.Caret, 0, entry.Document.Buffer.TextLength);
         SetActive(_primary); UpdateLspPicker();
-        UpdateErrorCaption(); RebuildTabCaptions(); UpdateStatus(); _primary.FocusEditor();
+        UpdateErrorCaption(); RebuildTabCaptions(); UpdateStatus(); _primary.FocusEditor(); QueueActiveTabReveal();
     }
     private void RebuildTabs()
     {
         foreach (var name in _tabControlNames) _ui.Remove(name);
-        _tabControlNames.Clear(); _tabs.Children.Clear();
-        foreach (var entry in _documents)
+        _tabControlNames.Clear();
+        var retained = _documents.Where(d => d.Tab is not null).Select(d => (UIElement)d.Tab!).ToHashSet();
+        for (var i = _tabs.Children.Count - 1; i >= 0; i--)
+            if (!retained.Contains(_tabs.Children[i])) _tabs.Children.RemoveAt(i);
+        for (var i = 0; i < _documents.Count; i++)
         {
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
-            panel.Children.Add(new TextBlock { Text = entry.Document.FileName, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
-            var button = new Button { Content = panel, Height = 27, MinHeight = 27, Padding = new Thickness(9, 2, 9, 2), BorderThickness = new Thickness(0, 0, 0, 2) };
-            button.Click += (_, _) => ActivateDocument(entry); entry.Tab = button; entry.TabTheme = null;
-            var name = "Document " + entry.Document.FileName; Register(name, button); _tabControlNames.Add(name); _tabs.Children.Add(button);
+            var entry = _documents[i];
+            if (entry.Tab is null)
+            {
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+                panel.Children.Add(new TextBlock { Text = entry.Document.FileName, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+                var button = new Button { Content = panel, Height = 27, MinHeight = 27, Padding = new Thickness(9, 2, 9, 2), BorderThickness = new Thickness(0, 0, 0, 2) };
+                button.Click += (_, _) => ActivateDocument(entry);
+                button.Loaded += (_, _) => { if (ReferenceEquals(entry, _current)) QueueActiveTabReveal(); };
+                entry.Tab = button; entry.TabTheme = null; _tabBuildCount++;
+            }
+            var tab = entry.Tab;
+            if (i >= _tabs.Children.Count || !ReferenceEquals(_tabs.Children[i], tab))
+            {
+                var previous = _tabs.Children.IndexOf(tab);
+                if (previous >= 0) _tabs.Children.RemoveAt(previous);
+                _tabs.Children.Insert(i, tab);
+            }
+            var name = "Document " + entry.Document.FileName;
+            Register(name, tab); _tabControlNames.Add(name);
         }
-        if (_closeTabButton is null)
-        {
-            _closeTabButton = new Button { Content = NewIcon(EditorIconKind.Close), Height = 26, MinHeight = 26, Width = 25, Padding = new Thickness(4), BorderThickness = new Thickness(0) };
-            _closeTabButton.Click += (_, _) => _ = GuardAsync(CloseDocumentAsync); Register("Close document", _closeTabButton);
-        }
-        _tabs.Children.Add(_closeTabButton); RebuildTabCaptions();
+        RefreshDocumentList(); RebuildTabCaptions(); QueueActiveTabReveal();
     }
     private void RebuildTabCaptions()
     {
@@ -151,6 +165,8 @@ public sealed partial class EditorPage : Page
             {
                 if (tab.Content is StackPanel panel && panel.Children[0] is TextBlock text) text.Text = name + (modified ? " *" : "");
                 entry.CaptionName = name; entry.CaptionModified = modified;
+                ToolTipService.SetToolTip(tab, name);
+                _documentList.UpdateDocument(new(entry.Document.Id, name, modified));
             }
             if (!ReferenceEquals(entry.TabTheme, _theme) || entry.TabActive != active)
             {
@@ -208,6 +224,7 @@ public sealed partial class EditorPage : Page
         if (e.Handled) return;
         var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         if (!control) return;
+        if (HandleDocumentNavigationKey(e)) { e.Handled = true; return; }
         switch (e.Key)
         {
             case VirtualKey.N: e.Handled = true; NewDocument(); break;

@@ -91,7 +91,9 @@ public sealed partial class EditorPage
         Item(window, "Split Vertically", () => { SetSplitOrientation(Orientation.Horizontal); return Task.CompletedTask; });
         Item(window, "Center Split", () => { _views.Ratio = .5; _active.FocusEditor(); return Task.CompletedTask; });
         Item(window, "Focus Other View", () => { (_secondary is not null && ReferenceEquals(_active, _primary) ? _secondary : _primary).FocusEditor(); return Task.CompletedTask; });
-        Item(window, "Next Document", () => { if (_current is not null) ActivateDocument(_documents[(_documents.IndexOf(_current) + 1) % _documents.Count]); return Task.CompletedTask; });
+        Item(window, "Next Document", () => { NavigateDocument(1); return Task.CompletedTask; }, "Ctrl+PageDown");
+        Item(window, "Previous Document", () => { NavigateDocument(-1); return Task.CompletedTask; }, "Ctrl+PageUp");
+        Item(window, "Documents…", () => { DispatcherQueue.TryEnqueue(ShowDocumentList); return Task.CompletedTask; }, "Ctrl+Alt+Down");
         return bar;
     }
     private MenuFlyoutItem Item(MenuBarItem menu, string label, Func<Task> action, string shortcut = "")

@@ -49,8 +49,7 @@ public sealed partial class EditorPage
         Grid.SetColumn(overflow, 1); Grid.SetColumn(_languagePicker, 2); Grid.SetColumn(_themePicker, 3);
         toolbarGrid.Children.Add(overflow); toolbarGrid.Children.Add(_languagePicker); toolbarGrid.Children.Add(_themePicker);
         Register("Language", _languagePicker); Register("Theme", _themePicker); Put(toolbarGrid, 2); _chromePanels.Add(toolbarGrid); BuildClassicToolbar();
-        var tabsScroll = new ScrollViewer { Content = _tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, MinHeight = 25 };
-        Put(tabsScroll, 3); _chromePanels.Add(_tabs); Put(_navigator, 4);
+        Put(BuildDocumentStrip(), 3); _chromePanels.Add(_tabs); Put(_navigator, 4);
         _editorGrid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); _editorGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); _editorGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _views.First = _primary; _views.Orientation = _splitOrientation; _views.LayoutChanged += (_, _) => QueueDiagnostics(); _editorGrid.Children.Add(_views); Register("Split separator", _views.Separator);
         var outlineGrid = new Grid(); outlineGrid.RowDefinitions.Add(new() { Height = GridLength.Auto }); outlineGrid.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });

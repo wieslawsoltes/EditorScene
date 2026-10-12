@@ -46,18 +46,35 @@ public sealed class TabColumnMap
                     leading += firstContent < 0 ? count : firstContent;
                     inIndentation = firstContent < 0;
                 }
-                // Search non-tab runs using the runtime's span search rather than
-                // branching once for every ordinary character. Only tabs need entries.
-                var consumed = 0;
-                while (consumed < count)
+                // The first span search is necessary for either path. Reuse its
+                // result, skip the ordinary prefix once, and do not sample a
+                // tab-free chunk or a tail too short to meet the density threshold.
+                var firstTab = chunk.IndexOf('\t');
+                if (firstTab < 0) { column += count; offset += count; continue; }
+                column += firstTab;
+                tabs ??= new(); after ??= new();
+                var remaining = count - firstTab;
+                if (remaining >= 16 && chunk.Slice(firstTab, Math.Min(128, remaining)).Count('\t') >= 16)
                 {
-                    var next = chunk[consumed..].IndexOf('\t');
-                    if (next < 0) { column += count - consumed; break; }
-                    column += next;
-                    column += tabSize - column % tabSize;
-                    (tabs ??= new()).Add(offset + consumed + next);
-                    (after ??= new()).Add(column);
-                    consumed += next + 1;
+                    for (var i = firstTab; i < count; i++)
+                    {
+                        if (chunk[i] != '\t') { column++; continue; }
+                        column += tabSize - column % tabSize;
+                        tabs.Add(offset + i); after.Add(column);
+                    }
+                }
+                else
+                {
+                    var consumed = firstTab;
+                    while (true)
+                    {
+                        column += tabSize - column % tabSize;
+                        tabs.Add(offset + consumed); after.Add(column);
+                        consumed++;
+                        var next = chunk[consumed..].IndexOf('\t');
+                        if (next < 0) { column += count - consumed; break; }
+                        column += next; consumed += next;
+                    }
                 }
                 offset += count;
             }

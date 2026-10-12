@@ -163,6 +163,11 @@ public sealed class ConsumerControl : UserControl
         var outline = new DocumentOutline { Editor = Editor };
         var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);
         Editor.CopyViewSettingsFrom(Editor);
+        using var documentMenu = new EditorDocumentList();
+        var documentId = Guid.NewGuid();
+        documentMenu.SetDocuments([new EditorDocumentListEntry(documentId, "Consumer.cs")]);
+        documentMenu.SelectedDocumentId = documentId;
+        if (documentMenu.DocumentCount != 1) throw new Exception("Packaged document menu contract failed.");
         Commands.Editor = Editor;
         var copyButton = new Button { Content = "Copy" };
         Commands.Bind(copyButton, EditorCommand.Copy);
