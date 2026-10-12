@@ -69,21 +69,21 @@ public sealed partial class DiagnosticList
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_navigatingDiagnostic) return false;
-        Refresh(); if (!CanNavigateDiagnostics || _editor is not { } editor || _table is not { } table) return false;
-        editor.Document.VerifyAccess();
-        if (!table.IsCurrent(editor.Document.Snapshot())) return false;
-        var document = editor.Document; var analysis = _analysis; var publication = _publication;
-        var rows = _visible; var cursor = _navigation;
-        var session = editor.NativeEditor.TextArea.Session;
-        var caret = editor.CaretOffset; var anchor = session.AnchorOffset; var active = session.SelectionEndOffset;
-        cursor.SelectIndex(_rows.SelectedIndex);
-        if (!cursor.TryMove(out var row, backwards, wrap)) return false;
+        // Refresh may itself publish rows and run host callbacks; include it in
+        // the recursion guard rather than only guarding the final caret change.
         _navigatingDiagnostic = true;
         try
         {
+            Refresh(); if (!CanNavigateDiagnostics || _editor is not { } editor || _table is not { } table) return false;
+            editor.Document.VerifyAccess();
+            if (!table.IsCurrent(editor.Document.Snapshot())) return false;
+            var document = editor.Document; var analysis = _analysis; var publication = _publication;
+            var rows = _visible; var cursor = _navigation;
+            var session = editor.NativeEditor.TextArea.Session;
+            var caret = editor.CaretOffset; var anchor = session.AnchorOffset; var active = session.SelectionEndOffset;
+            cursor.SelectIndex(_rows.SelectedIndex);
+            if (!cursor.TryMove(out var row, backwards, wrap)) return false;
             _rows.SelectedIndex = cursor.CurrentIndex;
-            // SelectionChanged is host code; it can replace the grid result, select
-            // a different row, move the editor caret, switch providers or dispose.
             if (_disposed || publication != _publication || !ReferenceEquals(_editor, editor) || editor.IsDisposed
                 || !ReferenceEquals(editor.Document, document) || !ReferenceEquals(analysis, editor.Analysis)
                 || _visible != rows || !ReferenceEquals(_rows.SelectedItem, row) || editor.CaretOffset != caret
@@ -121,8 +121,13 @@ public sealed partial class DiagnosticList
         editor.ClearMultiSelection();
         if (!Current() || session.AnchorOffset != anchor || session.SelectionEndOffset != active || editor.CaretOffset != caret || editor.Selections.Ranges.Count != 0) return false;
         var range = row.Diagnostic.Range;
+        // UnoEdit moves empty endpoints with a changed insertion caret, whereas
+        // a nonempty selection keeps its endpoints until explicitly selected.
+        var followsCaret = anchor == active && caret != range.End;
+        var expectedAnchor = followsCaret ? range.End : anchor;
+        var expectedActive = followsCaret ? range.End : active;
         session.SetCaretOffset(range.End);
-        if (!Current() || editor.CaretOffset != range.End || session.AnchorOffset != anchor || session.SelectionEndOffset != active || editor.Selections.Ranges.Count != 0) return false;
+        if (!Current() || editor.CaretOffset != range.End || session.AnchorOffset != expectedAnchor || session.SelectionEndOffset != expectedActive || editor.Selections.Ranges.Count != 0) return false;
         session.SetSelection(range.Offset, range.End);
         if (!Current() || session.AnchorOffset != range.Offset || session.SelectionEndOffset != range.End || editor.CaretOffset != range.End || editor.Selections.Ranges.Count != 0) return false;
         native.TextView.EnsureCaretVisible();
