@@ -29,8 +29,8 @@ public sealed partial class EditorPage
         strip.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _tabScroll.Content = _tabs; strip.Children.Add(_tabScroll);
         _tabScroll.SizeChanged += (_, _) => QueueActiveTabReveal();
-        // PageUp/PageDown are handled by the child TextArea even with Control.
-        // Tunnel only our workspace shortcuts before it changes the source caret.
+        // The child editor consumes PageUp/PageDown even with Control. Tunnel
+        // only our workspace shortcuts before it changes the source caret.
         PreviewKeyDown += OnDocumentNavigationPreviewKeyDown;
         _documentListButton = new Button
         {
@@ -78,7 +78,7 @@ public sealed partial class EditorPage
     }
     private void OnDocumentNavigationPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Handled || !_loaded || _dialog is not null || _active.IsViewOptionsOpen) return;
+        if (args.Handled || !_loaded || _dialog is not null) return;
         var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         if (control && HandleDocumentNavigationKey(args)) args.Handled = true;
     }
