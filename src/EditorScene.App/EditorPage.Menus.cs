@@ -45,8 +45,8 @@ public sealed partial class EditorPage
         Command(advanced, "Increase Line Indent", EditorCommand.Indent, "Tab"); Command(advanced, "Decrease Line Indent", EditorCommand.Outdent, "Shift+Tab"); Separator(advanced);
         Command(advanced, "Comment Lines", EditorCommand.Comment, "Ctrl+K, Ctrl+C"); Command(advanced, "Uncomment Lines", EditorCommand.Uncomment, "Ctrl+K, Ctrl+U"); Command(advanced, "Format Document", EditorCommand.FormatDocument, "Ctrl+K, Ctrl+D"); Separator(advanced);
         Command(advanced, "Make Uppercase", EditorCommand.Uppercase, "Ctrl+Shift+U"); Command(advanced, "Make Lowercase", EditorCommand.Lowercase, "Ctrl+U");
-        Command(advanced, "Duplicate Line / Selection", EditorCommand.DuplicateLine); Command(advanced, "Delete Lines", EditorCommand.DeleteLine, "Ctrl+Shift+L"); Command(advanced, "Sort Selected Lines", EditorCommand.SortLines); Command(advanced, "Trim Trailing Whitespace", EditorCommand.TrimTrailingWhitespace); Separator(advanced);
-        Command(advanced, "Convert Leading Tabs to Spaces", EditorCommand.TabsToSpaces); Command(advanced, "Convert Leading Spaces to Tabs", EditorCommand.SpacesToTabs);
+        Command(advanced, "Duplicate Line / Selection", EditorCommand.DuplicateLine); Command(advanced, "Delete Lines", EditorCommand.DeleteLine, "Ctrl+Shift+L"); Command(advanced, "Sort Selected Lines", EditorCommand.SortLines); Separator(advanced);
+        AddWhitespaceMenu(advanced);
         Command(advanced, "Convert Line Endings to LF", EditorCommand.ConvertToLf); Command(advanced, "Convert Line Endings to CRLF", EditorCommand.ConvertToCrLf);
         var prompt = Menu("IntelliPrompt");
         Command(prompt, "Complete Word", EditorCommand.CompleteWord, "Ctrl+Space"); Command(prompt, "Quick Info", EditorCommand.QuickInfo); Command(prompt, "Signature Help", EditorCommand.SignatureHelp, "Ctrl+Shift+Space");

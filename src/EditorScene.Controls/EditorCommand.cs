@@ -10,5 +10,6 @@ public enum EditorCommand
     ToggleFold, CollapseAll, ExpandAll, ToggleWordWrap, ToggleWhitespace, ToggleLineNumbers,
     ToggleIndentGuides, ToggleRuler, ToggleReadOnly, ZoomIn, ZoomOut, ResetZoom,
     SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf,
-    SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket, ExpandSelection, ContractSelection
+    SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket, ExpandSelection, ContractSelection,
+    TabifySelectedLines, UntabifySelectedLines, ConvertSelectedSpacesToTabs, ConvertSelectedTabsToSpaces
 }
