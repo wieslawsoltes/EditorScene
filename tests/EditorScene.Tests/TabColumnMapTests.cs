@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using EditorScene.Text;
 using NUnit.Framework;
 
@@ -47,10 +48,24 @@ public sealed class TabColumnMapTests
         var map = new TabColumnMap(doc.Snapshot(), 0, 8);
         Assert.That(map.TabCount, Is.EqualTo(2)); Assert.That(map.GetColumn(4096), Is.EqualTo(4096));
         Assert.That(map.ColumnLength, Is.EqualTo(12288));
-        var bytes = GC.GetAllocatedBytesForCurrentThread(); long sum = 0;
+        // Keep setup, JIT warmup and the test framework outside the measured method.
+        // The previous mixed test body observed 24 bytes and did not identify their
+        // allocation site. This test enforces steady-state lookup, not cold startup.
+        for (var warmup = 0; warmup < 3; warmup++) _ = MeasureLookups(map);
+        var samples = new (long Sum, long Bytes)[11];
+        for (var i = 0; i < samples.Length; i++) samples[i] = MeasureLookups(map);
+        foreach (var sample in samples)
+        {
+            Assert.That(sample.Sum, Is.EqualTo(49_995_000));
+            Assert.That(sample.Bytes, Is.Zero);
+        }
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (long Sum, long Bytes) MeasureLookups(TabColumnMap map)
+    {
+        var before = GC.GetAllocatedBytesForCurrentThread(); long sum = 0;
         for (var i = 0; i < 10000; i++) sum += map.GetColumn(i);
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - bytes;
-        Assert.That(sum, Is.GreaterThan(0)); Assert.That(allocated, Is.Zero);
+        return (sum, GC.GetAllocatedBytesForCurrentThread() - before);
     }
     [Test]
     public void RandomMapsAgreeWithDirectTabExpansion()
