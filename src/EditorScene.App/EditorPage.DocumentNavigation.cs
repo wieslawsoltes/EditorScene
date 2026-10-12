@@ -29,6 +29,9 @@ public sealed partial class EditorPage
         strip.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _tabScroll.Content = _tabs; strip.Children.Add(_tabScroll);
         _tabScroll.SizeChanged += (_, _) => QueueActiveTabReveal();
+        // PageUp/PageDown are handled by the child TextArea even with Control.
+        // Tunnel only our workspace shortcuts before it changes the source caret.
+        PreviewKeyDown += OnDocumentNavigationPreviewKeyDown;
         _documentListButton = new Button
         {
             Content = "▾", Flyout = _documentList, Width = 25, Height = 26, MinHeight = 26,
@@ -73,9 +76,17 @@ public sealed partial class EditorPage
         if (index < 0) return;
         ActivateDocument(_documents[(index + direction % _documents.Count + _documents.Count) % _documents.Count]);
     }
+    private void OnDocumentNavigationPreviewKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        if (args.Handled || !_loaded || _dialog is not null || _active.IsViewOptionsOpen) return;
+        var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+        if (control && HandleDocumentNavigationKey(args)) args.Handled = true;
+    }
     private bool HandleDocumentNavigationKey(KeyRoutedEventArgs args)
     {
         var alt = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+        var shift = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+        if (shift) return false;
         if (alt && args.Key == VirtualKey.Down) { ShowDocumentList(); return true; }
         if (!alt && args.Key is VirtualKey.PageUp or VirtualKey.PageDown)
         { NavigateDocument(args.Key == VirtualKey.PageUp ? -1 : 1); return true; }
