@@ -82,7 +82,7 @@ try {
   const click=async name=>{const b=await stableBounds(name);await page.mouse.click(b[0]+b[2]/2,b[1]+b[3]/2);};
   const focusEditor=async()=>{const b=await stableBounds('Editor');await page.mouse.click(b[0]+100,b[1]+10);};
   const paste=async text=>{await focusEditor();await page.keyboard.press('Escape');await page.keyboard.press('Control+a');await page.evaluate(t=>navigator.clipboard.writeText(t),text);await page.keyboard.press('Control+v');await textIs(text);};
-  const fill=async(name,text)=>{await click(name);await page.keyboard.press('Control+a');await page.keyboard.type(text);};
+  const fill=async(name,text)=>{await click(name);await page.keyboard.press('Control+a');if(text.length===0)await page.keyboard.press('Backspace');else await page.keyboard.type(text);};
   const command=async(menu,label)=>{await click('Menu '+menu);await click('Command '+label);};
   const response=await page.goto(origin+base+'?test=1',{waitUntil:'domcontentloaded'});assert.equal(response.status(),200);
   await page.waitForFunction(()=>globalThis.__editorSceneState?.Ready,null,{timeout:180000}); metrics.startupMs=performance.now()-start;

@@ -9,6 +9,8 @@ export async function checkDiagnosticGrid({page,state,wait,textIs,paste,click,fi
   await paste(text);
   await wait(()=>globalThis.__editorSceneState?.AnalysisRevision===globalThis.__editorSceneState.Revision&&globalThis.__editorSceneState.Diagnostics.length===300);
   if(!(await state()).ToolPaneOpen)await click('Error List');
+  if((await state()).DiagnosticGrid.FilterText.length>0)await click('Clear diagnostic filter');
+  await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.FilterText==='');
   await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===300&&globalThis.__editorSceneState.DiagnosticGrid.RealizedRows>0&&globalThis.__editorSceneState.DiagnosticRenderedTexts.includes('CS0103'));
   let s=await state();
   assert.ok(s.DiagnosticGrid.RealizedRows<120,'A 300-row table must not construct all native row presenters');

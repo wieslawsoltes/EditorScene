@@ -21,7 +21,9 @@ export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,co
   await textIs(invalid);checks.push('Error severity toggles and actual row clicks navigate the current immutable diagnostic range');
   await command('File','New');
   await wait(()=>globalThis.__editorSceneState?.DiagnosticRowCount===0&&globalThis.__editorSceneState.AnalysisRevision===globalThis.__editorSceneState.Revision);
-  await fill('Filter diagnostics','');await click('Error List');await wait(()=>globalThis.__editorSceneState?.ToolPaneOpen===false);
+  await fill('Filter diagnostics','');
+  await wait(()=>globalThis.__editorSceneState?.DiagnosticGrid.FilterText==='' && globalThis.__editorSceneState.DiagnosticGrid.ClearEnabled===false);
+  await click('Error List');await wait(()=>globalThis.__editorSceneState?.ToolPaneOpen===false);
   checks.push('Switching documents clears old diagnostic rows even when the new document has the same revision');
   const sample='using System;\nclass Monitor\n{\n    public void Tick()\n    {\n        Console.WriteLine("EditorScene");\n    }\n}\n';
   await paste(sample);await wait(()=>globalThis.__editorSceneState?.AnalysisRevision===globalThis.__editorSceneState.Revision);
