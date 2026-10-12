@@ -11,7 +11,7 @@ internal static class NativePermissionReviewChecks
     internal static async Task RunAsync(List<string> checks)
     {
         void Check(bool valid, string name) { if (!valid) throw new InvalidOperationException("Permission review: " + name); checks.Add(name); }
-        foreach (var mode in new[] { "read-only", "provider", "language" })
+        foreach (var mode in new[] { "read-only", "native read-only", "provider", "language" })
         {
             using var doc = new EditorDocument("abc"); using var editor = new SyntaxEditor();
             editor.SetDocumentAndLanguage(doc, new PlainTextLanguage()); editor.Select(0, 0);
@@ -19,6 +19,7 @@ internal static class NativePermissionReviewChecks
             var provider = new CallbackProvider(() =>
             {
                 if (mode == "read-only") editor.IsReadOnly = true;
+                else if (mode == "native read-only") editor.NativeEditor.IsReadOnly = true;
                 else if (mode == "provider") editor.NativeEditor.TextArea.ReadOnlySectionProvider = previous;
                 else editor.SyntaxLanguage = new PlainTextLanguage();
             });

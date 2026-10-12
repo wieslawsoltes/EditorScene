@@ -9,7 +9,7 @@ public sealed partial class SyntaxEditor
 {
     private bool CanEditWithCurrentPermissions(TextEdit edit)
     {
-        if (_disposed || IsReadOnly) return false;
+        if (_disposed || IsReadOnly || _editor.IsReadOnly) return false;
         var document = Document; document.VerifyAccess();
         var revision = document.Revision; var language = SyntaxLanguage;
         var provider = _editor.TextArea.ReadOnlySectionProvider;
@@ -28,6 +28,6 @@ public sealed partial class SyntaxEditor
     // Keep context checks as a method rather than allocating a captured closure
     // on every ordinary insertion permission query.
     private bool PermissionContextIsCurrent(EditorDocument document, long revision, ISyntaxLanguage language, IReadOnlySectionProvider provider)
-        => !_disposed && !IsReadOnly && ReferenceEquals(Document, document) && document.Revision == revision
+        => !_disposed && !IsReadOnly && !_editor.IsReadOnly && ReferenceEquals(Document, document) && document.Revision == revision
             && ReferenceEquals(SyntaxLanguage, language) && ReferenceEquals(_editor.TextArea.ReadOnlySectionProvider, provider);
 }
