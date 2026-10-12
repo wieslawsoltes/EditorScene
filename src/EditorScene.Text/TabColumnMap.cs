@@ -46,18 +46,33 @@ public sealed class TabColumnMap
                     leading += firstContent < 0 ? count : firstContent;
                     inIndentation = firstContent < 0;
                 }
-                // Search non-tab runs using the runtime's span search rather than
-                // branching once for every ordinary character. Only tabs need entries.
-                var consumed = 0;
-                while (consumed < count)
+                // Sparse span searches skip long ordinary runs. With dense tabs they
+                // repeatedly search tiny spans instead, so sample at most 128 units
+                // and use one scalar traversal for dense chunks. Both paths build
+                // exactly the same entries and preserve cancellation at each chunk.
+                if (chunk[..Math.Min(128, count)].Count('\t') >= 16)
                 {
-                    var next = chunk[consumed..].IndexOf('\t');
-                    if (next < 0) { column += count - consumed; break; }
-                    column += next;
-                    column += tabSize - column % tabSize;
-                    (tabs ??= new()).Add(offset + consumed + next);
-                    (after ??= new()).Add(column);
-                    consumed += next + 1;
+                    tabs ??= new(); after ??= new();
+                    for (var i = 0; i < count; i++)
+                    {
+                        if (chunk[i] != '\t') { column++; continue; }
+                        column += tabSize - column % tabSize;
+                        tabs.Add(offset + i); after.Add(column);
+                    }
+                }
+                else
+                {
+                    var consumed = 0;
+                    while (consumed < count)
+                    {
+                        var next = chunk[consumed..].IndexOf('\t');
+                        if (next < 0) { column += count - consumed; break; }
+                        column += next;
+                        column += tabSize - column % tabSize;
+                        (tabs ??= new()).Add(offset + consumed + next);
+                        (after ??= new()).Add(column);
+                        consumed += next + 1;
+                    }
                 }
                 offset += count;
             }
