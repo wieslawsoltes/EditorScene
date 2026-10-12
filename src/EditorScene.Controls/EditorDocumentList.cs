@@ -35,7 +35,6 @@ public sealed class EditorDocumentList : MenuFlyout, IDisposable
             if (_selected == value) return;
             var old = _selected; _selected = value;
             if (old is { } previous && _entries.TryGetValue(previous, out var before)) before.Item.IsChecked = false;
-            // Native DP callbacks can replace membership, change selection or dispose.
             if (!_disposed && _selected == value && value is { } current && _entries.TryGetValue(current, out var after))
                 after.Item.IsChecked = true;
         }
@@ -71,8 +70,8 @@ public sealed class EditorDocumentList : MenuFlyout, IDisposable
         {
             var entry = next[snapshot[i].Id]; entry.Update(snapshot[i]);
             if (!IsCurrent(next)) return;
-            var selected = _selected == snapshot[i].Id;
-            if (entry.Item.IsChecked != selected) entry.Item.IsChecked = selected;
+            var isSelected = _selected == snapshot[i].Id;
+            if (entry.Item.IsChecked != isSelected) entry.Item.IsChecked = isSelected;
             if (!IsCurrent(next)) return;
             if (i < Items.Count && ReferenceEquals(Items[i], entry.Item)) continue;
             var oldIndex = Items.IndexOf(entry.Item); if (oldIndex >= 0) Items.RemoveAt(oldIndex);
