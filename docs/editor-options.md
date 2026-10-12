@@ -8,9 +8,13 @@ This increment follows the merged diagnostic-navigation work in PR #8. It adds a
 
 The panel includes font size, line numbers, word wrap, visible whitespace, indentation guides, ruler visibility/column, tab/indent size, spaces-versus-tabs, bracket completion and automatic IntelliPrompt. Restore defaults changes only that draft. Cancel preserves the editor and document. Apply validates every value before the first setter runs and rejects a replaced document/provider or changed options target.
 
-Settings are view-owned. Document rebinding preserves them, and a newly created split copies tab/space/ruler settings along with its existing display options; subsequent changes to either view remain independent. Existing text is never converted merely by changing the settings. Use the existing Convert Indentation commands for text conversion.
+At a section width below 480 device-independent pixels, the same Display and Tabs/input controls stack vertically in the existing scroll view. Check labels wrap instead of overflowing their column. Crossing the breakpoint changes grid placement rather than reconstructing controls, preserving numeric drafts and native focus. `EditorOptionsView.UsesStackedLayout` exposes the current layout choice. The width is an independent implementation choice, not an original-product dimension guarantee.
 
-The native dependency currently uses one width for both tab stops and indentation units. The options panel labels it **Tab and indent size** and does not pretend to support independent values. Allowed values are 1–1000 for that width, 8–40 for font size and 1–10000 for the ruler column. These limits are explicit implementation choices, not a promise of every original-product setting or zoom policy. Settings are not persisted across application restarts in this increment.
+Cancel restores typing focus only to an unchanged, surviving editor target. The dialog also hides if its editor unloads. A new document/provider, changed caret/selection, changed options or active macro session must not be overwritten by the old dialog. Apply uses the existing post-menu focus helper after acceptance. The browser regression types and undoes text immediately after Cancel rather than merely observing that the dialog disappeared.
+
+Settings are view-owned. Document rebinding preserves them, and a newly created split copies tab/space/ruler settings along with its existing display options; subsequent changes to either view remain independent. Existing text is never converted merely by changing settings. Use the existing Convert Indentation commands for text conversion.
+
+The native dependency currently uses one width for both tab stops and indentation units. The options panel labels it **Tab and indent size** and does not pretend to support independent values. Allowed values are 1–1000 for that width, 8–40 for font size and 1–10000 for the ruler column. Settings are not persisted across application restarts in this increment.
 
 ## Reusable APIs
 
@@ -33,19 +37,19 @@ if (panel.TryGetOptions(out var proposed))
 panel.Dispose();
 ```
 
-`EditorViewOptions` is an immutable value snapshot; `new EditorViewOptions()` supplies defaults while `default(EditorViewOptions)` is intentionally rejected by validation because its numeric fields are zero. `EditorOptionsView` owns native input controls, not an editor or its document. `ShowViewOptionsAsync` composes the panel with a native dialog for a loaded view. A dialog is not opened during an active macro session.
+`EditorViewOptions` is an immutable value snapshot; `new EditorViewOptions()` supplies defaults while `default(EditorViewOptions)` is intentionally rejected because its numeric fields are zero. `EditorOptionsView` owns native input controls, not an editor or document. `ShowViewOptionsAsync` composes the panel with a native dialog for a loaded view. A dialog is not opened during an active macro session.
 
-`ApplyViewOptions` validates the entire input first, then checks document identity, revision, provider and the expected current options between synchronous setters. A host callback that changes these or disposes the editor stops remaining changes. The return value is false on such interference; already completed setters are not rolled back and arbitrary external side effects are not transactional. Reapplying equal options does not rebuild controls or emit a gratuitous state update. Native option changes are observed so changes through the exposed native editor can invalidate the column map/status too.
+`ApplyViewOptions` validates the entire input first, then checks document identity, revision, provider and expected options between synchronous setters. A host callback that changes these or disposes the editor stops remaining changes. The return value is false on such interference; already completed setters are not rolled back and arbitrary external side effects are not transactional. Equal options avoid redundant setter/event work. Native option changes are observed so assignments through the exposed native editor invalidate column/status state too.
 
 ## Correct tab-stop insertion
 
-The preceding single-caret native Tab path calculated its next stop from the raw UTF-16 offset. That treats an existing tab as one column and inserts the wrong number of spaces. EditorScene's Tab and Indent paths now measure the tab-expanded logical column first.
+The preceding single-caret native Tab path calculated its next stop from the raw UTF-16 offset. That treats an existing tab as one column and inserts the wrong number of spaces. EditorScene's ordinary Tab and Indent paths now measure the tab-expanded logical column first.
 
-For a tab width of eight, `\tX|` is at zero-based logical column nine. In spaces mode, Tab inserts seven spaces to reach sixteen, not six spaces from raw offset two. In tabs mode it inserts one literal tab. Selected-line indentation continues to use the native protected-line implementation. Snippet/completion Tab handlers remain ahead of the ordinary indentation path. Macro replay, including older imported `native.Tab` steps, uses the same ordinary indentation semantics.
+For a tab width of eight, `\tX|` is at zero-based logical column nine. In spaces mode, Tab inserts seven spaces to reach sixteen, not six from raw offset two. In tabs mode it inserts one literal tab. Selected-line indentation continues to use the native protected-line implementation. Snippet/completion Tab handlers remain ahead of ordinary indentation. Macro replay, including older imported `native.Tab` steps, uses the same ordinary indentation semantics. Read-only Tab remains a no-op rather than reporting an editing exception.
 
-For multiple carets, each caret computes its own required insertion string. `MultiSelection.ReplaceEach` accepts one string per normalized range, validates and copies the input before permission callbacks, applies one atomic edit group and retains primary-caret identity. A denied range prevents the entire planned edit. A synchronous edit notification which replaces selection state is no longer overwritten by the old operation's final caret publication. This API is also available to headless hosts for other per-range replacement operations.
+For multiple carets, each caret computes its required insertion string. `MultiSelection.ReplaceEach` accepts one string per normalized range, validates and copies input before permission callbacks, applies one atomic edit group and retains primary-caret identity. A denied range prevents the entire planned edit. A synchronous edit notification replacing selection state is no longer overwritten by the old operation's final publication. The API is reusable for other headless per-range replacements.
 
-The increment does not redefine all rectangular selection, multi-caret backward-indentation, language-specific smart indentation or soft-tab Backspace behavior. These remain separately testable compatibility boundaries rather than inferred from the ordinary Tab fix.
+The increment does not redefine all rectangular selection, multi-caret backward-indentation, language-specific smart indentation or soft-tab Backspace behavior. These remain separate compatibility boundaries.
 
 ## Sparse tab-column mapping
 
@@ -59,26 +63,39 @@ int offset = map.GetOffset(column, afterTab: false);
 string insertion = map.GetIndentation(lineRelativeOffset, convertTabsToSpaces: true);
 ```
 
-Construction scans only the requested line using a pooled 4096-character buffer. It records offsets and expanded positions only for tab characters; it neither materializes the whole document nor retains the snapshot text or a live document. Queries use binary search over the stored tabs without allocation. Reverse queries inside a tab snap to its leading edge unless the caller requests `afterTab`; columns beyond the line clamp to its end. End-of-line delimiters are not counted. Long expanded columns use 64-bit arithmetic.
+Construction scans only the requested line using a pooled 4096-character buffer. It records offsets and expanded positions only for tab characters; it neither materializes the whole document nor retains the snapshot text or live document. Queries use direct binary search over the stored tabs. Reverse queries inside a tab snap to its leading edge unless `afterTab` is requested; columns beyond the line clamp to its end. Line delimiters are excluded, and expanded columns use 64-bit arithmetic.
 
-The view retains one map for the current document/revision/line/tab width. Moving the caret within that unchanged line reuses it; changing the line, revision or width rebuilds it. Initial construction remains linear in line length and memory remains proportional to tab count. A very long edited line can still be expensive; this is not constant-time cold layout or an incremental grapheme-layout engine.
+The view retains one map for the current document/revision/line/tab width. Moving within the unchanged line reuses it; changing line, revision or width rebuilds it. Initial construction remains linear in line length and memory proportional to tab count. A very long edited line can still be expensive; this is not constant-time cold layout or an incremental grapheme-layout engine.
 
-The status bar now distinguishes **Col**, a one-based tab-expanded UTF-16 logical column, from **Ch**, the one-based raw UTF-16 position within the line. This deliberately does not claim shaped glyph width, bidi visual order, grapheme-cell width, East Asian character cell widths or soft-wrap-relative columns. Surrogates and combining marks count as their UTF-16 units except for tab expansion. A full visual-coordinate API requires the rendering engine's layout data and remains separate scope.
+The status bar distinguishes **Col**, a one-based tab-expanded UTF-16 logical column, from **Ch**, the one-based raw UTF-16 position within the line. It does not measure shaped glyph width, bidi visual order, grapheme cells, East Asian character cells or soft-wrap-relative columns. Surrogates/combining marks count as UTF-16 units except for tab expansion. Full visual coordinates require rendering-layout data and remain separate scope.
 
 ## Validation and measurement scope
 
-Headless tests compare tab maps to a direct oracle, check reader-boundary cases, reverse affinity, CRLF exclusion, sparse retention, cancellation, invalid coordinates and post-disposal use. Per-range replacement tests cover independent strings, primary identity, atomic undo, invalid counts/nulls, permission denial, captured arrays and selection interference.
+Headless tests compare tab maps to a direct oracle, check reader-boundary cases, reverse affinity, CRLF exclusion, sparse storage, cancellation, invalid coordinates and detached use. Per-range replacement tests cover distinct strings, primary identity, atomic undo, invalid counts/nulls, permission denial, captured arrays and selection interference.
 
-Actual Uno-host checks cover status columns, unchanged-line cache counters, application/no-op validation, mixed-tab insertion, per-caret strings, undo, macro replay, split inheritance, dialog draft behavior and synchronous callbacks that change documents/providers/options/lifetime. The published-browser tests use actual View-menu activation, NumberBox text input, checkboxes and Apply/Cancel buttons; screenshots are captured in both light and dark themes. The test bridge only observes state and coordinates. All prior editing, snippets, macros, LSP, diagnostic-grid and large-document scenarios remain in each complete browser run.
+Actual Uno-host checks cover status columns, unchanged-line cache counters, apply/no-op validation, mixed-tab insertion, per-caret strings, undo, macro replay, split inheritance, private drafts and synchronous callbacks changing documents/providers/options/lifetime. Published-browser tests use actual View-menu activation, NumberBox input, checkboxes and Apply/Cancel. They exercise immediate typing after Cancel and narrow-window scrolling/input as well as screenshots in both themes. The bridge observes state/coordinates only. Prior editing, snippets, macros, LSP, diagnostic-grid and large-document cases remain in every complete browser run.
 
-Isolated package consumers execute the text mapping/replacement APIs and compile the native options/control APIs from built packages without source project references.
+Isolated package consumers execute text mapping/replacement APIs and compile native options/control APIs from the built packages without source references. Describing intended test coverage is not proof of a pending workflow's success: inspect its source revision and job conclusions.
 
-`TabColumnBenchmarks` records both constructing a map for a 100003-unit line with two tabs and 10000 lookups on the preconstructed map. Each has three warmups and eleven samples with median, observed p95 and current-thread managed allocations. The lookup timing excludes construction; construction uses a warm shared buffer pool. These are new workloads without a previous-version performance baseline, not physical-GPU, total-frame or end-to-end input-latency claims. Raw report provenance and actual workflow conclusions determine validation; this document is not itself evidence that an unfinished run passed.
+### Measured sparse-map costs
+
+[Retained exact report at 25bbbd](performance/tab-columns-25bbbd.json) records three warmups and eleven samples on .NET 10.0.12, Linux x64:
+
+| Workload | Median | Observed p95 | Managed bytes |
+| --- | ---: | ---: | ---: |
+| 10,000 lookups on a prebuilt 100,003-unit line with two tabs | 0.2422 ms | 0.2694 ms | 0 |
+| Build the map for that line | 0.1228 ms | 0.1454 ms | 712 |
+
+The lookup measurement excludes construction. Construction includes the reader and sparse arrays with a warm shared buffer pool, excluding document/snapshot creation. These are new workloads without a previous-version baseline, not overall-editor speedup, cold startup, physical-GPU or input-latency claims. Current-thread managed allocation does not account for all native memory or unrelated worker threads.
+
+An earlier combined correctness/allocation test observed 24 bytes without identifying the allocation site. Its replacement isolates a non-inlined lookup loop from setup/assertions, uses three warmups, and requires exactly zero bytes in all eleven measured samples. No nonzero allocation allowance was added. This verifies steady-state lookup, not cold execution. The benchmark report independently measures both lookup and construction.
+
+Existing compiler tradeoffs remain recorded: the same report's model-only probe increased from 10.6269 to 24.4859 ms median and from 1,333,776 to 1,948,872 bytes. Warm diagnostic p95 increased from 124.1272 to 154.3879 ms. Sparse-column and UI changes do not imply those regressions are fixed or every path is faster.
 
 The review covers changed source, tests and integration. Existing tests cover unchanged subsystems, but this is not an exhaustive manual audit of every repository file, device or assistive technology. Full API/visual parity, project/refactoring/schema features, grammar tooling, printing, docking/persistence, wider LSP and complete IME/accessibility remain in the compatibility matrix.
 
 ## Primary references
 
-- Actipro SyntaxEditor public feature documentation: https://www.actiprosoftware.com/docs/controls/wpf/syntaxeditor/index
+- Actipro public feature documentation: https://www.actiprosoftware.com/docs/controls/wpf/syntaxeditor/index
 - Actipro zoom behavior (reference, not full parity): https://www.actiprosoftware.com/docs/controls/wpf/syntaxeditor/user-interface/editor-view/zooming
-- Native NumberBox input and commit behavior: https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/number-box
+- Native NumberBox input/commit behavior: https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/number-box
