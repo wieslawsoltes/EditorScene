@@ -4,11 +4,14 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace EditorScene.Controls;
 
-/// <summary>Edits a private value snapshot. It never owns or mutates a SyntaxEditor.
-/// Hosts explicitly apply a validated result after their dialog is accepted.</summary>
+/// <summary>Edits a private value snapshot. The responsive native panel never owns or
+/// mutates an editor. Hosts explicitly apply a validated result after acceptance.</summary>
 public sealed class EditorOptionsView : UserControl, IDisposable
 {
-    private bool _disposed;
+    private bool _disposed, _stacked;
+    private readonly Grid _sections = new() { ColumnSpacing = 24, MaxWidth = 510 };
+    private readonly StackPanel _display = new() { Spacing = 6 };
+    private readonly StackPanel _editing = new() { Spacing = 6 };
     private readonly NumberBox _tabSize = Number("Tab and indent size", 1, 1000);
     private readonly NumberBox _fontSize = Number("Editor font size", 8, 40);
     private readonly NumberBox _rulerColumn = Number("Ruler column", 1, 10000);
@@ -21,28 +24,49 @@ public sealed class EditorOptionsView : UserControl, IDisposable
     private readonly CheckBox _brackets = Check("Complete matching brackets");
     private readonly CheckBox _completion = Check("Show completion automatically");
     private readonly TextBlock _validation = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
+    public bool UsesStackedLayout => _stacked;
     public EditorOptionsView() : this(new EditorViewOptions()) { }
     public EditorOptionsView(EditorViewOptions options)
     {
         options.Validate(); IsTabStop = false;
-        var grid = new Grid { ColumnSpacing = 24, MaxWidth = 510, MinWidth = 280 };
-        grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        var display = new StackPanel { Spacing = 6 }; var editing = new StackPanel { Spacing = 6 };
-        display.Children.Add(Heading("Display")); display.Children.Add(_fontSize);
-        display.Children.Add(_numbers); display.Children.Add(_wrap); display.Children.Add(_whitespace);
-        display.Children.Add(_guides); display.Children.Add(_ruler); display.Children.Add(_rulerColumn);
-        editing.Children.Add(Heading("Tabs and input")); editing.Children.Add(_tabSize); editing.Children.Add(_spaces);
-        editing.Children.Add(new TextBlock { Text = "The tab-stop width is also the indentation unit. Existing text is not converted.", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
-        editing.Children.Add(_brackets); editing.Children.Add(_completion);
+        _sections.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        _sections.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        _sections.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        _sections.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        AutomationProperties.SetName(_sections, "Editor option sections");
+        AutomationProperties.SetName(_display, "Editor display options");
+        AutomationProperties.SetName(_editing, "Editor indentation options");
+        _display.Children.Add(Heading("Display")); _display.Children.Add(_fontSize);
+        _display.Children.Add(_numbers); _display.Children.Add(_wrap); _display.Children.Add(_whitespace);
+        _display.Children.Add(_guides); _display.Children.Add(_ruler); _display.Children.Add(_rulerColumn);
+        _editing.Children.Add(Heading("Tabs and input")); _editing.Children.Add(_tabSize); _editing.Children.Add(_spaces);
+        _editing.Children.Add(new TextBlock { Text = "The tab-stop width is also the indentation unit. Existing text is not converted.", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
+        _editing.Children.Add(_brackets); _editing.Children.Add(_completion);
         var reset = new Button { Content = "Restore defaults", FontSize = 12, MinHeight = 26, Margin = new Thickness(0, 12, 0, 0) };
-        AutomationProperties.SetName(reset, "Restore editor option defaults"); reset.Click += (_, _) => { if (!_disposed) SetOptions(new()); }; editing.Children.Add(reset);
-        grid.Children.Add(display); Grid.SetColumn(editing, 1); grid.Children.Add(editing);
-        var body = new StackPanel { Spacing = 10 }; body.Children.Add(grid); body.Children.Add(_validation);
-        Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, MaxHeight = 450 };
+        AutomationProperties.SetName(reset, "Restore editor option defaults");
+        reset.Click += (_, _) => { if (!_disposed) SetOptions(new()); }; _editing.Children.Add(reset);
+        _sections.Children.Add(_display); Grid.SetColumn(_editing, 1); _sections.Children.Add(_editing);
+        _sections.SizeChanged += OnSectionsSizeChanged;
+        var body = new StackPanel { Spacing = 10 }; body.Children.Add(_sections); body.Children.Add(_validation);
+        Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalContentAlignment = HorizontalAlignment.Stretch, MaxHeight = 450 };
         SetOptions(options);
     }
-    public new void Dispose() { if (_disposed) return; _disposed = true; base.Dispose(); }
+    private void OnSectionsSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        if (_disposed || args.NewSize.Width <= 0) return;
+        var stacked = args.NewSize.Width < 480;
+        if (_stacked == stacked) return;
+        _stacked = stacked;
+        // Reposition existing sections only at the breakpoint; preserve native focus,
+        // current numeric drafts and the control tree rather than recreating inputs.
+        Grid.SetColumnSpan(_display, stacked ? 2 : 1);
+        Grid.SetColumn(_editing, stacked ? 0 : 1); Grid.SetRow(_editing, stacked ? 1 : 0);
+        Grid.SetColumnSpan(_editing, stacked ? 2 : 1);
+        _editing.Margin = stacked ? new Thickness(0, 16, 0, 0) : new Thickness(0);
+    }
+    public new void Dispose()
+    { if (_disposed) return; _disposed = true; _sections.SizeChanged -= OnSectionsSizeChanged; base.Dispose(); }
     public NumberBox TabSizeInput => _tabSize;
     public NumberBox FontSizeInput => _fontSize;
     public NumberBox RulerColumnInput => _rulerColumn;
@@ -51,7 +75,8 @@ public sealed class EditorOptionsView : UserControl, IDisposable
     private static TextBlock Heading(string text) => new() { Text = text, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) };
     private static CheckBox Check(string text)
     {
-        var control = new CheckBox { Content = text, MinHeight = 28, FontSize = 12 };
+        var control = new CheckBox { Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12 },
+            MinHeight = 28, FontSize = 12, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(control, text); return control;
     }
     private static NumberBox Number(string name, double min, double max)
