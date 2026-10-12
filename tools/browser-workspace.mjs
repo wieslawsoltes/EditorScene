@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {checkDiagnosticGrid} from './browser-diagnostics.mjs';
+import {checkEditorOptions} from './browser-options.mjs';
 
 export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks}) {
   await command('File','New');
@@ -82,6 +83,7 @@ export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,co
   await wait(()=>globalThis.__editorSceneState?.Controls?.['Toolbar commands']?.[0]>640);
   await focusEditor();
   await checkDiagnosticGrid({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});
+  await checkEditorOptions({page,state,wait,textIs,paste,click,command,output,checks});
 
   async function findThroughOverflow(screenshot) {
     await click('Toolbar commands');

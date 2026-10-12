@@ -6,8 +6,9 @@ namespace EditorScene.Controls;
 
 /// <summary>Edits a private value snapshot. It never owns or mutates a SyntaxEditor.
 /// Hosts explicitly apply a validated result after their dialog is accepted.</summary>
-public sealed class EditorOptionsView : UserControl
+public sealed class EditorOptionsView : UserControl, IDisposable
 {
+    private bool _disposed;
     private readonly NumberBox _tabSize = Number("Tab and indent size", 1, 1000);
     private readonly NumberBox _fontSize = Number("Editor font size", 8, 40);
     private readonly NumberBox _rulerColumn = Number("Ruler column", 1, 10000);
@@ -35,12 +36,13 @@ public sealed class EditorOptionsView : UserControl
         editing.Children.Add(new TextBlock { Text = "The tab-stop width is also the indentation unit. Existing text is not converted.", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
         editing.Children.Add(_brackets); editing.Children.Add(_completion);
         var reset = new Button { Content = "Restore defaults", FontSize = 12, MinHeight = 26, Margin = new Thickness(0, 12, 0, 0) };
-        AutomationProperties.SetName(reset, "Restore editor option defaults"); reset.Click += (_, _) => SetOptions(new()); editing.Children.Add(reset);
+        AutomationProperties.SetName(reset, "Restore editor option defaults"); reset.Click += (_, _) => { if (!_disposed) SetOptions(new()); }; editing.Children.Add(reset);
         grid.Children.Add(display); Grid.SetColumn(editing, 1); grid.Children.Add(editing);
         var body = new StackPanel { Spacing = 10 }; body.Children.Add(grid); body.Children.Add(_validation);
         Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, MaxHeight = 450 };
         SetOptions(options);
     }
+    public new void Dispose() { if (_disposed) return; _disposed = true; base.Dispose(); }
     public NumberBox TabSizeInput => _tabSize;
     public NumberBox FontSizeInput => _fontSize;
     public NumberBox RulerColumnInput => _rulerColumn;
@@ -60,6 +62,7 @@ public sealed class EditorOptionsView : UserControl
     }
     public void SetOptions(EditorViewOptions options)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         options.Validate(); _tabSize.Value = options.TabSize; _fontSize.Value = options.FontSize; _rulerColumn.Value = options.RulerColumn;
         _spaces.IsChecked = options.ConvertTabsToSpaces; _wrap.IsChecked = options.WordWrap; _numbers.IsChecked = options.ShowLineNumbers;
         _whitespace.IsChecked = options.ShowWhitespace; _guides.IsChecked = options.ShowIndentGuides; _ruler.IsChecked = options.ShowRuler;
@@ -67,6 +70,7 @@ public sealed class EditorOptionsView : UserControl
     }
     public bool TryGetOptions(out EditorViewOptions options)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         options = default;
         if (!double.IsFinite(_tabSize.Value) || _tabSize.Value != Math.Truncate(_tabSize.Value)
             || !double.IsFinite(_rulerColumn.Value) || _rulerColumn.Value != Math.Truncate(_rulerColumn.Value)

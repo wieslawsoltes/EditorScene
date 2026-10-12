@@ -84,7 +84,12 @@ public sealed partial class EditorPage
                 else if (element is MenuFlyoutSubItem sub) Add("Visible submenu " + sub.Text, sub);
                 else if (element is Button button && button.Content is string caption) Add("Dialog " + caption, button);
                 else if (element is ComboBoxItem choice) Add("Choice " + (choice.Content?.ToString() ?? ""), choice);
-                else if (element is TextBox input && input.Name.Length > 0) Add("Dialog input " + input.Name, input);
+                else if (element is TextBox input)
+                {
+                    if (input.Name.Length > 0) Add("Dialog input " + input.Name, input);
+                    for (DependencyObject? parent = VisualTreeHelper.GetParent(input); parent is not null; parent = VisualTreeHelper.GetParent(parent))
+                        if (parent is NumberBox number) { Add("Option input " + AutomationProperties.GetName(number), input); break; }
+                }
             }
         return new BrowserState
         {
@@ -113,6 +118,7 @@ public sealed partial class EditorPage
             BracketPairs = _active.BracketPairCount, IndentGuides = _active.ShowIndentGuides, Ruler = _active.ShowRuler,
             IconCount = _icons.Count, RegisteredTabCount = _tabControlNames.Count,
             SplitOrientation = _views.Orientation.ToString(), SplitRatio = _views.Ratio, FontSize = _active.FontSize,
+            SecondaryTabSize = _secondary?.TabSize ?? 0, SecondaryConvertTabsToSpaces = _secondary?.ConvertTabsToSpaces ?? false, SecondaryRulerColumn = _secondary?.RulerColumn ?? 0,
             SecondaryReadOnly = _secondary?.IsReadOnly ?? false, SecondaryWordWrap = _secondary?.WordWrap ?? false,
             ToolPaneOpen = _toolPane.Visibility == Visibility.Visible, DiagnosticRowCount = _errors.VisibleCount,
             DiagnosticProjectionBuilds = _errors.ProjectionBuildCount, DiagnosticFilterBuilds = _errors.FilterBuildCount,
@@ -142,6 +148,9 @@ internal sealed class BrowserState
     public string SplitOrientation { get; set; } = "";
     public double SplitRatio { get; set; }
     public double FontSize { get; set; }
+    public int SecondaryTabSize { get; set; }
+    public bool SecondaryConvertTabsToSpaces { get; set; }
+    public int SecondaryRulerColumn { get; set; }
     public bool SecondaryReadOnly { get; set; }
     public bool SecondaryWordWrap { get; set; }
     public bool ToolPaneOpen { get; set; }
