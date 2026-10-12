@@ -13,6 +13,7 @@ internal static class WorkspaceBenchmarks
         var snapshot = document.Snapshot();
         var analysis = LanguageAnalysis.Empty(snapshot) with { Diagnostics = Enumerable.Range(0, 10000).Select(i => new EditorDiagnostic("D" + i, "Diagnostic " + i, IssueSeverity.Warning, new(i * 13, 4))).ToImmutableArray() };
         var table = new DiagnosticTable(snapshot, analysis);
+        DiagnosticNavigationBenchmarks.Add(rows, table);
         Measure("diagnostic_rows_10000", "rebuild_projection", () => GC.KeepAlive(new DiagnosticTable(snapshot, analysis)), "Constructs all 10,000 position-bound data rows. Snapshot line index is warm; rendering and collection binding are excluded.");
         Measure("diagnostic_rows_10000", "reuse_unfiltered_projection", () => { if (table.Filter() != table.Rows) throw new InvalidOperationException("Expected immutable diagnostic reuse"); }, "Returns the existing unfiltered 10,000-row immutable projection, as used on unchanged UI state. This avoids work, not a faster fresh projection; filtered queries still scan their source.");
         var orderedView = new DiagnosticTableView(table);

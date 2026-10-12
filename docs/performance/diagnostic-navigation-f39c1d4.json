@@ -1,0 +1,38 @@
+{
+  "sourceRevision": "f39c1d49e6e5d4f8a83b1b24ba8dcf34c0bd2d5d",
+  "workflowRun": 38207269548,
+  "testJob": 114673469356,
+  "artifactId": 11727782958,
+  "artifactName": "regression-tests",
+  "fullReportPath": "performance.json",
+  "artifactZipSha256ReportedByCI": "8889fdcde9ccc29819d08f9174e8f148b380e79ed58b7d4273c30f2841662db4",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "description": "Exact diagnostic-cursor row extracted from the completed successful regression/benchmark job. This file does not by itself certify the separate browser job or overall workflow status. The complete report retains all prior workloads, including unfavorable results.",
+  "methodology": "10000 next/previous pairs on one preconstructed immutable-result cursor over 10000 diagnostic rows. Initial projection and cursor construction/validation excluded. CPU Stopwatch timings and current-thread managed allocation only. This is a new operation with no old-version baseline; not a speedup claim, native ListView/source-selection/callback/scroll measurement, whole-editor input latency or physical-GPU benchmark.",
+  "rows": [
+    {
+      "scenario": "diagnostic_cursor_cycles_10000",
+      "implementation": "current",
+      "diagnosticCount": 10000,
+      "p50Milliseconds": 0.0261,
+      "p95Milliseconds": 0.0291,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0.0251, 0.0252, 0.0254, 0.0255, 0.0261, 0.0261, 0.0269, 0.0286, 0.0286, 0.0289, 0.0291],
+      "sortedAllocatedBytes": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+  ],
+  "existingCostsNotResolved": {
+    "csharpModelOnlyPreviousP50Milliseconds": 11.5355,
+    "csharpModelOnlyCurrentP50Milliseconds": 11.6231,
+    "csharpModelOnlyPreviousManagedBytes": 1333776,
+    "csharpModelOnlyCurrentManagedBytes": 1948872,
+    "csharpSyntaxUpdatePreviousP95Milliseconds": 2.4833,
+    "csharpSyntaxUpdateCurrentP95Milliseconds": 3.7626,
+    "note": "Earlier slower compiler-construction runs remain recorded in other retained reports. This cursor addition does not resolve the existing compiler allocation and latency tradeoffs or imply that all editor paths are faster."
+  }
+}
