@@ -1,5 +1,4 @@
 using EditorScene.Controls;
-using EditorScene.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -40,7 +39,7 @@ public sealed partial class EditorPage
         Grid.SetColumn(_documentListButton, 1); strip.Children.Add(_documentListButton);
         _closeTabButton = new Button
         {
-            Content = NewIcon(EditorScene.Rendering.Skia.EditorIconKind.Close),
+            Content = NewIcon(EditorIconKind.Close),
             Width = 25, Height = 26, MinHeight = 26, Padding = new Thickness(4), BorderThickness = new Thickness(0)
         };
         _closeTabButton.Click += (_, _) => _ = GuardAsync(CloseDocumentAsync);
@@ -53,7 +52,7 @@ public sealed partial class EditorPage
             if (entry is not null) ActivateDocument(entry);
         };
         _documentList.Opened += (_, _) => QueueDiagnostics();
-        _documentList.Closed += (_, _) => { _active?.FocusEditor(); QueueDiagnostics(); };
+        _documentList.Closed += (_, _) => { if (_loaded) _active?.FocusEditor(); QueueDiagnostics(); };
         _chromePanels.Add(strip);
         return strip;
     }
