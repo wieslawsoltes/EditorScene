@@ -42,9 +42,12 @@ internal static class NativeContextMenuChecks
         allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
         Check(enabled == 10_000 && allocated == 0, "Warm selection command queries allocate no managed memory for 10000 calls");
         editor.NativeEditor.TextArea.ReadOnlySectionProvider = permissions;
+        NativeCommandBenchmarks.Run(editor);
         var flyout = menu.Flyout;
         Check(ReferenceEquals(flyout, menu.Flyout) && menu.BuildCount == 1 && menu.GetCommandItem(EditorCommand.Copy)?.KeyboardAcceleratorTextOverride == "Ctrl+C",
             "One native context menu and its keyboard hints are retained across requests");
+        Check(menu.GetCommandItem(EditorCommand.Copy)?.Icon is PathIcon && menu.GetCommandItem(EditorCommand.Cut)?.Icon is PathIcon,
+            "Native context command icons use original vector paths without a font dependency");
         editor.MacroRecording.Record();
         Check(!editor.GetCommandState(EditorCommand.Copy).IsEnabled && !menu.Open(), "Context menus remain suspended during macro sessions");
         editor.MacroRecording.Cancel();
