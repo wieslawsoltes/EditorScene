@@ -84,10 +84,11 @@ public sealed class EditorStatusBar : UserControl, IDisposable
     {
         if (_disposed) return;
         var editor = _editor;
+        if (editor?.IsDisposed == true) { Editor = null; return; }
         if (editor is null) { _message.Text = _position.Text = _encoding.Text = ""; _last = null; IsEnabled = false; return; }
         if (!IsEnabled) IsEnabled = true;
         var document = editor.Document;
-        var key = new StatusKey(document.Id, document.Revision, editor.CaretOffset, editor.IsOverstrike, editor.IsReadOnly, editor.FontSize, editor.Status, document.Encoding.WebName, _prefix);
+        var key = new StatusKey(document.Id, document.Revision, editor.CaretOffset, editor.IsOverstrike, editor.IsReadOnly, editor.FontSize, editor.Status, document.Encoding.WebName, _prefix, editor.TabSize);
         if (_last == key) return;
         _last = key; RefreshCount++;
         if (_endingDocument != document.Id || _endingRevision != document.Revision)
@@ -97,7 +98,7 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         }
         var location = document.Buffer.GetLocation(editor.CaretOffset);
         // Ch is a line-local character position, not the absolute document offset.
-        _position.Text = $"Ln {location.Line:N0}   Col {location.Column:N0}   Ch {location.Column:N0}";
+        _position.Text = $"Ln {location.Line:N0}   Col {editor.GetCaretTabColumn():N0}   Ch {location.Column:N0}";
         _message.Text = _prefix + (editor.IsReadOnly ? "Read only" : editor.Status);
         _encoding.Text = document.Encoding.WebName.ToUpperInvariant() + "  " + _ending;
         _mode.Content = editor.IsOverstrike ? "OVR" : "INS";
@@ -118,5 +119,5 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         if (_editor is not null) _editor.StateChanged -= StateChanged;
         _editor = null; _last = null; _disposed = true; base.Dispose();
     }
-    private readonly record struct StatusKey(Guid Document, long Revision, int Offset, bool Overwrite, bool ReadOnly, double FontSize, string Status, string Encoding, string Prefix);
+    private readonly record struct StatusKey(Guid Document, long Revision, int Offset, bool Overwrite, bool ReadOnly, double FontSize, string Status, string Encoding, string Prefix, int TabSize);
 }

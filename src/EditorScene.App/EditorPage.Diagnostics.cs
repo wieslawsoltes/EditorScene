@@ -118,6 +118,8 @@ public sealed partial class EditorPage
             DiagnosticProjectionBuilds = _errors.ProjectionBuildCount, DiagnosticFilterBuilds = _errors.FilterBuildCount,
             DiagnosticRenderedTexts = Descendants(_errors.RowsView).OfType<TextBlock>().Select(t => t.Text).Take(200).ToArray(),
             DiagnosticGrid = CaptureDiagnosticGrid(),
+            TabSize = _active.TabSize, ConvertTabsToSpaces = _active.ConvertTabsToSpaces, RulerColumn = _active.RulerColumn,
+            OptionsDialogOpen = _active.IsOptionsDialogOpen, ColumnMapBuilds = _active.ColumnMapBuildCount,
             StatusPosition = _editorStatus.PositionText, StatusRefreshes = _editorStatus.RefreshCount, OverwriteMode = _active.IsOverstrike,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
@@ -147,6 +149,11 @@ internal sealed class BrowserState
     public long DiagnosticProjectionBuilds { get; set; }
     public long DiagnosticFilterBuilds { get; set; }
     public string[] DiagnosticRenderedTexts { get; set; } = [];
+    public int TabSize { get; set; }
+    public bool ConvertTabsToSpaces { get; set; }
+    public int RulerColumn { get; set; }
+    public bool OptionsDialogOpen { get; set; }
+    public long ColumnMapBuilds { get; set; }
     public string StatusPosition { get; set; } = "";
     public long StatusRefreshes { get; set; }
     public bool OverwriteMode { get; set; }

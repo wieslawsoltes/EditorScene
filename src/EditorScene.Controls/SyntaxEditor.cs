@@ -47,7 +47,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
         _editor.TextArea.TextView.PointerPressed += OnPointerPressed;
         _fontSizeCallback = RegisterPropertyChangedCallback(FontSizeProperty, (_, _) => { _editor.FontSize = FontSize; ApplyTheme(); });
         _ownedDocument = new EditorDocument(); Document = _ownedDocument;
-        InitializeMacroSupport(); Loaded += OnLoaded;
+        InitializeMacroSupport(); Loaded += OnLoaded; _editor.OptionChanged += OnNativeOptionChanged;
     }
     public NativeEditor NativeEditor => _editor;
     public EditorDocument Document { get => (EditorDocument)GetValue(DocumentProperty); set => SetValue(DocumentProperty, value ?? throw new ArgumentNullException(nameof(value))); }
@@ -94,7 +94,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
         if (_ownedDocument is not null && !ReferenceEquals(_ownedDocument, document)) { _ownedDocument.Dispose(); _ownedDocument = null; }
         _editor.Document = document.Buffer; _selections = new(document);
         _folding = FoldingManager.Install(_editor.TextArea);
-        _adornments = new(document, _editor.TextArea.TextView.Viewport, document.Indicators) { Theme = Theme, ShowWhitespace = _showWhitespace, ShowIndentGuides = _showIndentGuides, ShowRuler = _showRuler };
+        _adornments = new(document, _editor.TextArea.TextView.Viewport, document.Indicators) { Theme = Theme, ShowWhitespace = _showWhitespace, ShowIndentGuides = _showIndentGuides, ShowRuler = _showRuler, RulerColumn = _rulerColumn };
         document.Changed += OnDocumentChanged;
         ConfigureLanguage(); ApplyTheme();
     }
@@ -138,7 +138,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     private void OnLoaded(object sender, RoutedEventArgs args) { ApplyTheme(); _coordinator?.RequestAnalysis(true); }
     private void OnDocumentChanged(object? sender, EventArgs e)
     {
-        ResetSelectionExpansion();
+        ResetSelectionExpansion(); _columnMap = null;
         if (!_multiEditing) { Selections.Clear(); if (_adornments is not null) _adornments.ExtraSelections = []; }
         _brackets = null; TextChanged?.Invoke(this, EventArgs.Empty); StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -189,6 +189,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     {
         if (_disposed) return;
         ResetSelectionExpansion(); DisposeMacroSupport(); ClosePopups(); _disposed = true; Loaded -= OnLoaded;
+        _editor.OptionChanged -= OnNativeOptionChanged; _columnMap = null;
         _coordinator?.Dispose(); DetachStyles(); _adornments?.Dispose(); _folding?.Dispose();
         Document.Changed -= OnDocumentChanged; _editor.SelectionChanged -= OnSelectionChanged; _editor.InputError -= OnInputError;
         _editor.TextArea.TextEntering -= OnTextEntering; _editor.TextArea.TextEntered -= OnTextEntered; _editor.TextArea.TextView.PointerPressed -= OnPointerPressed;

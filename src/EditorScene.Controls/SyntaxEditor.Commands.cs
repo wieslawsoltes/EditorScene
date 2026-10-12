@@ -30,7 +30,7 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.FindNext: Search.FindNext(); break;
                 case EditorCommand.FindPrevious: Search.FindPrevious(); break;
                 case EditorCommand.GoToLine: GoToLineRequested?.Invoke(this, EventArgs.Empty); return;
-                case EditorCommand.Indent: _editor.TextArea.Session.Indent(); break;
+                case EditorCommand.Indent: IndentWithTabStops(); break;
                 case EditorCommand.Outdent: _editor.TextArea.Session.Indent(true); break;
                 case EditorCommand.Comment: CommentLines(false); break;
                 case EditorCommand.Uncomment: CommentLines(true); break;

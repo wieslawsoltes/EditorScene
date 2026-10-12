@@ -19,7 +19,7 @@ public sealed partial class SyntaxEditor
         var dialog = new ContentDialog { Title = "Text Editor Options", Content = view, XamlRoot = XamlRoot, RequestedTheme = RequestedTheme,
             PrimaryButtonText = "Apply", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
         dialog.PrimaryButtonClick += (_, args) => { if (!view.TryGetOptions(out desired)) args.Cancel = true; };
-        _optionsDialogOpen = true; StateChanged?.Invoke(this, EventArgs.Empty);
+        _optionsDialogOpen = true;
         try
         {
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
@@ -27,7 +27,8 @@ public sealed partial class SyntaxEditor
                 || GetViewOptions() != before || MacroSessionActive)
                 throw new InvalidOperationException("The options target changed while the dialog was open; the pending values were not applied.");
             if (!ApplyViewOptions(desired)) throw new InvalidOperationException("A host callback changed the editor while options were applied; remaining values were not applied.");
-            if (!_disposed) { SetStatus("Editor options applied"); FocusEditor(); }
+            if (!_disposed) SetStatus("Editor options applied");
+            if (!_disposed && ReferenceEquals(Document, document) && ReferenceEquals(SyntaxLanguage, language) && GetViewOptions() == desired) FocusEditor();
         }
         finally { _optionsDialogOpen = false; if (!_disposed) StateChanged?.Invoke(this, EventArgs.Empty); }
     }

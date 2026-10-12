@@ -25,7 +25,7 @@ public sealed partial class SyntaxEditor
         {
             // Each setter can synchronously invoke host code. Compare the entire
             // previously observed settings between stages, not merely this property.
-            for (var step = 0; step < 10; step++)
+            for (var step = 0; step < 13; step++)
             {
                 if (!Current()) return;
                 switch (step)
@@ -40,13 +40,16 @@ public sealed partial class SyntaxEditor
                     case 7: expected = expected with { Completion = desired.Completion }; AutoShowCompletion = desired.Completion; break;
                     case 8: expected = expected with { FontSize = desired.FontSize }; FontSize = desired.FontSize; break;
                     case 9: expected = expected with { Theme = desired.Theme }; Theme = desired.Theme; break;
+                    case 10: expected = expected with { TabSize = desired.TabSize }; TabSize = desired.TabSize; break;
+                    case 11: expected = expected with { Spaces = desired.Spaces }; ConvertTabsToSpaces = desired.Spaces; break;
+                    case 12: expected = expected with { RulerColumn = desired.RulerColumn }; RulerColumn = desired.RulerColumn; break;
                 }
             }
         }
         finally { _copyingViewSettings = false; }
     }
     private static CopiedViewSettings CaptureViewSettings(SyntaxEditor editor) => new(editor.IsReadOnly, editor.WordWrap, editor.ShowLineNumbers,
-        editor.ShowWhitespace, editor.ShowIndentGuides, editor.ShowRuler, editor.AutoCompleteBrackets, editor.AutoShowCompletion, editor.FontSize, editor.Theme);
+        editor.ShowWhitespace, editor.ShowIndentGuides, editor.ShowRuler, editor.AutoCompleteBrackets, editor.AutoShowCompletion, editor.FontSize, editor.Theme, editor.TabSize, editor.ConvertTabsToSpaces, editor.RulerColumn);
     private readonly record struct CopiedViewSettings(bool ReadOnly, bool Wrap, bool Numbers, bool Whitespace, bool Guides, bool Ruler,
-        bool Brackets, bool Completion, double FontSize, EditorTheme Theme);
+        bool Brackets, bool Completion, double FontSize, EditorTheme Theme, int TabSize, bool Spaces, int RulerColumn);
 }
