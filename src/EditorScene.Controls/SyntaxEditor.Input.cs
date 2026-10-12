@@ -56,6 +56,9 @@ public sealed partial class SyntaxEditor
         }
         if (!command && !alt && !shift && e.Key == VirtualKey.Tab && !IsSnippetActive && !IsCompletionOpen && _editor.Options.AcceptsTab)
         { e.Handled = true; _ = ExecuteAsync(EditorCommand.Indent); return; }
+        // Interactive snippet/completion handlers keep their native Backspace policy.
+        if (!command && !alt && !shift && e.Key == VirtualKey.Back && !IsSnippetActive && !IsCompletionOpen)
+        { e.Handled = true; Backspace(); return; }
         EditorCommand? action = null;
         if (alt && shift && !command && e.Key is VirtualKey.Right or VirtualKey.Left)
         { _chord = null; e.Handled = true; _ = ExecuteAsync(e.Key == VirtualKey.Right ? EditorCommand.ExpandSelection : EditorCommand.ContractSelection); return; }
