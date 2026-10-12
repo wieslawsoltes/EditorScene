@@ -7,8 +7,8 @@ namespace EditorScene.Controls;
 /// Native execution still checks permission; querying Paste never reads the clipboard.</summary>
 public readonly record struct EditorCommandState(bool IsEnabled, bool IsChecked = false);
 
-/// <summary>Context menus are suspended during macro sessions. Command surfaces may
-/// use recordable actions while recording/paused, but never during playback.</summary>
+/// <summary>Context menus are suspended during macro sessions. Command surfaces allow
+/// recordable actions while recording, ordinary actions while paused, and none during playback.</summary>
 public enum EditorCommandQueryMode { ContextMenu, CommandSurface }
 
 public sealed partial class SyntaxEditor
@@ -27,7 +27,9 @@ public sealed partial class SyntaxEditor
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
         if (_disposed) return default;
         Document.VerifyAccess();
-        if (MacroSessionActive && (mode == EditorCommandQueryMode.ContextMenu || MacroRecording.State == MacroRecordingState.Playing || !CanRecordEditorCommand(command))) return default;
+        var macro = MacroRecording.State;
+        if (macro != MacroRecordingState.Idle && (mode == EditorCommandQueryMode.ContextMenu || macro == MacroRecordingState.Playing
+            || macro == MacroRecordingState.Recording && !CanRecordEditorCommand(command))) return default;
         var editable = !IsReadOnly && !_editor.IsReadOnly;
         var single = !Selections.IsActive;
         var selection = SelectionLength != 0;
@@ -45,7 +47,6 @@ public sealed partial class SyntaxEditor
             EditorCommand.SelectAll or EditorCommand.SelectLine => new(text),
             EditorCommand.Uppercase or EditorCommand.Lowercase => new(ordinary && selection),
             EditorCommand.ConvertSelectedSpacesToTabs or EditorCommand.ConvertSelectedTabsToSpaces => new(ordinary && selection),
-            // Indent can insert into an empty document and supports the existing per-caret plan.
             EditorCommand.Indent => new(editable && !IsSnippetActive),
             EditorCommand.Outdent => new(ordinary),
             EditorCommand.DuplicateLine or EditorCommand.DeleteLine or EditorCommand.Comment or EditorCommand.Uncomment
