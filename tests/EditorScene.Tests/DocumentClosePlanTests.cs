@@ -96,11 +96,13 @@ public sealed class DocumentClosePlanTests
         Assert.ThrowsAsync<IOException>(async () => { await coordinator.TryRunAsync(_ => throw new IOException("write failed")); });
         Assert.That(coordinator.IsBusy, Is.False);
         using var cancelled = new CancellationTokenSource(); cancelled.Cancel(); var called = false;
-        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        var beforeInvocation = Assert.ThrowsAsync<OperationCanceledException>(async () =>
         { await coordinator.TryRunAsync(_ => { called = true; return Task.FromResult(true); }, cancelled.Token); });
+        Assert.That(beforeInvocation!.CancellationToken, Is.EqualTo(cancelled.Token));
         Assert.That(called, Is.False); Assert.That(coordinator.IsBusy, Is.False);
-        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        var fromTask = Assert.ThrowsAsync<TaskCanceledException>(async () =>
         { await coordinator.TryRunAsync(_ => Task.FromCanceled<bool>(cancelled.Token)); });
+        Assert.That(fromTask!.CancellationToken, Is.EqualTo(cancelled.Token));
         Assert.That(coordinator.IsBusy, Is.False);
         Assert.That(await coordinator.TryRunAsync(_ => Task.FromResult(false)), Is.False);
         Assert.That(await coordinator.TryRunAsync(_ => Task.FromResult(true)), Is.True);
