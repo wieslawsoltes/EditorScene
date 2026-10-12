@@ -1,6 +1,8 @@
 **/bin/
 **/obj/
 **/node_modules/
+**/__pycache__/
+*.py[cod]
 artifacts/
 .vs/
 .idea/
