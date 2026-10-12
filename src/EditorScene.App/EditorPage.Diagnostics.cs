@@ -149,6 +149,9 @@ public sealed partial class EditorPage
             ToolbarGlyphOpacity = _ui.Where(p => p.Key.StartsWith("Toolbar ", StringComparison.Ordinal) && p.Value is Button { Content: UIElement }).ToDictionary(p => p.Key, p => ((UIElement)((Button)p.Value).Content).Opacity),
             VisibleCommandEnabled = visibleCommandEnabled, CommandBindingCount = _commandBindings.Count, CommandBindingDistinct = _commandBindings.DistinctCommandCount,
             CommandBindingQueries = _commandBindings.QueryCount, CommandBindingWrites = _commandBindings.PropertyWriteCount,
+            DocumentTabBuilds = _tabBuildCount, DocumentMenuBuilds = _documentList.ItemBuildCount,
+            DocumentMenuCheckCount = _documentList.Items.OfType<ToggleMenuFlyoutItem>().Count(item => item.IsChecked),
+            DocumentTabOffset = _tabScroll.HorizontalOffset, DocumentTabExtent = _tabScroll.ExtentWidth, DocumentTabViewportWidth = _tabScroll.ViewportWidth,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
     }
@@ -180,6 +183,12 @@ internal sealed class BrowserState
     public int CommandBindingDistinct { get; set; }
     public long CommandBindingQueries { get; set; }
     public long CommandBindingWrites { get; set; }
+    public long DocumentTabBuilds { get; set; }
+    public long DocumentMenuBuilds { get; set; }
+    public int DocumentMenuCheckCount { get; set; }
+    public double DocumentTabOffset { get; set; }
+    public double DocumentTabExtent { get; set; }
+    public double DocumentTabViewportWidth { get; set; }
     public Dictionary<string, NumericOptionState> OptionInputs { get; set; } = [];
     public string OptionsValidation { get; set; } = "";
     public bool ContextMenuOpen { get; set; }
