@@ -83,6 +83,9 @@ if (diagnosticTable.Filter() != diagnosticTable.Rows || !diagnosticTable.IsCurre
 var queryTable = new DiagnosticTable(snapshot, analysis with { Diagnostics = [new("B", "second", IssueSeverity.Warning, new(1, 1)), new("A", "first", IssueSeverity.Error, new(0, 1))] });
 var queryView = new DiagnosticTableView(queryTable);
 var sorted = queryView.Query(column: DiagnosticSortColumn.Code);
+var cursor = new DiagnosticNavigationCursor(sorted);
+if (!cursor.TryMove(out var firstDiagnostic) || firstDiagnostic.Code != "A" || !cursor.TryMove(out var secondDiagnostic) || secondDiagnostic.Code != "B") throw new Exception("Packaged diagnostic cursor failed.");
+if (cursor.TryMove(out _, wrap: false) || !cursor.TryMove(out firstDiagnostic) || firstDiagnostic.Code != "A") throw new Exception("Packaged diagnostic cursor boundaries failed.");
 if (sorted[0].Code != "A" || sorted[1].Code != "B" || queryView.Query(column: DiagnosticSortColumn.Code) != sorted || queryView.SortBuildCount != 1) throw new Exception("Packaged diagnostic ordering/cache failed.");
 if (queryView.Query(DiagnosticVisibility.Warning, "second", DiagnosticSortColumn.Code).Single().Code != "B" || queryView.SortBuildCount != 1) throw new Exception("Packaged ordered filtering failed.");
 using var glyphBitmap = new SkiaSharp.SKBitmap(16, 16); using var glyphCanvas = new SkiaSharp.SKCanvas(glyphBitmap);
@@ -129,6 +132,9 @@ public sealed class ConsumerControl : UserControl
         var diagnostics = new DiagnosticList { Editor = Editor };
         diagnostics.SortBy(DiagnosticSortColumn.Line, DiagnosticSortDirection.Descending);
         diagnostics.SetColumnWidth(DiagnosticSortColumn.File, 180);
+        _ = diagnostics.NavigateNextDiagnostic(backwards: true, wrap: false);
+        _ = diagnostics.PreviousDiagnosticButton;
+        _ = diagnostics.NextDiagnosticButton;
         _ = diagnostics.GetSortButton(DiagnosticSortColumn.Code);
         _ = diagnostics.GetColumnGrip(DiagnosticSortColumn.File);
         Resources.MergedDictionaries.Add(new DiagnosticTemplates());
