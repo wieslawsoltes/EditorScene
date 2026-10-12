@@ -43,7 +43,9 @@ public sealed class EditorContextMenu : IDisposable
         if (_opening || _editor.IsDisposed || !_editor.IsLoaded || _editor.IsOptionsDialogOpen || !_editor.IsDefaultContextMenuEnabled
             || _editor.MacroRecording.State != EditorScene.Text.Macros.MacroRecordingState.Idle) return false;
         var view = _editor.NativeEditor.TextArea.TextView;
+        if (IsOpen) Close();
         _opening = true; _generation++;
+        var opened = false;
         try
         {
             var before = Capture();
@@ -72,10 +74,10 @@ public sealed class EditorContextMenu : IDisposable
             origin = new Point(Math.Clamp(origin.X, 0, Math.Max(0, view.ActualWidth - 1)), Math.Clamp(origin.Y, 0, Math.Max(0, view.ActualHeight - 1)));
             if (!_subscribed) { _editor.StateChanged += OnStateChanged; _editor.Unloaded += OnUnloaded; _subscribed = true; }
             menu.ShowAt(view, new FlyoutShowOptions { Position = origin });
-            return true;
+            opened = true; return true;
         }
         catch { Close(); throw; }
-        finally { _opening = false; }
+        finally { _opening = false; if (!opened) { _lease = null; Detach(); } }
     }
     private Lease Capture()
     {
@@ -142,7 +144,7 @@ public sealed class EditorContextMenu : IDisposable
     { var group = new MenuFlyoutSubItem { Text = title, FontSize = 12 }; menu.Items.Add(group); return group; }
     private void Add(IList<MenuFlyoutItemBase> items, string text, EditorCommand command, string shortcut = "")
     {
-        var item = new MenuFlyoutItem { Text = text, Tag = command, FontSize = 12, KeyboardAcceleratorTextOverride = shortcut };
+        var item = new MenuFlyoutItem { Text = text, Tag = command, FontSize = 12, KeyboardAcceleratorTextOverride = shortcut, Icon = EditorCommandIcon.Create(command) };
         AutomationProperties.SetName(item, "Editor context " + text); item.Click += OnClick; _items.Add(command, item); items.Add(item);
     }
     public void Dispose()
