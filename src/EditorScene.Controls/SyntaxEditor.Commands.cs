@@ -62,6 +62,8 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.ToggleIndentGuides: ShowIndentGuides = !ShowIndentGuides; break;
                 case EditorCommand.ToggleRuler: ShowRuler = !ShowRuler; break;
                 case EditorCommand.ToggleReadOnly: IsReadOnly = !IsReadOnly; break;
+                case EditorCommand.ToggleDefaultContextMenu: IsDefaultContextMenuEnabled = !IsDefaultContextMenuEnabled; break;
+                case EditorCommand.ToggleSecondaryPointerCaret: CanMoveCaretForSecondaryPointerButton = !CanMoveCaretForSecondaryPointerButton; break;
                 case EditorCommand.ZoomIn: FontSize = Math.Min(40, FontSize + 1); break;
                 case EditorCommand.ZoomOut: FontSize = Math.Max(8, FontSize - 1); break;
                 case EditorCommand.ResetZoom: FontSize = 13; break;

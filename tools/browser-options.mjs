@@ -94,6 +94,12 @@ export async function checkEditorOptions({page,state,wait,textIs,paste,click,com
   await open();await number('Ruler column',0);await click('Dialog Apply');
   await wait(()=>globalThis.__editorSceneState?.OptionsDialogOpen&&globalThis.__editorSceneState.OptionsValidation.length>0);
   assert.equal((await state()).RulerColumn,original.RulerColumn,'Invalid numeric draft must not be silently clamped/applied');
+  await number('Ruler column','invalid');await click('Dialog Apply');
+  await wait(()=>globalThis.__editorSceneState?.OptionsDialogOpen&&globalThis.__editorSceneState.OptionsValidation.length>0);
+  assert.equal((await state()).RulerColumn,original.RulerColumn,'Invalid visible text must not reuse the last valid NumberBox value');
+  await reset();
+  await wait(()=>globalThis.__editorSceneState?.OptionInputs?.['Ruler column']?.Text==='120');
+  checks.push('Invalid numeric text and out-of-range drafts are rejected, and Restore Defaults clears the visible draft');
   await number('Tab and indent size',8);await number('Ruler column',80);
   await toggle('Insert spaces instead of tabs');await toggle('Show column ruler');
   await click('Dialog Apply');await wait(()=>globalThis.__editorSceneState?.OptionsDialogOpen===false&&globalThis.__editorSceneState.TabSize===8&&globalThis.__editorSceneState.ConvertTabsToSpaces&&globalThis.__editorSceneState.RulerColumn===80);

@@ -56,6 +56,8 @@ public sealed partial class SyntaxEditor
             EditorCommand.ToggleIndentGuides => new(true, ShowIndentGuides),
             EditorCommand.ToggleRuler => new(true, ShowRuler),
             EditorCommand.ToggleReadOnly => new(true, IsReadOnly),
+            EditorCommand.ToggleDefaultContextMenu => new(true, IsDefaultContextMenuEnabled),
+            EditorCommand.ToggleSecondaryPointerCaret => new(true, CanMoveCaretForSecondaryPointerButton),
             EditorCommand.ZoomIn => new(FontSize < 40),
             EditorCommand.ZoomOut => new(FontSize > 8),
             EditorCommand.ResetZoom => new(FontSize != 13),

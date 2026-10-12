@@ -11,5 +11,6 @@ public enum EditorCommand
     ToggleIndentGuides, ToggleRuler, ToggleReadOnly, ZoomIn, ZoomOut, ResetZoom,
     SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf,
     SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket, ExpandSelection, ContractSelection,
-    TabifySelectedLines, UntabifySelectedLines, ConvertSelectedSpacesToTabs, ConvertSelectedTabsToSpaces
+    TabifySelectedLines, UntabifySelectedLines, ConvertSelectedSpacesToTabs, ConvertSelectedTabsToSpaces,
+    ToggleDefaultContextMenu, ToggleSecondaryPointerCaret
 }

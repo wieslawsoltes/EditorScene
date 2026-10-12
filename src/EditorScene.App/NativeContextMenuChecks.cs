@@ -5,6 +5,7 @@ using EditorScene.Rendering.Skia;
 using EditorScene.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using UnoEdit.Document;
 using UnoEdit.Editing;
 using Windows.Foundation;
@@ -58,6 +59,12 @@ internal static class NativeContextMenuChecks
         split.IsDefaultContextMenuEnabled = true;
         Check(!editor.IsDefaultContextMenuEnabled && split.ContextMenuBuildCount == 0, "Split context preferences remain independent and do not eagerly allocate a menu");
         editor.IsDefaultContextMenuEnabled = true; editor.CanMoveCaretForSecondaryPointerButton = true;
+        await editor.ExecuteAsync(EditorCommand.ToggleDefaultContextMenu);
+        await editor.ExecuteAsync(EditorCommand.ToggleSecondaryPointerCaret);
+        Check(!editor.GetCommandState(EditorCommand.ToggleDefaultContextMenu).IsChecked && !editor.GetCommandState(EditorCommand.ToggleSecondaryPointerCaret).IsChecked,
+            "Native context preference commands expose their actual toggle state");
+        await editor.ExecuteAsync(EditorCommand.ToggleDefaultContextMenu);
+        await editor.ExecuteAsync(EditorCommand.ToggleSecondaryPointerCaret);
         using var panel = new EditorOptionsView(new());
         panel.RulerColumnInput.Value = 0;
         Check(panel.RulerColumnInput.Value == 0 && !panel.TryGetOptions(out _), "Invalid numeric draft remains invalid instead of silently coercing to its minimum");
@@ -102,6 +109,36 @@ internal static class NativeContextMenuChecks
             Check(rejected && !editor.IsDisposed && replacement.Buffer.Text == "replacement", "Disposing a context surface does not dispose its caller-owned editor or document");
         }
         finally { editor.Loaded -= Loaded; App.MainWindow.Content = previous; }
+        using var drafts = new EditorOptionsView(new() { RulerColumn = 80 });
+        var draftLoaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void DraftLoaded(object sender, RoutedEventArgs args) => draftLoaded.TrySetResult();
+        drafts.Loaded += DraftLoaded; App.MainWindow.Content = drafts;
+        try
+        {
+            await draftLoaded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var ruler = Input(drafts.RulerColumnInput)!;
+            ruler.Text = "invalid";
+            Check(drafts.RulerColumnInput.Value == 80 && !drafts.TryGetOptions(out _), "Visible invalid numeric text cannot reuse the old NumberBox value before blur");
+            drafts.SetOptions(new() { RulerColumn = 80 });
+            Check(ruler.Text == "80" && drafts.TryGetOptions(out var resetDraft) && resetDraft.RulerColumn == 80, "Same-value option reset replaces invalid visible text");
+            ruler.Text = "96";
+            Check(drafts.TryGetOptions(out var uncommitted) && uncommitted.RulerColumn == 96, "Valid visible numeric drafts are read before native value commit");
+            Input(drafts.TabSizeInput)!.Text = "3.5";
+            Check(!drafts.TryGetOptions(out _), "Fractional visible tab-size drafts are rejected before native formatting can round them");
+            drafts.SetOptions(new()); Input(drafts.FontSizeInput)!.Text = "";
+            Check(!drafts.TryGetOptions(out _), "Empty realized numeric input cannot reuse its prior font size");
+        }
+        finally { drafts.Loaded -= DraftLoaded; App.MainWindow.Content = previous; }
+        static TextBox? Input(DependencyObject parent)
+        {
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is TextBox { Name: "InputBox" } value) return value;
+                if (Input(child) is { } nested) return nested;
+            }
+            return null;
+        }
     }
     private sealed class ProbePermissions(Action onQuery) : IReadOnlySectionProvider
     {

@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.Globalization.NumberFormatting;
 
 namespace EditorScene.Controls;
 
@@ -110,7 +112,7 @@ public sealed class EditorOptionsView : UserControl, IDisposable
     public void SetOptions(EditorViewOptions options)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        options.Validate(); _tabSize.Value = options.TabSize; _fontSize.Value = options.FontSize; _rulerColumn.Value = options.RulerColumn;
+        options.Validate(); SetNumber(_tabSize, options.TabSize); SetNumber(_fontSize, options.FontSize); SetNumber(_rulerColumn, options.RulerColumn);
         _spaces.IsChecked = options.ConvertTabsToSpaces; _wrap.IsChecked = options.WordWrap; _numbers.IsChecked = options.ShowLineNumbers;
         _whitespace.IsChecked = options.ShowWhitespace; _guides.IsChecked = options.ShowIndentGuides; _ruler.IsChecked = options.ShowRuler;
         _softBackspace.IsChecked = options.CanBackspaceOverSpacesToTabStop; _softBackspace.IsEnabled = options.ConvertTabsToSpaces;
@@ -120,21 +122,50 @@ public sealed class EditorOptionsView : UserControl, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         options = default;
-        if (!double.IsFinite(_tabSize.Value) || _tabSize.Value != Math.Truncate(_tabSize.Value)
-            || !double.IsFinite(_rulerColumn.Value) || _rulerColumn.Value != Math.Truncate(_rulerColumn.Value)
-            || !double.IsFinite(_fontSize.Value))
+        var tabSize = ReadNumber(_tabSize); var rulerColumn = ReadNumber(_rulerColumn); var fontSize = ReadNumber(_fontSize);
+        if (!double.IsFinite(tabSize) || tabSize != Math.Truncate(tabSize)
+            || !double.IsFinite(rulerColumn) || rulerColumn != Math.Truncate(rulerColumn)
+            || !double.IsFinite(fontSize))
         { _validation.Text = "Enter a whole-number tab/ruler value and a valid font size."; return false; }
         try
         {
-            options = new() { TabSize = checked((int)_tabSize.Value), ConvertTabsToSpaces = _spaces.IsChecked == true,
+            options = new() { TabSize = checked((int)tabSize), ConvertTabsToSpaces = _spaces.IsChecked == true,
                 CanBackspaceOverSpacesToTabStop = _softBackspace.IsChecked == true,
-                FontSize = _fontSize.Value, WordWrap = _wrap.IsChecked == true, ShowLineNumbers = _numbers.IsChecked == true,
+                FontSize = fontSize, WordWrap = _wrap.IsChecked == true, ShowLineNumbers = _numbers.IsChecked == true,
                 ShowWhitespace = _whitespace.IsChecked == true, ShowIndentGuides = _guides.IsChecked == true,
-                ShowRuler = _ruler.IsChecked == true, RulerColumn = checked((int)_rulerColumn.Value),
+                ShowRuler = _ruler.IsChecked == true, RulerColumn = checked((int)rulerColumn),
                 AutoCompleteBrackets = _brackets.IsChecked == true, AutoShowCompletion = _completion.IsChecked == true };
             options.Validate(); _validation.Text = string.Empty; return true;
         }
         catch (Exception error) when (error is ArgumentOutOfRangeException or OverflowException)
         { options = default; _validation.Text = "Tab width: 1–1000. Font size: 8–40. Ruler column: 1–10000."; return false; }
     }
+    private static double ReadNumber(NumberBox input)
+    {
+        // Disabled coercion intentionally leaves Value unchanged for invalid
+        // text. Validate the realized draft, including before blur, rather than
+        // accidentally accepting that stale numeric value. Unloaded host panels
+        // have no text draft yet and use their explicitly assigned Value.
+        if (FindNumberInput(input) is not { } editor) return input.Value;
+        var text = editor.Text.Trim();
+        return text.Length == 0 || input.NumberFormatter is not INumberParser parser
+            ? double.NaN : parser.ParseDouble(text) ?? double.NaN;
+    }
+    private static void SetNumber(NumberBox input, double value)
+    {
+        input.Value = value;
+        // Same-value assignment does not reset a stale invalid visible draft.
+        if (FindNumberInput(input) is { } editor) editor.Text = input.NumberFormatter.FormatDouble(value);
+    }
+    private static TextBox? FindNumberInput(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is TextBox { Name: "InputBox" } input) return input;
+            if (FindNumberInput(child) is { } nested) return nested;
+        }
+        return null;
+    }
+
 }

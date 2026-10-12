@@ -49,9 +49,11 @@ export async function checkContextMenu({page,state,wait,textIs,paste,click,comma
   await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.ContextMenuOpen===false);
   checks.push('Real right-click input retains a containing selection and honors optional outside-selection caret movement');
   await command('View','Default Context Menu');await wait(()=>globalThis.__editorSceneState?.ContextMenuEnabled===false);
-  const renders=(await state()).RenderCount;await page.keyboard.press('Shift+F10');
-  // Require another native observation after key dispatch, not an immediate stale read.
-  await page.keyboard.press('ArrowLeft');await wait(n=>globalThis.__editorSceneState?.RenderCount>n,renders);
+  await wait(()=>globalThis.__editorSceneState?.FocusedControl?.endsWith('.TextArea'));
+  const caret=(await state()).CaretOffset;await page.keyboard.press('Shift+F10');
+  // Require actual editor navigation after the disabled key request, not a
+  // repaint counter or an immediate stale read. Do not manually restore focus.
+  await page.keyboard.press('ArrowLeft');await wait(n=>globalThis.__editorSceneState?.CaretOffset===n-1,caret);
   assert.equal((await state()).ContextMenuOpen,false);assert.equal((await state()).OpenMenuCount,0);
   await command('View','Default Context Menu');await wait(()=>globalThis.__editorSceneState?.ContextMenuEnabled);
   await focusEditor();await page.keyboard.press('Control+Home');for(let i=0;i<5;i++)await page.keyboard.press('Shift+ArrowRight');
