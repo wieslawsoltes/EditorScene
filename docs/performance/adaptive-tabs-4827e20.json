@@ -1,0 +1,31 @@
+{
+  "sourceRevision": "4827e20ff34c1869eeaf243c6d5b60acc5d0b92a",
+  "workflowRun": 38290860805,
+  "regressionJob": 114950651640,
+  "regressionTestsPassed": 759,
+  "artifactId": 11765097805,
+  "artifactName": "regression-tests",
+  "artifactZipSha256ReportedByCI": "82614a30ad4df7aea81f1c76d02380672e8e31a99c679c23e455cef4e78f2fd3",
+  "fullRawReportPath": "performance.json",
+  "provenance": "Rounded summaries and raw samples were read from the completed regression job log. The complete raw report is in the artifact. Local archive extraction and independent ZIP verification were unavailable. This source's browser job was superseded during publishing; successful regression evidence is not a claim of a passing complete workflow or deployed source.",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "processors": 4,
+  "samples": 11,
+  "warmups": 3,
+  "units": "Milliseconds per line-map construction, current-thread managed bytes; no native UI layout or GPU work.",
+  "baseline": "previous_span reproduces the immediately preceding constructor and field shape from 5dab80efcf3859922d1066ca87ed5ee36caeeb8b. It includes lazy tab lists, leading-whitespace metadata, pooled reader and cleared buffer return. Historical previous_scalar measurements remain in the full report but are not substituted for the directly preceding baseline here.",
+  "methodology": "Same immutable snapshots, tab width 4, warmed shared reader pool, three warmups, eleven sequential samples per implementation, result validation included. Document/snapshot construction and unrelated query methods excluded. Sequential grouping and hosted-runner variation limit conclusions; observed p95 is the largest of eleven samples, not a population guarantee.",
+  "rows": [
+    {"scenario":"tab_build_sparse_100003","previousP50":0.0186,"currentP50":0.0340,"previousP95":0.0349,"currentP95":0.0355,"previousBytes":720,"currentBytes":720},
+    {"scenario":"tab_build_no_tabs_100000","previousP50":0.0245,"currentP50":0.0336,"previousP95":0.0255,"currentP95":0.0452,"previousBytes":488,"currentBytes":488},
+    {"scenario":"tab_build_indentation_100000","previousP50":0.0404,"currentP50":0.0420,"previousP95":0.0422,"currentP95":0.0513,"previousBytes":488,"currentBytes":488},
+    {"scenario":"tab_build_dense_100000","previousP50":0.3817,"currentP50":0.2777,"previousP95":0.3935,"currentP95":0.4334,"previousBytes":1087656,"currentBytes":1087656},
+    {"scenario":"tab_build_all_tabs_100000","previousP50":1.4426,"currentP50":0.7760,"previousP95":1.5320,"currentP95":1.8491,"previousBytes":4347048,"currentBytes":4347048},
+    {"scenario":"tab_build_mixed_chunks_98304","previousP50":0.8175,"currentP50":0.3402,"previousP95":1.0346,"currentP95":0.5748,"previousBytes":2163960,"currentBytes":2163960},
+    {"scenario":"tab_build_sparse_prefix_dense_tail_98304","previousP50":1.6543,"currentP50":0.8834,"previousP95":7.1933,"currentP95":6.1312,"previousBytes":4289832,"currentBytes":4289832}
+  ],
+  "interpretation": "Dense and mixed-input medians improved in this run, but sparse/tab-free/indentation medians regressed and dense/all-tab observed p95 was worse. Allocations are unchanged. The bounded density sample trades a small fixed sampling cost for fewer tiny span searches in dense chunks; it is not a universal speedup or evidence that all performance issues are resolved.",
+  "otherUnresolvedCosts": "The same complete report retains the model-only compiler regression and all earlier workloads. This change does not address them, nor does it demonstrate physical-GPU, frame-rate, whole-editor input-latency or Actipro performance parity."
+}
