@@ -2,6 +2,7 @@ using System.Text;
 using EditorScene.Controls;
 using EditorScene.Text;
 using Windows.Storage;
+using Windows.System;
 
 namespace EditorScene.App;
 
@@ -33,7 +34,14 @@ internal static class NativeStreamingSaveChecks
             using var empty = new EditorDocument(); var emptyContent = SnapshotSaveContent.Create(empty.Snapshot(), new UnicodeEncoding(false, true, true));
             await EditorPage.WritePreparedFileAsync(file, emptyContent);
             Check((await ReadBytesAsync()).SequenceEqual(new byte[] { 255, 254 }), "Empty encoded native save contains only its selected BOM");
-            Check(EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.F12, true, true, false) && !EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.S, true, false, true) && !EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.S, true, true, false), "Save All uses its nontext shortcut without consuming AltGr-letter or existing Save As gestures");
+            var gesturesMatch = true;
+            foreach (var key in Enum.GetValues<VirtualKey>())
+                for (var modifiers = 0; modifiers < 8; modifiers++)
+                {
+                    var control = (modifiers & 1) != 0; var shift = (modifiers & 2) != 0; var alt = (modifiers & 4) != 0;
+                    gesturesMatch &= EditorPage.IsSaveAllGesture(key, control, shift, alt) == (key == VirtualKey.F12 && modifiers == 3);
+                }
+            Check(gesturesMatch, "Only Ctrl+Shift+F12 is classified as Save All; AltGr-letter, Save As and other modifiers are not consumed");
             var firstIcon = EditorFileIcons.CreateSaveAll(); var secondIcon = EditorFileIcons.CreateSaveAll();
             Check(!ReferenceEquals(firstIcon, secondIcon) && firstIcon.Data is not null && secondIcon.Data is not null, "Save All native vector controls are independent and need no icon font");
             var plan = DocumentSavePlan.Create([new(document.Id, true), new(empty.Id, false)]);
