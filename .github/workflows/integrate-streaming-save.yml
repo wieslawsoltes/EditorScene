@@ -34,8 +34,8 @@ jobs:
               '        Item(file, "Save As…", async () => { await SaveDocumentAsync(true); });\n        AddSaveAllMenu(file);')
           p='src/EditorScene.App/EditorPage.Workspace.cs'
           lines=[line for line in Path(p).read_text().splitlines() if 'Tool("Save",' in line]
-          assert len(lines)==1
-          edit(p,lines[0],lines[0]+'\n        AddSaveAllTool();')
+          assert len(lines)==1 and lines[0].count('ToolSeparator();')==1
+          edit(p,lines[0],lines[0].replace('ToolSeparator();','AddSaveAllTool(); ToolSeparator();'))
           edit('src/EditorScene.App/EditorPage.ToolbarOverflow.cs','"New" or "Open" or "Save" => "File",','"New" or "Open" or "Save" or "Save All" => "File",')
           edit('src/EditorScene.App/EditorPage.DocumentNavigation.cs','        if (args.Handled || !_loaded || _dialog is not null) return;',
               '        if (args.Handled || !_loaded || _dialog is not null) return;\n        if (HandleSaveAllKey(args)) { args.Handled = true; return; }')
@@ -44,14 +44,16 @@ jobs:
           p='src/EditorScene.App/EditorPage.cs'
           edit(p,'document.Changed += (_, _) => { RebuildTabCaptions(); QueueDiagnostics(); };',
               'document.Changed += (_, _) => { RebuildTabCaptions(); RefreshSaveAllControls(); QueueDiagnostics(); };')
-          edit(p,'    private void UpdateStatus()\n    {','    private void UpdateStatus()\n    {\n        RefreshSaveAllControls();')
+          edit(p,'    private void UpdateStatus() => UpdateClassicStatus();','    private void UpdateStatus() { RefreshSaveAllControls(); UpdateClassicStatus(); }')
           p='src/EditorScene.App/EditorPage.Diagnostics.cs'
           edit(p,'            DocumentOrder = _documents.Select(d => d.Document.FileName).ToArray(), DocumentOperationBusy = _documentOperations.IsBusy,',
               '            DocumentOrder = _documents.Select(d => d.Document.FileName).ToArray(), DocumentOperationBusy = _documentOperations.IsBusy,\n            DocumentModified = _documents.Select(d => d.Document.IsModified).ToArray(), SaveAllRunning = _saveAllRunning, SaveAllTotal = _saveAllTotal, SaveAllCompleted = _saveAllCompleted,')
           edit(p,'    public string[] DocumentOrder { get; set; } = [];',
               '    public string[] DocumentOrder { get; set; } = [];\n    public bool[] DocumentModified { get; set; } = [];\n    public bool SaveAllRunning { get; set; }\n    public int SaveAllTotal { get; set; }\n    public int SaveAllCompleted { get; set; }')
           edit('src/EditorScene.App/NativeEditorChecks.cs','        NativeDocumentTabMenuChecks.Run(checks);','        NativeDocumentTabMenuChecks.Run(checks);\n        await NativeStreamingSaveChecks.RunAsync(checks);')
-          edit('tools/build.py','if len(checks) < 372','if len(checks) < 380')
+          edit('src/EditorScene.App/NativeStreamingSaveChecks.cs','            var firstIcon = EditorFileIcons.CreateSaveAll();',
+              '            Check(EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.F12, true, true, false) && !EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.S, true, false, true) && !EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.S, true, true, false), "Save All uses its nontext shortcut without consuming AltGr-letter or existing Save As gestures");\n            var firstIcon = EditorFileIcons.CreateSaveAll();')
+          edit('tools/build.py','if len(checks) < 372','if len(checks) < 381')
           p='tools/browser-smoke.mjs'
           edit(p,"import {checkDocumentClosing} from './browser-document-closing.mjs';", "import {checkDocumentClosing} from './browser-document-closing.mjs';\nimport {checkSaveAll} from './browser-save-all.mjs';")
           edit(p,'  await checkDocumentClosing({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});',
@@ -64,7 +66,7 @@ jobs:
           await saveContent.WriteToAsync(savedBytes);
           if (System.Text.Encoding.UTF8.GetString(savedBytes.ToArray()) != snapshot.GetText(0, snapshot.Length)) throw new Exception("Packaged snapshot streaming failed.");
           var savePlan = DocumentSavePlan.Create([new(document.Id, true)]);
-          if (savePlan.DocumentIds.Single() != document.Id) throw new Exception("Packaged Save All planning failed.");''')
+          if (savePlan.DocumentIds.Single() != document.Id || !await savePlan.ExecuteAsync((id, token) => Task.FromResult(id == document.Id))) throw new Exception("Packaged Save All planning failed.");''')
           edit(p,'        Commands.Editor = Editor;','        _ = EditorFileIcons.CreateSaveAll();\n        Commands.Editor = Editor;')
           for path,text in files.items(): Path(path).write_text(text)
           PY
