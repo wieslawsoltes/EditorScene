@@ -99,6 +99,26 @@ public sealed partial class EditorPage
         }
     }
 
+    internal static FileSavePicker CreateDocumentSavePicker(string fileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        // Pass the extension once, through FileTypeChoices. Uno's download picker
+        // appends it unconditionally; passing "name.cs" as the suggestion produced
+        // "name.cs.cs" after every save. Preserve preceding dots and Unicode.
+        var name = Path.GetFileName(fileName.Replace('\\', '/'));
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A document filename is required.", nameof(fileName));
+        var dot = name.LastIndexOf('.');
+        var hasExtension = dot > 0 && dot < name.Length - 1;
+        var picker = new FileSavePicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = hasExtension ? name[..dot] : name
+        };
+        // Keep the existing text-file fallback for names without an extension.
+        picker.FileTypeChoices.Add("Text document", new List<string> { hasExtension ? name[dot..] : ".txt" });
+        return picker;
+    }
+
     private async Task<bool> SaveDocumentCoreAsync(WorkspaceDocument entry, bool saveAs)
     {
         if (!_documents.Contains(entry)) return false;
@@ -109,9 +129,7 @@ public sealed partial class EditorPage
 #endif
         if (file is null || saveAs)
         {
-            var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary, SuggestedFileName = entry.Document.FileName };
-            var extension = Path.GetExtension(entry.Document.FileName); if (string.IsNullOrEmpty(extension)) extension = ".txt";
-            picker.FileTypeChoices.Add("Text document", new List<string> { extension });
+            var picker = CreateDocumentSavePicker(entry.Document.FileName);
             file = await picker.PickSaveFileAsync(); if (file is null) return false;
         }
         if (!_documents.Contains(entry)) return false;
