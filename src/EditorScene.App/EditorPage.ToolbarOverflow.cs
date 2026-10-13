@@ -30,7 +30,11 @@ public sealed partial class EditorPage
         if (!_toolbarGroups.TryGetValue(group, out var submenu))
         {
             submenu = new MenuFlyoutSubItem { Text = group, FontSize = 12 };
-            submenu.PreviewKeyDown += OnToolbarGroupPreviewKeyDown;
+            // Native popup processing may mark Escape handled before it tunnels
+            // to its focused group. Still observe it, but only dismiss our root
+            // when no separate owned child popup exists at the start of the key.
+            submenu.AddHandler(UIElement.PreviewKeyDownEvent,
+                new KeyEventHandler(OnToolbarGroupPreviewKeyDown), handledEventsToo: true);
             _toolbarGroups.Add(group, submenu); _toolbarOverflow.Items.Add(submenu);
         }
         submenu.Items.Add(item);
@@ -38,21 +42,26 @@ public sealed partial class EditorPage
 
     private void OnToolbarGroupPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Handled || args.Key != VirtualKey.Escape || sender is not MenuFlyoutSubItem group
-            || !group.IsLoaded || group.XamlRoot is not { } root
+        if (args.Key != VirtualKey.Escape || sender is not MenuFlyoutSubItem group
+            || !_toolbarOverflow.Items.Contains(group) || XamlRoot is not { } root
             || !ReferenceEquals(FocusManager.GetFocusedElement(root), group)) return;
 
-        // Uno can leave the root menu open when Escape reaches the focused owner
-        // of an already closed submenu. Handle only that root-level case. The
-        // first Escape belongs to the native child presenter, even if its owner
-        // still has focus. Inspect actual open popups, not delayed diagnostics or
-        // cached menu state; never hide a parent while an owned child is open.
+        var rootOpen = false; var childOpen = false;
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
         {
             if (!popup.IsOpen || popup.Child is not FrameworkElement child) continue;
+            var containsOwner = false; var containsChildItem = false;
             foreach (var element in Descendants(child).Prepend(child))
-                if (element is MenuFlyoutItemBase item && group.Items.Contains(item)) return;
+            {
+                if (ReferenceEquals(element, group)) containsOwner = true;
+                else if (element is MenuFlyoutItemBase item && group.Items.Contains(item)) containsChildItem = true;
+            }
+            if (containsOwner) rootOpen = true;
+            // A retained child in the root's visual/logical subtree is not proof
+            // of an open submenu. Require a distinct, actually open popup.
+            else if (containsChildItem) childOpen = true;
         }
+        if (!rootOpen || childOpen) return;
         args.Handled = true;
         _toolbarOverflow.Hide();
         QueueDiagnostics();
