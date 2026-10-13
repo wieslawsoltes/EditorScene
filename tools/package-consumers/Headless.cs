@@ -9,6 +9,14 @@ using var document = new EditorDocument("using System; class C { int M() => Math
 var snapshot = document.Snapshot();
 var delimiterPlan = LineEndingEditPlan.Create(snapshot, "\n");
 if (delimiterPlan.DocumentId != document.Id || delimiterPlan.Revision != snapshot.Revision) throw new Exception("Packaged line-ending planning failed.");
+using var endingDocument = new EditorDocument("a\r\nb\rc\n");
+var endingSnapshot = endingDocument.Snapshot(); var endingInfo = endingSnapshot.GetLineEndings();
+if (endingInfo.Kind != LineEndingKind.Mixed || endingInfo.DelimiterCount != 3 || endingSnapshot.HasUniformLineTerminators || endingSnapshot.InferredLineTerminator != "\r\n") throw new Exception("Packaged line-ending metadata failed.");
+endingDocument.Buffer.Remove(2, 1);
+var changedEndings = endingDocument.Snapshot().GetLineEndings();
+if (changedEndings.CrCount != 2 || changedEndings.CrLfCount != 0 || endingInfo.CrLfCount != 1) throw new Exception("Packaged incremental/frozen metadata failed.");
+LineEndingEditPlan.Create(endingDocument.Snapshot(), "\n").Apply(endingDocument);
+if (!endingDocument.Snapshot().HasUniformLineTerminators || endingDocument.Buffer.Text != "a\nb\nc\n") throw new Exception("Packaged cached-metadata conversion failed.");
 if (!LineNavigationTarget.TryParse(snapshot, "1:2", out var lineTarget, out _) || lineTarget.Offset != 1 || !lineTarget.IsCurrent(snapshot)) throw new Exception("Packaged line navigation failed.");
 var saveContent = SnapshotSaveContent.Create(snapshot, new System.Text.UTF8Encoding(false, true));
 using var savedBytes = new MemoryStream();
