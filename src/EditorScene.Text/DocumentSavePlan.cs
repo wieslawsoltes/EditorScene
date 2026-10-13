@@ -24,4 +24,23 @@ public sealed class DocumentSavePlan
         }
         return new(targets.ToImmutable());
     }
+
+    /// <summary>Visit frozen targets sequentially. False stops before later targets; cancellation
+    /// and exceptions propagate. Earlier successful saves are not rolled back. The host resolves
+    /// each identity, authorizes I/O and returns true for safely skipped clean/removed documents.
+    /// Preserves the caller's synchronization context for UI-owned callbacks. Use an external
+    /// operation coordinator to reject overlapping invocations; the immutable plan owns no lock.</summary>
+    public async Task<bool> ExecuteAsync(Func<Guid, CancellationToken, Task<bool>> save, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(save);
+        cancellationToken.ThrowIfCancellationRequested();
+        foreach (var id in DocumentIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var completed = await save(id, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!completed) return false;
+        }
+        return true;
+    }
 }
