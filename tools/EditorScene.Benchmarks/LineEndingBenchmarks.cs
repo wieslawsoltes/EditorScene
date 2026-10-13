@@ -24,12 +24,19 @@ internal static class LineEndingBenchmarks
                 if (edits.Length != planned.DelimiterCount) throw new InvalidOperationException("Previous line-ending plan mismatch.");
                 GC.KeepAlive(edits);
             }, "Reproduces preceding EditorDocument conversion planning: enumerate all live-buffer lines and allocate a replacement for every delimiter, including unchanged ones. Existing live line metadata is warm. Application/undo excluded.");
-            Measure("minimal_snapshot_plan", () =>
+            Measure("minimal_snapshot_plan", BuildPlan,
+                "Snapshot delimiter metadata is unobserved. Scan immutable rope with a warm bounded reader pool, count changes, allocate exact immutable result storage and emit differing UTF-16 units. Includes plan construction. Source setup/verification excluded; no snapshot line index.");
+            // Keep the preceding scenario genuinely unobserved. Only now initialize
+            // metadata, as a status bar or host would do before a later conversion.
+            _ = snapshot.GetLineEndings();
+            Measure("metadata_cached_plan", BuildPlan,
+                "Completed immutable delimiter metadata is available before timing. Initial metadata scan and maintenance costs are excluded. Canonical input needs no reader; mixed input still emits all changes with one bounded scan. Single-plan submicrosecond timings are near timer resolution; inspect allocations and do not infer end-to-end latency.");
+            void BuildPlan()
             {
                 var plan = LineEndingEditPlan.Create(snapshot, delimiter);
                 if (plan.DelimiterCount != planned.DelimiterCount || plan.Edits.Length != planned.Edits.Length) throw new InvalidOperationException("Minimal line-ending plan mismatch.");
                 GC.KeepAlive(plan);
-            }, "Scan the immutable rope with a warm bounded reader pool and emit only differing UTF-16 units. Includes counts and immutable plan construction; source setup and initial correctness verification excluded. Does not build a snapshot line index.");
+            }
             void Measure(string implementation, Action run, string note)
             {
                 for (var i = 0; i < 3; i++) run();
