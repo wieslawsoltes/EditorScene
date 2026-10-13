@@ -81,6 +81,7 @@ public sealed class EditorDocument : IDisposable
     private SnapshotLineIndex? _lineIndex;
     private LineEndingInfo? _lineEndings;
     private (int Cr, int Lf, int CrLf)? _endingCounts;
+    private DocumentBoundaryReader? _endingBoundaryReader;
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     public EditorDocument(string text = "", string fileName = "Untitled.cs")
     {
@@ -127,15 +128,16 @@ public sealed class EditorDocument : IDisposable
         { _lineEndings = known; _endingCounts = known.Counts; }
         if (_endingCounts is { } counts)
         {
-            char? prefix = e.Offset > 0 ? Buffer.GetCharAt(e.Offset - 1) : null;
+            char? prefix = e.Offset > 0 ? ReadEndingBoundary(e.Offset - 1) : null;
             var end = e.Offset + e.InsertionLength;
-            char? suffix = end < Buffer.TextLength ? Buffer.GetCharAt(end) : null;
+            char? suffix = end < Buffer.TextLength ? ReadEndingBoundary(end) : null;
             _endingCounts = LineEndingInfo.ApplyChange(counts, e.RemovedText, e.InsertedText, prefix, suffix);
         }
         // Retain only value counters through a batch. Snapshot() publishes a new
         // immutable result when needed, rather than allocating one per delimiter.
         _snapshot = null; Revision++;
     }
+    private char ReadEndingBoundary(int offset) => (_endingBoundaryReader ??= new DocumentBoundaryReader()).Read(Buffer, offset);
     private void OnTextChanged(object? sender, EventArgs e) => Changed?.Invoke(this, e);
     public void MarkSaved() { VerifyAccess(); Buffer.UndoStack.MarkAsOriginalFile(); }
 
@@ -201,6 +203,8 @@ public sealed class EditorDocument : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; _snapshot = null; _lineIndex = null; _lineEndings = null; _endingCounts = null; Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
+        _disposed = true; _snapshot = null; _lineIndex = null; _lineEndings = null; _endingCounts = null;
+        _endingBoundaryReader?.Dispose(); _endingBoundaryReader = null;
+        Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
     }
 }

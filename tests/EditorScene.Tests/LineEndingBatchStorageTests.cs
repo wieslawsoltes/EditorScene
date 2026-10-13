@@ -6,15 +6,15 @@ namespace EditorScene.Tests;
 [TestFixture]
 public sealed class LineEndingBatchStorageTests
 {
-    [Test]
-    public void MaintainingCountsDoesNotAllocateOneMetadataObjectPerBulkEdit()
+    [TestCase(1000)]
+    [TestCase(4097)]
+    public void MaintainingCountsDoesNotAllocateOneMetadataObjectPerBulkEdit(int count)
     {
-        const int count = 1000;
         var text = string.Concat(Enumerable.Repeat("x\r", count));
         for (var i = 0; i < 3; i++) { _ = Measure(false); _ = Measure(true); }
         var unobserved = Measure(false); var observed = Measure(true);
         Assert.That(observed, Is.LessThanOrEqualTo(unobserved + 4096),
-            "Observed delimiter maintenance must not add 1,000 immutable metadata objects to otherwise identical edits.");
+            "Observed delimiter maintenance must not add per-edit metadata objects or rope index cache nodes.");
         long Measure(bool observe)
         {
             using var document = new EditorDocument(text);
