@@ -167,6 +167,9 @@ public sealed class ConsumerControl : UserControl
         var documentId = Guid.NewGuid();
         documentMenu.SetDocuments([new EditorDocumentListEntry(documentId, "Consumer.cs")]);
         documentMenu.SelectedDocumentId = documentId;
+        using var tabMenu = new EditorDocumentTabMenu();
+        tabMenu.Configure(documentId, 0, 1);
+        if (!tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Current) || tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Others)) throw new Exception("Packaged document tab menu contract failed.");
         if (documentMenu.DocumentCount != 1) throw new Exception("Packaged document menu contract failed.");
         Commands.Editor = Editor;
         var copyButton = new Button { Content = "Copy" };

@@ -130,7 +130,11 @@ public sealed partial class EditorPage : Page
         _tabControlNames.Clear();
         var retained = _documents.Where(d => d.Tab is not null).Select(d => (UIElement)d.Tab!).ToHashSet();
         for (var i = _tabs.Children.Count - 1; i >= 0; i--)
-            if (!retained.Contains(_tabs.Children[i])) _tabs.Children.RemoveAt(i);
+            if (!retained.Contains(_tabs.Children[i]))
+            {
+                if (_tabs.Children[i] is Button removed) UnwireDocumentTab(removed);
+                _tabs.Children.RemoveAt(i);
+            }
         for (var i = 0; i < _documents.Count; i++)
         {
             var entry = _documents[i];
@@ -139,8 +143,7 @@ public sealed partial class EditorPage : Page
                 var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
                 panel.Children.Add(new TextBlock { Text = entry.Document.FileName, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
                 var button = new Button { Content = panel, Height = 27, MinHeight = 27, Padding = new Thickness(9, 2, 9, 2), BorderThickness = new Thickness(0, 0, 0, 2) };
-                button.Click += (_, _) => ActivateDocument(entry);
-                button.Loaded += (_, _) => { if (ReferenceEquals(entry, _current)) QueueActiveTabReveal(); };
+                WireDocumentTab(button, entry.Document.Id);
                 entry.Tab = button; entry.TabTheme = null; _tabBuildCount++;
             }
             var tab = entry.Tab;
@@ -176,20 +179,6 @@ public sealed partial class EditorPage : Page
             }
         }
     }
-    private async Task CloseDocumentAsync()
-    {
-        var entry = _current; if (entry is null) return;
-        if (entry.Document.IsModified)
-        {
-            var result = await ShowDialogAsync(new() { Title = "Save changes?", Content = $"Save changes to {entry.Document.FileName} before closing?", PrimaryButtonText = "Save", SecondaryButtonText = "Discard", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary });
-            if (result == ContentDialogResult.None) return;
-            if (result == ContentDialogResult.Primary && !await SaveDocumentAsync(false)) return;
-        }
-        var index = _documents.IndexOf(entry); _documents.Remove(entry); _current = null;
-        if (_documents.Count == 0) AddDocument(new EditorDocument("", $"Untitled{++_untitled}.cs"), _languages.Get("csharp")!);
-        else ActivateDocument(_documents[Math.Min(index, _documents.Count - 1)]);
-        await DisconnectLspAsync(entry); entry.Document.Dispose(); RebuildTabs();
-    }
     private void NewDocument() => AddDocument(new EditorDocument("", $"Untitled{++_untitled}.cs"), _languages.Get("csharp")!);
     private void OpenSample(string file, string text, string language)
     {
@@ -221,7 +210,7 @@ public sealed partial class EditorPage : Page
     { try { await action(); } catch (OperationCanceledException) { } catch (Exception error) { _lastError = error.Message; _active.ReportError(error); AddEvent(error.Message); } finally { QueueDiagnostics(); } }
     private void OnPageKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Handled) return;
+        if (e.Handled || _dialog is not null) return;
         var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         if (!control) return;
         if (HandleDocumentNavigationKey(e)) { e.Handled = true; return; }
