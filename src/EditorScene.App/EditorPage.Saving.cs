@@ -19,10 +19,11 @@ public sealed partial class EditorPage
     private MenuFlyoutItem? _saveAllMenu, _saveAllOverflow;
     private bool _saveAllRunning;
     private int _saveAllCompleted, _saveAllTotal;
+    private const string SaveAllShortcut = "Ctrl+Shift+F12";
 
     private void AddSaveAllMenu(MenuBarItem file)
     {
-        _saveAllMenu = Item(file, "Save All", SaveAllDocumentsAsync, "Ctrl+Alt+S");
+        _saveAllMenu = Item(file, "Save All", SaveAllDocumentsAsync, SaveAllShortcut);
         _saveAllMenu.Icon = EditorFileIcons.CreateSaveAll();
     }
     private void AddSaveAllTool()
@@ -33,10 +34,10 @@ public sealed partial class EditorPage
             Padding = new Thickness(4), BorderThickness = new Thickness(0),
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent)
         };
-        ToolTipService.SetToolTip(_saveAllButton, "Save All (Ctrl+Alt+S)");
+        ToolTipService.SetToolTip(_saveAllButton, "Save All (" + SaveAllShortcut + ")");
         _saveAllButton.Click += (_, _) => _ = GuardAsync(SaveAllDocumentsAsync);
         _toolbar.Children.Add(_saveAllButton); Register("Toolbar Save All", _saveAllButton);
-        _saveAllOverflow = new MenuFlyoutItem { Text = "Save All", FontSize = 12, KeyboardAcceleratorTextOverride = "Ctrl+Alt+S", Icon = EditorFileIcons.CreateSaveAll() };
+        _saveAllOverflow = new MenuFlyoutItem { Text = "Save All", FontSize = 12, KeyboardAcceleratorTextOverride = SaveAllShortcut, Icon = EditorFileIcons.CreateSaveAll() };
         _saveAllOverflow.Click += (_, _) => _ = GuardAsync(SaveAllDocumentsAsync);
         AddToolbarOverflow(_saveAllOverflow);
         RefreshSaveAllControls();
@@ -56,11 +57,13 @@ public sealed partial class EditorPage
             }
         }
     }
+    internal static bool IsSaveAllGesture(VirtualKey key, bool control, bool shift, bool alt)
+        => key == VirtualKey.F12 && control && shift && !alt;
     private bool HandleSaveAllKey(KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.S) return false;
+        if (args.Key != VirtualKey.F12) return false;
         bool Down(VirtualKey key) => (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
-        if (!Down(VirtualKey.Control) || !Down(VirtualKey.Menu) || Down(VirtualKey.Shift)) return false;
+        if (!IsSaveAllGesture(args.Key, Down(VirtualKey.Control), Down(VirtualKey.Shift), Down(VirtualKey.Menu))) return false;
         _ = GuardAsync(SaveAllDocumentsAsync); return true;
     }
     private async Task SaveAllDocumentsAsync()
