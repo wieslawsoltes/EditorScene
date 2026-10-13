@@ -48,27 +48,28 @@ export async function checkSaveAll({page,state,wait,textIs,paste,click,command,f
   checks.push('Clean Save All controls are disabled consistently in menus, toolbar and overflow, and saved documents close without dirty prompts');
 
   async function collect(expectedNames,action) {
-    const files=[]; const saves=[];
-    let resolve, reject;
+    const files=[]; const saves=[]; const observedNames=[];
+    let resolve, reject, downloadError;
     const arrived=new Promise((ok,fail)=>{resolve=ok;reject=fail;});
-    // Attach rejection handling before asynchronous clicks so a prompt/action failure
-    // cannot leave an unobserved download timer or rejected save promise behind.
     arrived.catch(()=>{});
-    const timeout=setTimeout(()=>reject(new Error('Expected Save All downloads did not arrive')),60000);
+    const fail=error=>{downloadError??=error;reject(error);};
+    const timeout=setTimeout(()=>fail(new Error('Expected Save All downloads did not arrive')),60000);
     const listener=download=>{
+      observedNames.push(download.suggestedFilename());
       try {
-        assert.equal(download.suggestedFilename(),expectedNames[files.length],'The native picker must suggest exactly one extension');
+        assert.equal(observedNames[observedNames.length-1],expectedNames[observedNames.length-1],'The native picker must suggest exactly one extension and no extra file');
         const file=path.join(output,`save-all-${expectedNames.length}-${files.length}.bin`); files.push(file);
-        saves.push(download.saveAs(file).catch(error=>{reject(error);throw error;}));
-        saves[saves.length-1].catch(()=>{});
+        saves.push(download.saveAs(file).catch(fail));
         if(files.length===expectedNames.length)resolve();
-      } catch(error) { reject(error); }
+      } catch(error) { fail(error); }
     };
     page.on('download',listener);
     try {
       await action(); await arrived;
       await wait(n=>globalThis.__editorSceneState?.SaveAllTotal===n&&globalThis.__editorSceneState.SaveAllCompleted===n&&!globalThis.__editorSceneState.SaveAllRunning&&!globalThis.__editorSceneState.DocumentOperationBusy,expectedNames.length);
-      await Promise.all(saves); assert.equal(files.length,expectedNames.length); return files;
+      await Promise.all(saves);
+      if(downloadError)throw downloadError;
+      assert.deepEqual(observedNames,expectedNames); assert.equal(files.length,expectedNames.length); return files;
     } finally { clearTimeout(timeout); page.off('download',listener); }
   }
 }
