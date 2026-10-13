@@ -80,6 +80,7 @@ public sealed class EditorDocument : IDisposable
     private DocumentSnapshot? _snapshot;
     private SnapshotLineIndex? _lineIndex;
     private LineEndingInfo? _lineEndings;
+    private (int Cr, int Lf, int CrLf)? _endingCounts;
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     public EditorDocument(string text = "", string fileName = "Untitled.cs")
     {
@@ -110,22 +111,29 @@ public sealed class EditorDocument : IDisposable
         if (_snapshot is { } cached && cached.Revision == Revision && cached.FileName == FileName) return cached;
         _lineIndex ??= _snapshot?.BuiltLineIndex;
         _lineEndings ??= _snapshot?.BuiltLineEndings;
+        if (_endingCounts is { } counts)
+        {
+            if (_lineEndings is null || _lineEndings.Counts != counts) _lineEndings = LineEndingInfo.FromCounts(counts);
+        }
+        else if (_lineEndings is { } known) _endingCounts = known.Counts;
         return _snapshot = new DocumentSnapshot(Id, Revision, FileName, Buffer.CreateSnapshot(), _lineIndex, _lineEndings);
     }
     private void OnBufferChanged(object? sender, DocumentChangeEventArgs e)
     {
-        // A worker may still be building an old snapshot's lazy metadata. Never wait
-        // for it on the editing thread or retain a chain of unbuilt snapshots.
+        // Never wait for a worker still building an old snapshot's lazy metadata.
         _lineIndex ??= _snapshot?.BuiltLineIndex;
         _lineIndex = _lineIndex?.Replace(e.Offset, e.RemovalLength, e.InsertedText);
-        _lineEndings ??= _snapshot?.BuiltLineEndings;
-        if (_lineEndings is not null)
+        if (_endingCounts is null && _snapshot?.BuiltLineEndings is { } known)
+        { _lineEndings = known; _endingCounts = known.Counts; }
+        if (_endingCounts is { } counts)
         {
             char? prefix = e.Offset > 0 ? Buffer.GetCharAt(e.Offset - 1) : null;
             var end = e.Offset + e.InsertionLength;
             char? suffix = end < Buffer.TextLength ? Buffer.GetCharAt(end) : null;
-            _lineEndings = _lineEndings.ApplyChange(e.RemovedText, e.InsertedText, prefix, suffix);
+            _endingCounts = LineEndingInfo.ApplyChange(counts, e.RemovedText, e.InsertedText, prefix, suffix);
         }
+        // Retain only value counters through a batch. Snapshot() publishes a new
+        // immutable result when needed, rather than allocating one per delimiter.
         _snapshot = null; Revision++;
     }
     private void OnTextChanged(object? sender, EventArgs e) => Changed?.Invoke(this, e);
@@ -193,6 +201,6 @@ public sealed class EditorDocument : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; _snapshot = null; _lineIndex = null; _lineEndings = null; Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
+        _disposed = true; _snapshot = null; _lineIndex = null; _lineEndings = null; _endingCounts = null; Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
     }
 }

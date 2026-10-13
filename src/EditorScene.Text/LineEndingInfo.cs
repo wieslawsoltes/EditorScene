@@ -27,21 +27,22 @@ public sealed class LineEndingInfo
     /// A source with no terminators falls back to Environment.NewLine. This is
     /// distinct from EditorDocument.PreferredLineEnding's first-delimiter policy.</summary>
     public string InferredLineTerminator => CrLfCount > 0 ? "\r\n" : LfCount > 0 ? "\n" : CrCount > 0 ? "\r" : Environment.NewLine;
-
+    internal (int Cr, int Lf, int CrLf) Counts => (CrCount, LfCount, CrLfCount);
+    internal static LineEndingInfo FromCounts((int Cr, int Lf, int CrLf) counts) => counts == default ? Empty : new(counts.Cr, counts.Lf, counts.CrLf);
     internal static LineEndingInfo Scan(ITextSource source, CancellationToken cancellationToken)
     {
         var count = Count(source, null, null, cancellationToken);
-        return count.Cr == 0 && count.Lf == 0 && count.CrLf == 0 ? Empty : new(count.Cr, count.Lf, count.CrLf);
+        return FromCounts((count.Cr, count.Lf, count.CrLf));
     }
-    internal LineEndingInfo ApplyChange(ITextSource removed, ITextSource inserted, char? prefix, char? suffix)
+    internal static (int Cr, int Lf, int CrLf) ApplyChange((int Cr, int Lf, int CrLf) current,
+        ITextSource removed, ITextSource inserted, char? prefix, char? suffix)
     {
-        // CRLF can only interact across one neighboring code unit on each side.
-        // Count the same unchanged neighbors in both windows so outside pairs
-        // cancel, including a prefix LF or suffix CR paired beyond the window.
+        // The live document updates value-type counters, not a new immutable
+        // object for every edit in a bulk conversion. Publish only at snapshot capture.
+        // Count the same unchanged neighbors in both windows so outside pairs cancel.
         var before = Count(removed, prefix, suffix, default);
         var after = Count(inserted, prefix, suffix, default);
-        if (before.Cr == after.Cr && before.Lf == after.Lf && before.CrLf == after.CrLf) return this;
-        return new(checked(CrCount - before.Cr + after.Cr), checked(LfCount - before.Lf + after.Lf), checked(CrLfCount - before.CrLf + after.CrLf));
+        return (checked(current.Cr - before.Cr + after.Cr), checked(current.Lf - before.Lf + after.Lf), checked(current.CrLf - before.CrLf + after.CrLf));
     }
     private static Counter Count(ITextSource source, char? prefix, char? suffix, CancellationToken cancellationToken)
     {
@@ -96,7 +97,6 @@ public sealed class LineEndingInfo
                 var next = text[offset..].IndexOfAny('\r', '\n');
                 if (next < 0)
                 {
-                    // Ordinary text terminates a preceding CR before the next chunk.
                     if (_pendingCr) { Cr++; _pendingCr = false; }
                     return;
                 }
