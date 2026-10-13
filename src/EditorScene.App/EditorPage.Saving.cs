@@ -75,16 +75,16 @@ public sealed partial class EditorPage
                 _saveAllCompleted = 0; _saveAllTotal = plan.DocumentIds.Length; _saveAllRunning = true; QueueDiagnostics();
                 try
                 {
-                    foreach (var id in plan.DocumentIds)
+                    var completed = await plan.ExecuteAsync(async (id, _) =>
                     {
                         var entry = _documents.FirstOrDefault(candidate => candidate.Document.Id == id);
-                        if (entry is null || !entry.Document.IsModified) continue;
-                        if (!await SaveDocumentCoreAsync(entry, false))
-                        { AddEvent("Save All stopped; later documents were not saved."); return false; }
-                        _saveAllCompleted++; QueueDiagnostics();
-                    }
-                    if (_saveAllTotal != 0) AddEvent($"Save All completed: {_saveAllCompleted} document(s).");
-                    return true;
+                        if (entry is null || !entry.Document.IsModified) return true;
+                        if (!await SaveDocumentCoreAsync(entry, false)) return false;
+                        _saveAllCompleted++; QueueDiagnostics(); return true;
+                    });
+                    if (!completed) AddEvent("Save All stopped; later documents were not saved.");
+                    else if (_saveAllTotal != 0) AddEvent($"Save All completed: {_saveAllCompleted} document(s).");
+                    return completed;
                 }
                 finally { _saveAllRunning = false; QueueDiagnostics(); }
             });
