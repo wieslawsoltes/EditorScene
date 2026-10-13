@@ -1,0 +1,34 @@
+{
+  "sourceRevision": "485cac69d3b3c0f1cd49d86b914b0c4ae8da59e7",
+  "workflowRun": 38397596491,
+  "regressionJob": 115297193494,
+  "regressionArtifact": 11812951648,
+  "artifactZipSha256ReportedByCI": "29175697a0516dcd5fdb45cf5e48e22dfc3a3261e05ced613f1474c477b25714",
+  "provenance": "Transcribed from the completed regression job log. The full report is performance.json in the artifact. Local ZIP inspection was unavailable. This source passed 487 EditorScene, 325 core and 26 rendering tests, but its native UI validation failed on stale inline advice and was subsequently fixed. These measurements do not assert that the full workflow or UI passed.",
+  "scenario": "line_navigation_10000_queries_100000_lines",
+  "framework": ".NET 10.0.12",
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "X64",
+  "warmups": 3,
+  "samples": 11,
+  "rows": [
+    {
+      "implementation": "split_string_position_queries",
+      "p50Milliseconds": 1.8268,
+      "p95Milliseconds": 11.8821,
+      "medianAllocatedBytes": 1040000,
+      "sortedElapsedMilliseconds": [1.8057, 1.8134, 1.8142, 1.8183, 1.8186, 1.8268, 1.8616, 1.8619, 1.8914, 1.9509, 11.8821],
+      "sortedAllocatedBytes": [1040000,1040000,1040000,1040000,1040000,1040000,1040000,1040000,1040000,1040000,1040000]
+    },
+    {
+      "implementation": "strict_span_position_queries",
+      "p50Milliseconds": 0.7896,
+      "p95Milliseconds": 0.7998,
+      "medianAllocatedBytes": 0,
+      "sortedElapsedMilliseconds": [0.7784,0.7842,0.7884,0.7895,0.7896,0.7896,0.7916,0.7939,0.7953,0.7992,0.7998],
+      "sortedAllocatedBytes": [0,0,0,0,0,0,0,0,0,0,0]
+    }
+  ],
+  "methodology": "10000 identical valid line:character queries with a warm immutable line index. The baseline retains the prior dialog's Split/TryParse/Parse sequence but uses the same immutable lookup as the new parser. The strict path also validates ranges and UTF-16 surrogate boundaries and captures identity/revision. Source construction, first line-index construction, native controls, validation-message rendering, focus, scroll, GPU and full interaction latency are excluded. Sequential groups and hosted-runner variation limit conclusions; p95 is the largest of eleven observations.",
+  "interpretation": "The strict parser avoids 104 bytes per warm request and had a lower median in this fixture. This is not a whole-dialog, whole-editor, physical-GPU or Actipro comparison. Native UI allocations and cold source indexing still occur. All unrelated unfavorable compiler, save and tab-map measurements remain in the complete report."
+}
