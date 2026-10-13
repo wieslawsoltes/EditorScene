@@ -41,6 +41,11 @@ public sealed class ConsumerControl : UserControl
         tabMenu.Configure(documentId, 0, 1);
         if (!tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Current) || tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Others)) throw new Exception("Packaged document tab menu contract failed.");
         if (documentMenu.DocumentCount != 1) throw new Exception("Packaged document menu contract failed.");
+        var tabCaption = new TextBlock { Text = "Consumer.cs" };
+        var documentTab = new Button { Content = tabCaption };
+        var tabPalette = new EditorDocumentTabPalette(EditorScene.Rendering.Skia.EditorTheme.Light);
+        tabPalette.Apply(documentTab, tabCaption, active: true);
+        if (!ReferenceEquals(documentTab.Foreground, tabCaption.Foreground)) throw new Exception("Packaged document tab palette failed.");
         _ = EditorFileIcons.CreateSaveAll();
         using var navigationDraft = new EditorGoToLineView(Editor.Document.Snapshot(), 0);
         if (!navigationDraft.TryGetTarget(out var lineTarget) || !Editor.TryNavigateTo(lineTarget)) throw new Exception("Packaged native navigation failed.");
@@ -65,6 +70,6 @@ public sealed class ConsumerControl : UserControl
         var status = new EditorStatusBar { Editor = Editor };
         var split = new ResizableSplitView { First = Editor, Ratio = .4 };
         Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
-        Content = new StackPanel { Children = { copyButton, navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };
+        Content = new StackPanel { Children = { documentTab, copyButton, navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };
     }
 }
