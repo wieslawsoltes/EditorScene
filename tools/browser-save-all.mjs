@@ -38,9 +38,16 @@ export async function checkSaveAll({page,state,wait,textIs,paste,click,command,f
 
   await click('Theme'); await click('Choice Light'); await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
   await click('Toolbar commands'); await click('Visible submenu File');
-  await wait(()=>globalThis.__editorSceneState?.VisibleCommandEnabled?.['Save All']===false);
+  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===2&&globalThis.__editorSceneState.VisibleCommandEnabled?.['Save All']===false);
   await page.screenshot({path:path.join(output,'save-all-clean-light.png')});
-  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+  // Match native submenu lifetime: observe the child closing and returning focus
+  // before sending the parent's Escape. Do not retry keys or accept an orphan.
+  await page.keyboard.press('Escape');
+  await wait(()=>{
+    const s=globalThis.__editorSceneState;
+    return s?.OpenMenuCount===1&&s.VisibleCommandEnabled?.['Save All']===undefined&&!!s.Controls?.['Visible submenu File'];
+  });
+  await page.keyboard.press('Escape'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
   await command('File','Close All Documents');
   await wait(()=>globalThis.__editorSceneState?.DocumentCount===1&&!globalThis.__editorSceneState.DocumentOperationBusy&&globalThis.__editorSceneState.TextLength===0);
   assert.notEqual((await state()).FileName,original);
