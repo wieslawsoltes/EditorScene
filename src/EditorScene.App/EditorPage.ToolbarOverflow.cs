@@ -12,10 +12,7 @@ public sealed partial class EditorPage
 
     private void AddToolbarOverflow(MenuFlyoutItem item)
     {
-        // A single list of all toolbar buttons exceeds normal window height.
-        // Preserve the actual actions but group them into native submenus: seven
-        // top-level choices, at most six commands in any submenu. No off-screen
-        // "overflow" commands, custom input simulation or duplicated execution.
+        // Keep the native commands in bounded submenus instead of an off-screen list.
         var group = item.Text switch
         {
             "New" or "Open" or "Save" or "Save All" => "File",
@@ -29,25 +26,16 @@ public sealed partial class EditorPage
         };
         if (!_toolbarGroups.TryGetValue(group, out var submenu))
         {
-            submenu = new MenuFlyoutSubItem { Text = group, FontSize = 12 };
-            // Native popup processing may mark Escape handled before it tunnels
-            // to its focused group. Still observe it, but only dismiss our root
-            // when no separate owned child popup exists at the start of the key.
-            submenu.AddHandler(UIElement.PreviewKeyDownEvent,
-                new KeyEventHandler(OnToolbarGroupPreviewKeyDown), handledEventsToo: true);
+            submenu = new ToolbarOverflowGroup(this) { Text = group, FontSize = 12 };
             _toolbarGroups.Add(group, submenu); _toolbarOverflow.Items.Add(submenu);
         }
         submenu.Items.Add(item);
     }
 
-    private void OnToolbarGroupPreviewKeyDown(object sender, KeyRoutedEventArgs args)
+    private bool TryDismissToolbarRoot(MenuFlyoutSubItem group, KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.Escape || sender is not MenuFlyoutSubItem group) return;
-        var root = XamlRoot;
-        var focused = root is null ? null : FocusManager.GetFocusedElement(root);
-        if (_diagnostics)
-            Console.WriteLine($"EditorScene overflow Escape: group={group.Text}; handled={args.Handled}; focusedOwner={ReferenceEquals(focused, group)}; root={root is not null}");
-        if (!_toolbarOverflow.Items.Contains(group) || root is null || !ReferenceEquals(focused, group)) return;
+        if (args.Key != VirtualKey.Escape || !_toolbarOverflow.Items.Contains(group)
+            || XamlRoot is not { } root || !ReferenceEquals(FocusManager.GetFocusedElement(root), group)) return false;
 
         var rootOpen = false; var childOpen = false;
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
@@ -60,15 +48,24 @@ public sealed partial class EditorPage
                 else if (element is MenuFlyoutItemBase item && group.Items.Contains(item)) containsChildItem = true;
             }
             if (containsOwner) rootOpen = true;
-            // A retained child in the root's visual/logical subtree is not proof
-            // of an open submenu. Require a distinct, actually open popup.
             else if (containsChildItem) childOpen = true;
         }
-        if (_diagnostics)
-            Console.WriteLine($"EditorScene overflow Escape: rootOpen={rootOpen}; childOpen={childOpen}");
-        if (!rootOpen || childOpen) return;
+        if (!rootOpen || childOpen) return false;
         args.Handled = true;
         _toolbarOverflow.Hide();
         QueueDiagnostics();
+        return true;
+    }
+
+    private sealed class ToolbarOverflowGroup(EditorPage page) : MenuFlyoutSubItem
+    {
+        protected override void OnKeyDown(KeyRoutedEventArgs args)
+        {
+            // Popup-owned menu items do not reliably receive tunneled PreviewKeyDown.
+            // Inspect the native popup state BEFORE the base control can close a child.
+            // The first Escape remains native; only an already-closed child's focused
+            // root owner dismisses the enclosing flyout. Other keys remain untouched.
+            if (!page.TryDismissToolbarRoot(this, args)) base.OnKeyDown(args);
+        }
     }
 }
