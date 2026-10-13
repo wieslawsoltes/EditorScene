@@ -1,0 +1,68 @@
+name: Integrate minimal line endings
+on:
+  push:
+    branches: [feat/minimal-line-endings]
+    paths: [.github/workflows/integrate-minimal-line-endings.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/EditorScene' && github.ref == 'refs/heads/feat/minimal-line-endings'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Apply reviewed integrations and remove this helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          files={}
+          def edit(path,old,new):
+              text=files.setdefault(path,Path(path).read_text())
+              assert text.count(old)==1, path+': '+old[:120]
+              files[path]=text.replace(old,new)
+          p='src/EditorScene.Text/EditorDocument.cs'
+          text=Path(p).read_text(); start=text.index('    public void ConvertLineEndings(string delimiter)\n'); end=text.index('    public string PreferredLineEnding\n',start)
+          edit(p,text[start:end],'''    public void ConvertLineEndings(string delimiter)
+              {
+                  VerifyAccess();
+                  LineEndingEditPlan.Create(Snapshot(), delimiter).Apply(this);
+              }
+          ''')
+          edit('src/EditorScene.Controls/EditorCommand.cs','    ToggleDefaultContextMenu, ToggleSecondaryPointerCaret','    ToggleDefaultContextMenu, ToggleSecondaryPointerCaret, ConvertToCr')
+          p='src/EditorScene.Controls/SyntaxEditor.Commands.cs'
+          edit(p,'                case EditorCommand.ConvertToCrLf: ConvertLineEndings("\\r\\n"); break;',
+              '                case EditorCommand.ConvertToCrLf: ConvertLineEndings("\\r\\n"); break;\n                case EditorCommand.ConvertToCr: ConvertLineEndings("\\r"); break;')
+          edit(p,'    private void ConvertLineEndings(string eol) => ApplyUserEdits(Document.Buffer.Lines.Where(l => l.DelimiterLength > 0).Select(l => new TextEdit(l.EndOffset, l.DelimiterLength, eol)));',
+              '    private void ConvertLineEndings(string eol) => ChangeLineEndings(eol);')
+          edit('src/EditorScene.Controls/SyntaxEditor.CommandState.cs','or EditorCommand.ConvertToLf or EditorCommand.ConvertToCrLf => new(ordinary && text),',
+              'or EditorCommand.ConvertToLf or EditorCommand.ConvertToCrLf or EditorCommand.ConvertToCr => new(ordinary && text),')
+          p='src/EditorScene.App/EditorPage.Menus.cs'
+          edit(p,'Command(advanced, "Convert Line Endings to CRLF", EditorCommand.ConvertToCrLf);',
+              'Command(advanced, "Convert Line Endings to CRLF", EditorCommand.ConvertToCrLf);\n        Command(advanced, "Convert Line Endings to CR", EditorCommand.ConvertToCr);')
+          edit('src/EditorScene.App/NativeEditorChecks.cs','        NativeLineNavigationChecks.Run(checks);','        NativeLineNavigationChecks.Run(checks);\n        await NativeLineEndingChecks.RunAsync(checks);')
+          edit('tools/build.py','if len(checks) < 401','if len(checks) < 414')
+          p='tools/browser-smoke.mjs'
+          edit(p,"import {checkLineNavigation} from './browser-line-navigation.mjs';", "import {checkLineNavigation} from './browser-line-navigation.mjs';\nimport {checkLineEndings} from './browser-line-endings.mjs';")
+          edit(p,'  await checkLineNavigation({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});',
+              '  await checkLineNavigation({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});\n  await checkLineEndings({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});')
+          edit('tools/EditorScene.Benchmarks/Program.cs','LineNavigationBenchmarks.Add(rows);','LineNavigationBenchmarks.Add(rows);\nLineEndingBenchmarks.Add(rows);')
+          p='tools/package.py'
+          edit(p,'var snapshot = document.Snapshot();','var snapshot = document.Snapshot();\nvar delimiterPlan = LineEndingEditPlan.Create(snapshot, "\\n");\nif (delimiterPlan.DocumentId != document.Id || delimiterPlan.Revision != snapshot.Revision) throw new Exception("Packaged line-ending planning failed.");')
+          edit(p,'        Commands.Editor = Editor;','        _ = Editor.ChangeLineEndings("\\n");\n        _ = Editor.GetCommandState(EditorCommand.ConvertToCr, EditorCommandQueryMode.CommandSurface);\n        Commands.Editor = Editor;')
+          for path,text in files.items(): Path(path).write_text(text)
+          PY
+          git diff --check
+          node --check tools/browser-line-endings.mjs
+          node --check tools/browser-smoke.mjs
+          python3 -m py_compile tools/build.py tools/package.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/integrate-minimal-line-endings.yml
+          git add src tools
+          git commit -m 'feat(editor): integrate minimal delimiter changes and native CR conversion'
+          git push origin HEAD:refs/heads/feat/minimal-line-endings
