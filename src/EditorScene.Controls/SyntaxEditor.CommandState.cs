@@ -52,7 +52,7 @@ public sealed partial class SyntaxEditor
             EditorCommand.DuplicateLine or EditorCommand.DeleteLine or EditorCommand.Comment or EditorCommand.Uncomment
                 or EditorCommand.TrimTrailingWhitespace or EditorCommand.SortLines or EditorCommand.TabsToSpaces
                 or EditorCommand.SpacesToTabs or EditorCommand.TabifySelectedLines or EditorCommand.UntabifySelectedLines
-                or EditorCommand.ConvertToLf or EditorCommand.ConvertToCrLf => new(ordinary && text),
+                or EditorCommand.ConvertToLf or EditorCommand.ConvertToCrLf or EditorCommand.ConvertToCr => new(ordinary && text),
             EditorCommand.FormatDocument => new(ordinary && capabilities.HasFlag(LanguageCapabilities.Formatting)),
             EditorCommand.CompleteWord => new(ordinary && capabilities.HasFlag(LanguageCapabilities.Completion)),
             EditorCommand.QuickInfo => new(capabilities.HasFlag(LanguageCapabilities.QuickInfo)),

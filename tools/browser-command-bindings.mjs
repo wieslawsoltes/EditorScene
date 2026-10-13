@@ -36,17 +36,26 @@ export async function checkCommandBindings({page,state,wait,textIs,paste,click,c
   assert.ok((await state()).OpenMenuCount>0,'Disabled native menu action must not execute or dismiss');
   await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
   await click('Toolbar commands');await click('Visible submenu Edit');
-  await wait(()=>globalThis.__editorSceneState?.VisibleCommandEnabled?.Paste===false&&globalThis.__editorSceneState.VisibleCommandEnabled.Copy===true);
+  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===2&&globalThis.__editorSceneState.VisibleCommandEnabled?.Paste===false&&globalThis.__editorSceneState.VisibleCommandEnabled.Copy===true);
   await page.screenshot({path:path.join(output,'command-bindings-readonly.png')});
-  await page.keyboard.press('Escape');await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+  // Two immediate Escapes can race a native submenu's closing/focus restoration.
+  // Enforce the child transition, including absence of orphaned child commands,
+  // before sending the parent's Escape. No repeated keys or retry on failure.
+  await page.keyboard.press('Escape');
+  await wait(()=>{
+    const s=globalThis.__editorSceneState;
+    return s?.OpenMenuCount===1&&s.VisibleCommandEnabled?.Copy===undefined&&!!s.Controls?.['Visible submenu Edit'];
+  });
+  await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+  await textIs('alpha');assert.equal((await state()).Revision,revision);
   checks.push('Read-only availability agrees across toolbar, main Edit menu and overflow while disabled native commands cannot mutate text');
+  checks.push('Escape dismisses the child overflow menu before its parent without leaving orphan commands or changing text');
   await command('View','Read Only');await wait(()=>globalThis.__editorSceneState?.ReadOnly===false);
   await command('Macros','Start Recording');
   await wait(()=>globalThis.__editorSceneState?.MacroState==='Recording'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===false);
   await command('Macros','Pause Recording');
   await wait(()=>globalThis.__editorSceneState?.MacroState==='Paused'&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Find']===true);
   await click('Toolbar Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
-  // A pointer shield left active while paused previously swallowed this real click.
   await click('PART_close');await wait(()=>globalThis.__editorSceneState?.SearchOpen===false);
   await click('Toolbar Find');await wait(()=>globalThis.__editorSceneState?.SearchOpen);
   await command('Macros','Resume Recording');
@@ -60,8 +69,6 @@ export async function checkCommandBindings({page,state,wait,textIs,paste,click,c
   assert.equal((await state()).CommandSurfaceEnabled['Toolbar Format document'],false);
   await command('Window','Split Editor');
   await wait(()=>globalThis.__editorSceneState?.Split&&globalThis.__editorSceneState.OpenMenuCount===0);
-  // A property observation can arrive before its initiating menu finishes closing.
-  // Use the same distinct-observation geometry checks as all other native clicks.
   await click('Secondary editor');
   await wait(()=>globalThis.__editorSceneState?.ActiveView==='Secondary');
   await command('View','Read Only');

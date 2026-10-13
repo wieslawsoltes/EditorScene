@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import {checkDocumentTabColors} from './browser-tab-colors.mjs';
 
 export async function checkDocumentNavigation({page,state,wait,textIs,paste,click,command,focusEditor,output,checks}) {
   const before=await state(); const count=before.DocumentCount; const built=before.DocumentTabBuilds; const menuBuilt=before.DocumentMenuBuilds;
@@ -55,14 +56,20 @@ export async function checkDocumentNavigation({page,state,wait,textIs,paste,clic
   await wait(name=>globalThis.__editorSceneState?.VisibleCommandEnabled?.[name]===true,names[0]);
   await click('Visible command '+names[0]);
   await wait(name=>globalThis.__editorSceneState?.FileName===name&&globalThis.__editorSceneState.OpenMenuCount===0,names[0]);
-  await click('Theme'); await click('Choice Light'); await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
-  await click('All documents'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount>0);
-  await page.screenshot({path:path.join(output,'document-menu-light.png')});
-  await page.keyboard.press('Escape'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
-  await click('Theme'); await click('Choice Dark'); await wait(()=>globalThis.__editorSceneState?.Theme==='Dark');
-  await click('All documents'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount>0);
-  await page.screenshot({path:path.join(output,'document-menu-dark.png')});
-  await page.keyboard.press('Escape'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+  for(const [theme,suffix] of [['Light','light'],['Dark','dark'],['High contrast','high-contrast'],['Light','light-roundtrip'],['Dark','dark-roundtrip']]) {
+    await click('Theme'); await click('Choice '+theme);
+    await wait(expected=>globalThis.__editorSceneState?.Theme===expected&&globalThis.__editorSceneState.OpenMenuCount===0,theme);
+    await checkDocumentTabColors({page,state,theme,output,suffix});
+    s=await state();
+    assert.equal(s.DocumentTabBuilds,built+6,'Palette switches must retain every tab control');
+    assert.equal(s.DocumentMenuBuilds,menuBuilt+6,'Palette switches must retain document menu items');
+    assert.equal(s.FileName,names[0]);
+    await click('All documents'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount>0);
+    assert.equal((await state()).VisibleCommandEnabled[names[5]+' *'],true,'Theme switches must retain the unsaved caption');
+    await page.screenshot({path:path.join(output,'document-menu-'+suffix+'.png')});
+    await page.keyboard.press('Escape'); await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+  }
+  checks.push('Actual Skia screenshot ink remains legible in retained tabs through Light, Dark and High Contrast round trips without rebuilding controls');
   s=await state(); assert.equal(s.DocumentMenuCheckCount,1);
   assert.equal(s.DocumentTabBuilds,built+6); assert.equal(s.DocumentMenuBuilds,menuBuilt+6);
   await command('File','Close'); await wait(n=>globalThis.__editorSceneState?.DocumentCount===n,count+5);

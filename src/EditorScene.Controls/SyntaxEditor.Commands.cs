@@ -76,6 +76,7 @@ public sealed partial class SyntaxEditor
                 case EditorCommand.ClearExtraSelections: ClearMultiSelection(); break;
                 case EditorCommand.ConvertToLf: ConvertLineEndings("\n"); break;
                 case EditorCommand.ConvertToCrLf: ConvertLineEndings("\r\n"); break;
+                case EditorCommand.ConvertToCr: ConvertLineEndings("\r"); break;
                 default: throw new ArgumentOutOfRangeException(nameof(command));
             }
             SetStatus(IsReadOnly ? "Read only" : "Ready"); FocusAfterEditCommand();
@@ -157,7 +158,7 @@ public sealed partial class SyntaxEditor
         var sorted = lines.Select(line => Document.Buffer.GetText(line.Offset, line.Length)).Order(StringComparer.Ordinal).ToArray();
         ApplyUserEdits(lines.Select((line, i) => new TextEdit(line.Offset, line.Length, sorted[i])));
     }
-    private void ConvertLineEndings(string eol) => ApplyUserEdits(Document.Buffer.Lines.Where(l => l.DelimiterLength > 0).Select(l => new TextEdit(l.EndOffset, l.DelimiterLength, eol)));
+    private void ConvertLineEndings(string eol) => ChangeLineEndings(eol);
     private async Task FormatDocumentAsync()
     {
         if (IsReadOnly) throw new InvalidOperationException("The document is read only.");

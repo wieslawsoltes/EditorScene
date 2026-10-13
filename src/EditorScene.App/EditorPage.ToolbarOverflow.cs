@@ -1,4 +1,8 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Windows.System;
 
 namespace EditorScene.App;
 
@@ -8,10 +12,7 @@ public sealed partial class EditorPage
 
     private void AddToolbarOverflow(MenuFlyoutItem item)
     {
-        // A single list of all toolbar buttons exceeds normal window height.
-        // Preserve the actual actions but group them into native submenus: seven
-        // top-level choices, at most six commands in any submenu. No off-screen
-        // "overflow" commands, custom input simulation or duplicated execution.
+        // Keep the native commands in bounded submenus instead of an off-screen list.
         var group = item.Text switch
         {
             "New" or "Open" or "Save" or "Save All" => "File",
@@ -25,9 +26,46 @@ public sealed partial class EditorPage
         };
         if (!_toolbarGroups.TryGetValue(group, out var submenu))
         {
-            submenu = new MenuFlyoutSubItem { Text = group, FontSize = 12 };
+            submenu = new ToolbarOverflowGroup(this) { Text = group, FontSize = 12 };
             _toolbarGroups.Add(group, submenu); _toolbarOverflow.Items.Add(submenu);
         }
         submenu.Items.Add(item);
+    }
+
+    private bool TryDismissToolbarRoot(MenuFlyoutSubItem group, KeyRoutedEventArgs args)
+    {
+        if (args.Key != VirtualKey.Escape || !_toolbarOverflow.Items.Contains(group)
+            || XamlRoot is not { } root || !ReferenceEquals(FocusManager.GetFocusedElement(root), group)) return false;
+
+        var rootOpen = false; var childOpen = false;
+        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
+        {
+            if (!popup.IsOpen || popup.Child is not FrameworkElement child) continue;
+            var containsOwner = false; var containsChildItem = false;
+            foreach (var element in Descendants(child).Prepend(child))
+            {
+                if (ReferenceEquals(element, group)) containsOwner = true;
+                else if (element is MenuFlyoutItemBase item && group.Items.Contains(item)) containsChildItem = true;
+            }
+            if (containsOwner) rootOpen = true;
+            else if (containsChildItem) childOpen = true;
+        }
+        if (!rootOpen || childOpen) return false;
+        args.Handled = true;
+        _toolbarOverflow.Hide();
+        QueueDiagnostics();
+        return true;
+    }
+
+    private sealed class ToolbarOverflowGroup(EditorPage page) : MenuFlyoutSubItem
+    {
+        protected override void OnKeyDown(KeyRoutedEventArgs args)
+        {
+            // Popup-owned menu items do not reliably receive tunneled PreviewKeyDown.
+            // Inspect the native popup state BEFORE the base control can close a child.
+            // The first Escape remains native; only an already-closed child's focused
+            // root owner dismisses the enclosing flyout. Other keys remain untouched.
+            if (!page.TryDismissToolbarRoot(this, args)) base.OnKeyDown(args);
+        }
     }
 }

@@ -151,10 +151,7 @@ public sealed class EditorDocument : IDisposable
     public void ConvertLineEndings(string delimiter)
     {
         VerifyAccess();
-        if (delimiter is not ("\n" or "\r\n" or "\r")) throw new ArgumentException("Choose LF, CRLF or CR.", nameof(delimiter));
-        var changes = Buffer.Lines.Where(x => x.DelimiterLength != 0)
-            .Select(x => new TextEdit(x.EndOffset, x.DelimiterLength, delimiter)).ToArray();
-        ApplyEdits(changes, Revision);
+        LineEndingEditPlan.Create(Snapshot(), delimiter).Apply(this);
     }
     public string PreferredLineEnding
     {

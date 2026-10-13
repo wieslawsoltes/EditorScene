@@ -47,6 +47,7 @@ public sealed partial class EditorPage : Page
     private SyntaxEditor _active = null!;
     private WorkspaceDocument? _current;
     private EditorTheme _theme = EditorTheme.Light;
+    private EditorDocumentTabPalette _tabPalette = new(EditorTheme.Light);
     private int _untitled;
     private bool _updatingPickers, _loaded, _diagnosticsQueued;
     private bool _showEvents, _diagnostics;
@@ -160,6 +161,7 @@ public sealed partial class EditorPage : Page
     }
     private void RebuildTabCaptions()
     {
+        if (!ReferenceEquals(_tabPalette.Theme, _theme)) _tabPalette = new(_theme);
         foreach (var entry in _documents)
         {
             var active = ReferenceEquals(entry, _current); var modified = entry.Document.IsModified; var name = entry.Document.FileName;
@@ -173,8 +175,8 @@ public sealed partial class EditorPage : Page
             }
             if (!ReferenceEquals(entry.TabTheme, _theme) || entry.TabActive != active)
             {
-                tab.Background = SyntaxEditor.Brush(active ? _theme.Background : _theme.Chrome);
-                tab.BorderBrush = SyntaxEditor.Brush(active ? _theme.Accent : _theme.Chrome);
+                if (tab.Content is StackPanel panel && panel.Children[0] is TextBlock text)
+                    _tabPalette.Apply(tab, text, active);
                 entry.TabTheme = _theme; entry.TabActive = active;
             }
         }

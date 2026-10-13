@@ -1,0 +1,75 @@
+using EditorScene.Controls;
+using EditorScene.LanguageServices;
+using EditorScene.Languages.Structured;
+using EditorScene.Snippets;
+using EditorScene.Text;
+using Microsoft.UI.Xaml.Controls;
+public sealed class ConsumerControl : UserControl
+{
+    public EditorCommandBindings Commands { get; } = new();
+    public SyntaxEditor Editor { get; } = new() { Document = new EditorDocument("{}", "consumer.json"), SyntaxLanguage = new JsonLanguage() };
+    public Task<bool> ExpandAsync() => Editor.ExpandSelectionAsync();
+    public bool Contract() => Editor.ContractSelection();
+    public bool ConvertWhitespace() => Editor.ConvertSelectedWhitespace(false);
+    public bool TabifyLines() => Editor.TabifySelectedLines(true);
+    public EditorCommandState QueryCopy() => Editor.GetCommandState(EditorCommand.Copy);
+    public bool ShowContext() => Editor.ShowEditorContextMenu();
+    public ConsumerControl()
+    {
+        Editor.SetDocumentAndLanguage(Editor.Document, new JsonLanguage());
+        Editor.IsDefaultContextMenuEnabled = true; Editor.CanMoveCaretForSecondaryPointerButton = false;
+        Editor.EditorContextMenu.Requested += (_, args) => { if (Editor.IsReadOnly) args.Cancel = true; };
+        Editor.NavigateToMatchingBracket();
+        var options = new EditorViewOptions { TabSize = 8, ConvertTabsToSpaces = true, CanBackspaceOverSpacesToTabStop = true };
+        Editor.ApplyViewOptions(options);
+        _ = Editor.GetCaretTabColumn();
+        Editor.CanBackspaceOverSpacesToTabStop = true;
+        Editor.Backspace();
+        var optionsPanel = new EditorOptionsView(options);
+        _ = optionsPanel.SoftTabBackspaceInput;
+        _ = optionsPanel.TryGetOptions(out var captured);
+        optionsPanel.Dispose();
+        var navigation = new NavigableSymbolSelector { Editor = Editor };
+        var outline = new DocumentOutline { Editor = Editor };
+        var picker = new SnippetPicker(Editor.Snippets, "json", SnippetTypes.Expansion);
+        Editor.CopyViewSettingsFrom(Editor);
+        using var documentMenu = new EditorDocumentList();
+        var documentId = Guid.NewGuid();
+        documentMenu.SetDocuments([new EditorDocumentListEntry(documentId, "Consumer.cs")]);
+        documentMenu.SelectedDocumentId = documentId;
+        using var tabMenu = new EditorDocumentTabMenu();
+        tabMenu.Configure(documentId, 0, 1);
+        if (!tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Current) || tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Others)) throw new Exception("Packaged document tab menu contract failed.");
+        if (documentMenu.DocumentCount != 1) throw new Exception("Packaged document menu contract failed.");
+        var tabCaption = new TextBlock { Text = "Consumer.cs" };
+        var documentTab = new Button { Content = tabCaption };
+        var tabPalette = new EditorDocumentTabPalette(EditorScene.Rendering.Skia.EditorTheme.Light);
+        tabPalette.Apply(documentTab, tabCaption, active: true);
+        if (!ReferenceEquals(documentTab.Foreground, tabCaption.Foreground)) throw new Exception("Packaged document tab palette failed.");
+        _ = EditorFileIcons.CreateSaveAll();
+        using var navigationDraft = new EditorGoToLineView(Editor.Document.Snapshot(), 0);
+        if (!navigationDraft.TryGetTarget(out var lineTarget) || !Editor.TryNavigateTo(lineTarget)) throw new Exception("Packaged native navigation failed.");
+        _ = Editor.ChangeLineEndings("\n");
+        _ = Editor.GetCommandState(EditorCommand.ConvertToCr, EditorCommandQueryMode.CommandSurface);
+        Commands.Editor = Editor;
+        var copyButton = new Button { Content = "Copy" };
+        Commands.Bind(copyButton, EditorCommand.Copy);
+        Commands.Bind(new MenuFlyoutItem(), EditorCommand.Copy, executeOnClick: false);
+        Commands.Refresh();
+        if (Commands.Count != 2 || Commands.DistinctCommandCount != 1) throw new Exception("Packaged command binding contract failed.");
+        _ = Editor.GetCommandState(EditorCommand.Indent, EditorCommandQueryMode.CommandSurface);
+        var diagnostics = new DiagnosticList { Editor = Editor };
+        diagnostics.SortBy(DiagnosticSortColumn.Line, DiagnosticSortDirection.Descending);
+        diagnostics.SetColumnWidth(DiagnosticSortColumn.File, 180);
+        _ = diagnostics.NavigateNextDiagnostic(backwards: true, wrap: false);
+        _ = diagnostics.PreviousDiagnosticButton;
+        _ = diagnostics.NextDiagnosticButton;
+        _ = diagnostics.GetSortButton(DiagnosticSortColumn.Code);
+        _ = diagnostics.GetColumnGrip(DiagnosticSortColumn.File);
+        Resources.MergedDictionaries.Add(new DiagnosticTemplates());
+        var status = new EditorStatusBar { Editor = Editor };
+        var split = new ResizableSplitView { First = Editor, Ratio = .4 };
+        Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
+        Content = new StackPanel { Children = { documentTab, copyButton, navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };
+    }
+}
