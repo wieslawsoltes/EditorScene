@@ -42,9 +42,12 @@ public sealed partial class EditorPage
 
     private void OnToolbarGroupPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.Escape || sender is not MenuFlyoutSubItem group
-            || !_toolbarOverflow.Items.Contains(group) || XamlRoot is not { } root
-            || !ReferenceEquals(FocusManager.GetFocusedElement(root), group)) return;
+        if (args.Key != VirtualKey.Escape || sender is not MenuFlyoutSubItem group) return;
+        var root = XamlRoot;
+        var focused = root is null ? null : FocusManager.GetFocusedElement(root);
+        if (_diagnostics)
+            Console.WriteLine($"EditorScene overflow Escape: group={group.Text}; handled={args.Handled}; focusedOwner={ReferenceEquals(focused, group)}; root={root is not null}");
+        if (!_toolbarOverflow.Items.Contains(group) || root is null || !ReferenceEquals(focused, group)) return;
 
         var rootOpen = false; var childOpen = false;
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
@@ -61,6 +64,8 @@ public sealed partial class EditorPage
             // of an open submenu. Require a distinct, actually open popup.
             else if (containsChildItem) childOpen = true;
         }
+        if (_diagnostics)
+            Console.WriteLine($"EditorScene overflow Escape: rootOpen={rootOpen}; childOpen={childOpen}");
         if (!rootOpen || childOpen) return;
         args.Handled = true;
         _toolbarOverflow.Hide();
