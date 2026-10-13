@@ -17,6 +17,7 @@ public sealed class EditorGoToLineView : UserControl, IDisposable
         MinHeight = 28, Padding = new Thickness(6, 3, 6, 3), PlaceholderText = "line or line:character"
     };
     private readonly TextBlock _validation = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 32 };
+    private readonly long _textToken;
     private LineNavigationTarget _target;
     private bool _disposed;
     private string? _unavailable;
@@ -43,7 +44,11 @@ public sealed class EditorGoToLineView : UserControl, IDisposable
         AutomationProperties.SetName(_input, "Go to line input");
         AutomationProperties.SetName(_validation, "Go to line validation");
         _input.Text = (current.Line + 1).ToString(CultureInfo.InvariantCulture);
-        _input.TextChanged += OnTextChanged; Validate();
+        // TextChanged may be deferred by the native text control. The actual Text
+        // dependency-property transition must update advice synchronously, including
+        // programmatic changes before the panel is loaded. Acceptance revalidates too.
+        _textToken = _input.RegisterPropertyChangedCallback(TextBox.TextProperty, OnInputPropertyChanged);
+        Validate();
     }
     public bool TryGetTarget(out LineNavigationTarget target)
     {
@@ -55,14 +60,14 @@ public sealed class EditorGoToLineView : UserControl, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(message); _unavailable = message; Validate();
     }
-    private void OnTextChanged(object sender, TextChangedEventArgs args) => Validate();
+    private void OnInputPropertyChanged(DependencyObject sender, DependencyProperty property) => Validate();
     private void Validate()
     {
         if (_disposed) return;
         _target = default;
         if (_unavailable is { } unavailable) { IsValid = false; _validation.Text = unavailable; return; }
         IsValid = LineNavigationTarget.TryParse(_snapshot!, _input.Text.AsSpan(), out _target, out var error);
-        _validation.Text = error switch
+        var message = error switch
         {
             LineNavigationError.None => string.Empty,
             LineNavigationError.LineOutOfRange => $"Enter a line between 1 and {LineCount:N0}.",
@@ -70,10 +75,12 @@ public sealed class EditorGoToLineView : UserControl, IDisposable
             LineNavigationError.SplitSurrogate => "That position splits a Unicode character. Choose the position before or after it.",
             _ => "Enter a positive whole line number, optionally followed by :character."
         };
+        if (_validation.Text != message) _validation.Text = message;
     }
     public new void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; _input.TextChanged -= OnTextChanged; _snapshot = null; _target = default; IsValid = false; base.Dispose();
+        _disposed = true; _input.UnregisterPropertyChangedCallback(TextBox.TextProperty, _textToken);
+        _snapshot = null; _target = default; IsValid = false; base.Dispose();
     }
 }
