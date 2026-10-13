@@ -21,6 +21,7 @@ public sealed partial class EditorPage
         Item(file, "Open…", OpenDocumentAsync, "Ctrl+O");
         Item(file, "Save", async () => { await SaveDocumentAsync(false); }, "Ctrl+S");
         Item(file, "Save As…", async () => { await SaveDocumentAsync(true); });
+        AddSaveAllMenu(file);
         Item(file, "Close", CloseDocumentAsync, "Ctrl+W");
         Item(file, "Close Other Documents", () => CloseCurrentDocumentsAsync(DocumentCloseScope.Others));
         Item(file, "Close All Documents", () => CloseCurrentDocumentsAsync(DocumentCloseScope.All)); Separator(file);
@@ -171,29 +172,6 @@ public sealed partial class EditorPage
             AddDocument(document, _languages.ForFile(file.Name) ?? _languages.Get("plaintext")!, file);
             AddEvent("Opened " + file.Name);
         }
-    }
-    private async Task<bool> SaveDocumentCoreAsync(WorkspaceDocument entry, bool saveAs)
-    {
-        if (!_documents.Contains(entry)) return false;
-        var file = entry.File;
-#if __WASM__
-        // Upload-picker files are private temporary copies, not writable handles to the user's original file.
-        saveAs = true;
-#endif
-        if (file is null || saveAs)
-        {
-            var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary, SuggestedFileName = entry.Document.FileName };
-            var extension = Path.GetExtension(entry.Document.FileName); if (string.IsNullOrEmpty(extension)) extension = ".txt";
-            picker.FileTypeChoices.Add("Text document", new List<string> { extension }); file = await picker.PickSaveFileAsync(); if (file is null) return false;
-        }
-        if (!_documents.Contains(entry)) return false;
-        var snapshot = entry.Document.Snapshot(); var encoding = entry.Document.Encoding;
-        var bytes = encoding.GetPreamble().Concat(encoding.GetBytes(snapshot.Text)).ToArray();
-        CachedFileManager.DeferUpdates(file); await FileIO.WriteBytesAsync(file, bytes);
-        var result = await CachedFileManager.CompleteUpdatesAsync(file);
-        if (result is not Windows.Storage.Provider.FileUpdateStatus.Complete and not Windows.Storage.Provider.FileUpdateStatus.CompleteAndRenamed) throw new IOException("The file provider did not complete the save: " + result);
-        if (entry.Document.Revision == snapshot.Revision) entry.Document.MarkSaved();
-        entry.File = file; entry.Document.FileName = file.Name; RebuildTabs(); UpdateStatus(); AddEvent("Saved " + file.Name); await NotifyLspSavedAsync(entry, snapshot); return !entry.Document.IsModified;
     }
     private async Task ExportAsync(bool rtf)
     {

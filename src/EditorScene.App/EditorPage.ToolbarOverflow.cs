@@ -14,7 +14,7 @@ public sealed partial class EditorPage
         // "overflow" commands, custom input simulation or duplicated execution.
         var group = item.Text switch
         {
-            "New" or "Open" or "Save" => "File",
+            "New" or "Open" or "Save" or "Save All" => "File",
             "Cut" or "Copy" or "Paste" or "Delete" or "Undo" or "Redo" => "Edit",
             "Complete word" or "Signature help" or "Quick info" or "Insert snippet" => "IntelliPrompt",
             "Outdent" or "Indent" or "Comment lines" or "Uncomment lines" or "Format document" => "Formatting",

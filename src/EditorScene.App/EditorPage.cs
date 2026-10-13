@@ -110,7 +110,7 @@ public sealed partial class EditorPage : Page
     private void AddDocument(EditorDocument document, ISyntaxLanguage language, StorageFile? file = null)
     {
         var entry = new WorkspaceDocument(document, language, file); _documents.Add(entry);
-        document.Changed += (_, _) => { RebuildTabCaptions(); QueueDiagnostics(); };
+        document.Changed += (_, _) => { RebuildTabCaptions(); RefreshSaveAllControls(); QueueDiagnostics(); };
         RebuildTabs(); ActivateDocument(entry);
     }
     private void ActivateDocument(WorkspaceDocument entry)
@@ -193,7 +193,7 @@ public sealed partial class EditorPage : Page
         _showEvents = events; _toolTitle.Text = events ? "Events" : "Error List"; _toolContent.Content = events ? _events : _errors; QueueDiagnostics();
     }
     private void RefreshDiagnostics(LanguageAnalysis analysis) => UpdateErrorCaption();
-    private void UpdateStatus() => UpdateClassicStatus();
+    private void UpdateStatus() { RefreshSaveAllControls(); UpdateClassicStatus(); }
     private void ApplyTheme(EditorTheme theme)
     {
         _theme = theme; RequestedTheme = theme.IsDark ? ElementTheme.Dark : ElementTheme.Light;

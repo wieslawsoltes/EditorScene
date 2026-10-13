@@ -100,6 +100,7 @@ public sealed partial class EditorPage
         foreach (var name in DocumentWriteControlNames)
             if (_ui.TryGetValue(name, out var element) && element is Control control && control.IsEnabled != enabled) control.IsEnabled = enabled;
         if (_closeTabButton is { } close && close.IsEnabled != enabled) close.IsEnabled = enabled;
+        RefreshSaveAllControls();
         QueueDiagnostics();
     }
     private async Task<bool> RunDocumentOperationAsync(Func<Task<bool>> action)

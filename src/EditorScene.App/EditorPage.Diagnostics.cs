@@ -151,6 +151,7 @@ public sealed partial class EditorPage
             CommandBindingQueries = _commandBindings.QueryCount, CommandBindingWrites = _commandBindings.PropertyWriteCount,
             DocumentTabBuilds = _tabBuildCount, DocumentMenuBuilds = _documentList.ItemBuildCount,
             DocumentOrder = _documents.Select(d => d.Document.FileName).ToArray(), DocumentOperationBusy = _documentOperations.IsBusy,
+            DocumentModified = _documents.Select(d => d.Document.IsModified).ToArray(), SaveAllRunning = _saveAllRunning, SaveAllTotal = _saveAllTotal, SaveAllCompleted = _saveAllCompleted,
             DocumentTabMenuBuilds = _documentTabMenuBuilds,
             DocumentClosePrompt = (_dialog?.Title as string) == "Save changes?" ? _dialog.Content as string : null,
             DocumentMenuCheckCount = _documentList.Items.OfType<ToggleMenuFlyoutItem>().Count(item => item.IsChecked),
@@ -159,8 +160,14 @@ public sealed partial class EditorPage
         };
     }
     private readonly List<string> _nativeChecks = [];
+    private bool _nativeChecksStarted;
     private async Task RunNativeChecksAsync()
     {
+        // Native mounted-control tests temporarily replace and restore this page.
+        // Restoring it raises Loaded again; never launch a second overlapping suite.
+        if (_nativeChecksStarted) return;
+        _nativeChecksStarted = true;
+        Console.WriteLine("EditorScene native checks started.");
         try
         {
             await NativeEditorChecks.RunAsync(_nativeChecks);
@@ -188,6 +195,10 @@ internal sealed class BrowserState
     public long CommandBindingWrites { get; set; }
     public long DocumentTabBuilds { get; set; }
     public string[] DocumentOrder { get; set; } = [];
+    public bool[] DocumentModified { get; set; } = [];
+    public bool SaveAllRunning { get; set; }
+    public int SaveAllTotal { get; set; }
+    public int SaveAllCompleted { get; set; }
     public bool DocumentOperationBusy { get; set; }
     public int DocumentTabMenuBuilds { get; set; }
     public string? DocumentClosePrompt { get; set; }
