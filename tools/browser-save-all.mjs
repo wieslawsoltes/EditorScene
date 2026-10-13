@@ -17,22 +17,24 @@ export async function checkSaveAll({page,state,wait,textIs,paste,click,command,f
   const active=(await state()).FileName; const activeRevision=(await state()).Revision;
   await wait(()=>globalThis.__editorSceneState?.CommandSurfaceEnabled['Toolbar Save All']&&globalThis.__editorSceneState.CommandSurfaceEnabled['Command Save All']);
   await page.screenshot({path:path.join(output,'save-all-enabled-dark.png')});
-  const downloads=await collect(2,()=>click('Toolbar Save All'),2);
+  const downloads=await collect(names,()=>click('Toolbar Save All'));
   for(let i=0;i<contents.length;i++)assert.equal(await readFile(downloads[i],'utf8'),contents[i]);
   let s=await state();
   assert.equal(s.FileName,active); assert.equal(s.Revision,activeRevision); assert.equal(s.DocumentCount,4);
+  assert.deepEqual(s.DocumentOrder,[original,...names,active],'Saving must not append another extension to document captions');
   assert.equal(s.CommandSurfaceEnabled['Toolbar Save All'],false); assert.equal(s.CommandSurfaceEnabled['Command Save All'],false);
   assert.deepEqual(s.DocumentModified,[false,false,false,false]); await textIs('');
-  checks.push('Save All writes only dirty documents in tab order, including a boundary surrogate, while retaining the active clean document and revision');
+  checks.push('Save All downloads exact dirty filenames and bytes in tab order while preserving the active clean document and all captions');
 
   await click('All documents'); await wait(name=>globalThis.__editorSceneState?.VisibleCommandEnabled?.[name]===true,names[0]);
   await click('Visible command '+names[0]); await wait(name=>globalThis.__editorSceneState?.FileName===name&&globalThis.__editorSceneState.OpenMenuCount===0,names[0]);
   await textIs(contents[0]); await focusEditor(); await page.keyboard.press('Control+z'); await textIs('');
   await wait(()=>globalThis.__editorSceneState?.Modified&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Save All']);
-  const single=await collect(1,()=>page.keyboard.press('Control+Shift+F12'),1);
+  const single=await collect([names[0]],()=>page.keyboard.press('Control+Shift+F12'));
   assert.equal((await readFile(single[0])).length,0,'An emptied but modified document must be saved as zero bytes');
   s=await state(); assert.equal(s.FileName,names[0]); assert.equal(s.Modified,false); assert.deepEqual(s.DocumentModified,[false,false,false,false]);
-  checks.push('Ctrl+Shift+F12 saves the one newly dirty document after undo, including an empty result, without resaving clean files');
+  assert.deepEqual(s.DocumentOrder,[original,...names,active]);
+  checks.push('Ctrl+Shift+F12 resaves an emptied dirty document under its unchanged name without resaving clean files');
 
   await click('Theme'); await click('Choice Light'); await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
   await click('Toolbar commands'); await click('Visible submenu File');
@@ -45,21 +47,28 @@ export async function checkSaveAll({page,state,wait,textIs,paste,click,command,f
   await click('Theme'); await click('Choice Dark'); await wait(()=>globalThis.__editorSceneState?.Theme==='Dark'); await focusEditor();
   checks.push('Clean Save All controls are disabled consistently in menus, toolbar and overflow, and saved documents close without dirty prompts');
 
-  async function collect(expected,action,planned) {
+  async function collect(expectedNames,action) {
     const files=[]; const saves=[];
     let resolve, reject;
     const arrived=new Promise((ok,fail)=>{resolve=ok;reject=fail;});
+    // Attach rejection handling before asynchronous clicks so a prompt/action failure
+    // cannot leave an unobserved download timer or rejected save promise behind.
+    arrived.catch(()=>{});
     const timeout=setTimeout(()=>reject(new Error('Expected Save All downloads did not arrive')),60000);
     const listener=download=>{
-      const file=path.join(output,`save-all-${planned}-${files.length}.bin`); files.push(file);
-      saves.push(download.saveAs(file));
-      if(files.length===expected)resolve();
+      try {
+        assert.equal(download.suggestedFilename(),expectedNames[files.length],'The native picker must suggest exactly one extension');
+        const file=path.join(output,`save-all-${expectedNames.length}-${files.length}.bin`); files.push(file);
+        saves.push(download.saveAs(file).catch(error=>{reject(error);throw error;}));
+        saves[saves.length-1].catch(()=>{});
+        if(files.length===expectedNames.length)resolve();
+      } catch(error) { reject(error); }
     };
     page.on('download',listener);
     try {
       await action(); await arrived;
-      await wait(n=>globalThis.__editorSceneState?.SaveAllTotal===n&&globalThis.__editorSceneState.SaveAllCompleted===n&&!globalThis.__editorSceneState.SaveAllRunning&&!globalThis.__editorSceneState.DocumentOperationBusy,planned);
-      await Promise.all(saves); assert.equal(files.length,expected); return files;
+      await wait(n=>globalThis.__editorSceneState?.SaveAllTotal===n&&globalThis.__editorSceneState.SaveAllCompleted===n&&!globalThis.__editorSceneState.SaveAllRunning&&!globalThis.__editorSceneState.DocumentOperationBusy,expectedNames.length);
+      await Promise.all(saves); assert.equal(files.length,expectedNames.length); return files;
     } finally { clearTimeout(timeout); page.off('download',listener); }
   }
 }
