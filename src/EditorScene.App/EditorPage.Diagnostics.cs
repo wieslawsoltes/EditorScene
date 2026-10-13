@@ -160,8 +160,14 @@ public sealed partial class EditorPage
         };
     }
     private readonly List<string> _nativeChecks = [];
+    private bool _nativeChecksStarted;
     private async Task RunNativeChecksAsync()
     {
+        // Native mounted-control tests temporarily replace and restore this page.
+        // Restoring it raises Loaded again; never launch a second overlapping suite.
+        if (_nativeChecksStarted) return;
+        _nativeChecksStarted = true;
+        Console.WriteLine("EditorScene native checks started.");
         try
         {
             await NativeEditorChecks.RunAsync(_nativeChecks);

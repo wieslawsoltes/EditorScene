@@ -50,7 +50,11 @@ def native_checks(configuration):
         run('xvfb-run', '-a', 'dotnet', files[0], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
     text = (OUT/'native-checks.log').read_text()
     checks = [line[6:] for line in text.splitlines() if line.startswith('PASS: ')]
-    if len(checks) < 385 or 'EditorScene native checks passed.' not in text: raise RuntimeError('Native check evidence is incomplete.')
+    if text.count('EditorScene native checks started.') != 1 or text.count('EditorScene native checks passed.') != 1:
+        raise RuntimeError('Expected exactly one complete native suite invocation.')
+    if len(checks) != len(set(checks)):
+        raise RuntimeError('Duplicate native assertions suggest suite reentry or ambiguous check names.')
+    if len(checks) < 385: raise RuntimeError('Native check evidence is incomplete.')
     (OUT/'native-checks.json').write_text(json.dumps({'passed': True, 'count': len(checks), 'checks': checks}, indent=2)+'\n')
     print(f'{len(checks)} actual Uno-host checks passed.', flush=True)
     # Keep full raw samples in artifacts, with summaries visible in ordinary CI logs.
