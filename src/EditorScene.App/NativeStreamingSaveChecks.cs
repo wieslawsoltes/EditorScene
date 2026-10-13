@@ -33,6 +33,7 @@ internal static class NativeStreamingSaveChecks
             using var empty = new EditorDocument(); var emptyContent = SnapshotSaveContent.Create(empty.Snapshot(), new UnicodeEncoding(false, true, true));
             await EditorPage.WritePreparedFileAsync(file, emptyContent);
             Check((await ReadBytesAsync()).SequenceEqual(new byte[] { 255, 254 }), "Empty encoded native save contains only its selected BOM");
+            Check(EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.F12, true, true, false) && !EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.S, true, false, true) && !EditorPage.IsSaveAllGesture(Windows.System.VirtualKey.S, true, true, false), "Save All uses its nontext shortcut without consuming AltGr-letter or existing Save As gestures");
             var firstIcon = EditorFileIcons.CreateSaveAll(); var secondIcon = EditorFileIcons.CreateSaveAll();
             Check(!ReferenceEquals(firstIcon, secondIcon) && firstIcon.Data is not null && secondIcon.Data is not null, "Save All native vector controls are independent and need no icon font");
             var plan = DocumentSavePlan.Create([new(document.Id, true), new(empty.Id, false)]);

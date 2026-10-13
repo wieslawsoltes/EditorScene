@@ -80,6 +80,7 @@ public sealed partial class EditorPage
     private void OnDocumentNavigationPreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
         if (args.Handled || !_loaded || _dialog is not null) return;
+        if (HandleSaveAllKey(args)) { args.Handled = true; return; }
         if (HandleDocumentClosingKey(args)) { args.Handled = true; return; }
         var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         if (control && HandleDocumentNavigationKey(args)) args.Handled = true;

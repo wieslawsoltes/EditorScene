@@ -90,7 +90,7 @@ public sealed partial class EditorPage
     private void BuildClassicToolbar()
     {
         Tool("New", EditorIconKind.New, () => { NewDocument(); return Task.CompletedTask; });
-        Tool("Open", EditorIconKind.Open, OpenDocumentAsync); Tool("Save", EditorIconKind.Save, async () => { await SaveDocumentAsync(false); }); ToolSeparator();
+        Tool("Open", EditorIconKind.Open, OpenDocumentAsync); Tool("Save", EditorIconKind.Save, async () => { await SaveDocumentAsync(false); }); AddSaveAllTool(); ToolSeparator();
         ToolCommand("Cut", EditorIconKind.Cut, EditorCommand.Cut); ToolCommand("Copy", EditorIconKind.Copy, EditorCommand.Copy); ToolCommand("Paste", EditorIconKind.Paste, EditorCommand.Paste); ToolCommand("Delete", EditorIconKind.Delete, EditorCommand.Delete); ToolSeparator();
         ToolCommand("Undo", EditorIconKind.Undo, EditorCommand.Undo); ToolCommand("Redo", EditorIconKind.Redo, EditorCommand.Redo); ToolSeparator();
         ToolCommand("Complete word", EditorIconKind.Completion, EditorCommand.CompleteWord); ToolCommand("Signature help", EditorIconKind.Signature, EditorCommand.SignatureHelp); ToolCommand("Quick info", EditorIconKind.Information, EditorCommand.QuickInfo);

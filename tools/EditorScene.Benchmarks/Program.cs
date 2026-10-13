@@ -59,6 +59,7 @@ ReviewBenchmarks.Add(rows);
 CompilerBenchmarks.Add(rows);
 CompletedAnalysisBenchmarks.Add(rows);
 WorkspaceBenchmarks.Add(rows);
+SnapshotSaveBenchmarks.Add(rows);
 WhitespaceBenchmarks.Add(rows);
 TabColumnBenchmarks.Add(rows);
 var report = new { sourceRevision = Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "local-working-tree", framework = RuntimeInformation.FrameworkDescription, os = RuntimeInformation.OSDescription, architecture = RuntimeInformation.ProcessArchitecture.ToString(), processors = Environment.ProcessorCount,
