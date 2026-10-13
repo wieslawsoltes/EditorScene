@@ -46,6 +46,24 @@ internal static class NativeStreamingSaveChecks
             Check(!ReferenceEquals(firstIcon, secondIcon) && firstIcon.Data is not null && secondIcon.Data is not null, "Save All native vector controls are independent and need no icon font");
             var plan = DocumentSavePlan.Create([new(document.Id, true), new(empty.Id, false)]);
             Check(plan.DocumentIds.Length == 1 && plan.DocumentIds[0] == document.Id, "Native Save All planning excludes clean files and retains the dirty document identity");
+
+            string SuggestedResult(string name)
+            {
+                var picker = EditorPage.CreateDocumentSavePicker(name);
+                return picker.SuggestedFileName + picker.FileTypeChoices.Single().Value.Single();
+            }
+            var suggested = "Document.cs";
+            for (var i = 0; i < 5; i++) suggested = SuggestedResult(suggested);
+            Check(suggested == "Document.cs", "Repeated save picker suggestions append exactly one extension rather than accumulating .cs suffixes");
+            Check(SuggestedResult("/folder/Sensor.generated.cs") == "Sensor.generated.cs"
+                && SuggestedResult("C:\\folder\\日本語.Designer.CS") == "日本語.Designer.CS"
+                && SuggestedResult(".settings.json") == ".settings.json", "Save picker suggestions preserve compound and Unicode filenames while excluding directories");
+            Check(SuggestedResult("README") == "README.txt" && SuggestedResult(".editorconfig") == ".editorconfig.txt",
+                "Names without a suffix retain the existing text-file fallback and a nonempty suggestion");
+            var rejectedNames = 0;
+            foreach (var name in new string?[] { null, "", " ", "/folder/" })
+                try { EditorPage.CreateDocumentSavePicker(name!); } catch (ArgumentException) { rejectedNames++; }
+            Check(rejectedNames == 4, "Invalid save names are rejected before a picker can be shown");
         }
         finally { await file.DeleteAsync(); }
         async Task<byte[]> ReadBytesAsync()
