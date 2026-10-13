@@ -29,10 +29,10 @@ export async function checkSaveAll({page,state,wait,textIs,paste,click,command,f
   await click('Visible command '+names[0]); await wait(name=>globalThis.__editorSceneState?.FileName===name&&globalThis.__editorSceneState.OpenMenuCount===0,names[0]);
   await textIs(contents[0]); await focusEditor(); await page.keyboard.press('Control+z'); await textIs('');
   await wait(()=>globalThis.__editorSceneState?.Modified&&globalThis.__editorSceneState.CommandSurfaceEnabled['Toolbar Save All']);
-  const single=await collect(1,()=>page.keyboard.press('Control+Alt+s'),1);
+  const single=await collect(1,()=>page.keyboard.press('Control+Shift+F12'),1);
   assert.equal((await readFile(single[0])).length,0,'An emptied but modified document must be saved as zero bytes');
   s=await state(); assert.equal(s.FileName,names[0]); assert.equal(s.Modified,false); assert.deepEqual(s.DocumentModified,[false,false,false,false]);
-  checks.push('Ctrl+Alt+S saves the one newly dirty document after undo, including an empty result, without resaving clean files');
+  checks.push('Ctrl+Shift+F12 saves the one newly dirty document after undo, including an empty result, without resaving clean files');
 
   await click('Theme'); await click('Choice Light'); await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
   await click('Toolbar commands'); await click('Visible submenu File');
