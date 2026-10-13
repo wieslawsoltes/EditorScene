@@ -2,28 +2,37 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 
 export async function checkLineEndings({page,state,wait,textIs,paste,click,command,focusEditor,output,checks}) {
+  // Text changes before a native menu's close/focus continuation completes.
+  // Observe keyboard readiness without clicking the editor or moving its caret.
+  const convert=async(suffix,text)=>{
+    await command('Advanced','Convert Line Endings to '+suffix);
+    await wait(expected=>{
+      const s=globalThis.__editorSceneState;
+      return s?.TextPrefix===expected&&s.OpenMenuCount===0&&s.FocusedControl?.endsWith('.TextArea');
+    },text);
+  };
   await command('File','New');
   const source='first\r\nsecond\nthird\rfourth🙂';
+  const crlf='first\r\nsecond\r\nthird\r\nfourth🙂';
   await paste(source); await page.keyboard.press('Control+Home');
-  await command('Advanced','Convert Line Endings to CRLF'); await textIs('first\r\nsecond\r\nthird\r\nfourth🙂');
+  await convert('CRLF',crlf);
   await page.keyboard.press('Control+z'); await textIs(source);
-  await page.keyboard.press('Control+y'); await textIs('first\r\nsecond\r\nthird\r\nfourth🙂');
+  await page.keyboard.press('Control+y'); await textIs(crlf);
   await page.keyboard.press('Control+Home'); await page.keyboard.press('Shift+ArrowRight');
   const before=await wait(()=>{
     const s=globalThis.__editorSceneState;
     return s?.CaretOffset===1&&s.SelectionStart===0&&s.SelectionLength===1;
   });
-  await command('Advanced','Convert Line Endings to CRLF');
-  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0&&globalThis.__editorSceneState.FocusedControl?.endsWith('.TextArea'));
+  await convert('CRLF',crlf);
   let s=await state();
   for(const key of ['Revision','CaretOffset','SelectionStart','SelectionLength','Modified'])assert.equal(s[key],before[key],key+' changed on canonical conversion');
   await page.keyboard.press('Control+z'); await textIs(source);
   checks.push('Native line-ending conversion preserves non-delimiter text and canonical repeat commands do not add an undo unit or move selection');
 
-  await command('Advanced','Convert Line Endings to CR');await textIs('first\rsecond\rthird\rfourth🙂');
+  await convert('CR','first\rsecond\rthird\rfourth🙂');
   await wait(()=>globalThis.__editorSceneState?.LineCount===4);
   await page.keyboard.press('Control+z');await textIs(source);
-  await command('Advanced','Convert Line Endings to LF');await textIs('first\nsecond\nthird\nfourth🙂');
+  await convert('LF','first\nsecond\nthird\nfourth🙂');
   await page.keyboard.press('Control+z');await textIs(source);
   checks.push('All three native conversion commands preserve logical lines and undo mixed source exactly');
 
@@ -35,8 +44,7 @@ export async function checkLineEndings({page,state,wait,textIs,paste,click,comma
     const s=globalThis.__editorSceneState;
     return s?.TextPrefix==='one\ntwo\n'&&s.CommandSurfaceEnabled?.['Toolbar Redo']===true;
   });
-  await command('Advanced','Convert Line Endings to LF');
-  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0&&globalThis.__editorSceneState.FocusedControl?.endsWith('.TextArea'));
+  await convert('LF','one\ntwo\n');
   assert.equal((await state()).Revision,redoBaseline.Revision);
   await page.keyboard.press('Control+y');await textIs('Xone\ntwo\n');
   checks.push('A canonical LF command preserves the redo branch instead of silently replacing already-correct line breaks');
