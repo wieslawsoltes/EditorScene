@@ -54,7 +54,7 @@ def native_checks(configuration):
         raise RuntimeError('Expected exactly one complete native suite invocation.')
     if len(checks) != len(set(checks)):
         raise RuntimeError('Duplicate native assertions suggest suite reentry or ambiguous check names.')
-    if len(checks) < 385: raise RuntimeError('Native check evidence is incomplete.')
+    if len(checks) < 401: raise RuntimeError('Native check evidence is incomplete.')
     (OUT/'native-checks.json').write_text(json.dumps({'passed': True, 'count': len(checks), 'checks': checks}, indent=2)+'\n')
     print(f'{len(checks)} actual Uno-host checks passed.', flush=True)
     # Keep full raw samples in artifacts, with summaries visible in ordinary CI logs.

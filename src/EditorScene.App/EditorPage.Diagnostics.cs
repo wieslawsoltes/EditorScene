@@ -156,6 +156,8 @@ public sealed partial class EditorPage
             DocumentClosePrompt = (_dialog?.Title as string) == "Save changes?" ? _dialog.Content as string : null,
             DocumentMenuCheckCount = _documentList.Items.OfType<ToggleMenuFlyoutItem>().Count(item => item.IsChecked),
             DocumentTabOffset = _tabScroll.HorizontalOffset, DocumentTabExtent = _tabScroll.ExtentWidth, DocumentTabViewportWidth = _tabScroll.ViewportWidth,
+            GoToLineOpen = _goToLineView is not null, GoToLineValid = _goToLineView?.IsValid ?? false,
+            GoToLineText = _goToLineView?.PositionInput.Text ?? string.Empty, GoToLineError = _goToLineView?.ValidationMessage ?? string.Empty,
             Controls = controls, Error = _lastError, NativeChecks = _nativeChecks.ToArray()
         };
     }
@@ -197,6 +199,10 @@ internal sealed class BrowserState
     public string[] DocumentOrder { get; set; } = [];
     public bool[] DocumentModified { get; set; } = [];
     public bool SaveAllRunning { get; set; }
+    public bool GoToLineOpen { get; set; }
+    public bool GoToLineValid { get; set; }
+    public string GoToLineText { get; set; } = string.Empty;
+    public string GoToLineError { get; set; } = string.Empty;
     public int SaveAllTotal { get; set; }
     public int SaveAllCompleted { get; set; }
     public bool DocumentOperationBusy { get; set; }

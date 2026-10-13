@@ -59,6 +59,7 @@ using EditorScene.LanguageServices;
 using System.Reflection;
 using var document = new EditorDocument("using System; class C { int M() => Math.Abs(-1); }", "consumer.cs");
 var snapshot = document.Snapshot();
+if (!LineNavigationTarget.TryParse(snapshot, "1:2", out var lineTarget, out _) || lineTarget.Offset != 1 || !lineTarget.IsCurrent(snapshot)) throw new Exception("Packaged line navigation failed.");
 var saveContent = SnapshotSaveContent.Create(snapshot, new System.Text.UTF8Encoding(false, true));
 using var savedBytes = new MemoryStream();
 await saveContent.WriteToAsync(savedBytes);
@@ -178,6 +179,8 @@ public sealed class ConsumerControl : UserControl
         if (!tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Current) || tabMenu.CanInvoke(EditorScene.Text.DocumentCloseScope.Others)) throw new Exception("Packaged document tab menu contract failed.");
         if (documentMenu.DocumentCount != 1) throw new Exception("Packaged document menu contract failed.");
         _ = EditorFileIcons.CreateSaveAll();
+        using var navigationDraft = new EditorGoToLineView(Editor.Document.Snapshot(), 0);
+        if (!navigationDraft.TryGetTarget(out var lineTarget) || !Editor.TryNavigateTo(lineTarget)) throw new Exception("Packaged native navigation failed.");
         Commands.Editor = Editor;
         var copyButton = new Button { Content = "Copy" };
         Commands.Bind(copyButton, EditorCommand.Copy);

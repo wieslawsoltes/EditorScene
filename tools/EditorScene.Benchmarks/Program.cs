@@ -59,6 +59,7 @@ ReviewBenchmarks.Add(rows);
 CompilerBenchmarks.Add(rows);
 CompletedAnalysisBenchmarks.Add(rows);
 WorkspaceBenchmarks.Add(rows);
+LineNavigationBenchmarks.Add(rows);
 SnapshotSaveBenchmarks.Add(rows);
 WhitespaceBenchmarks.Add(rows);
 TabColumnBenchmarks.Add(rows);

@@ -76,5 +76,6 @@ internal static class NativeEditorChecks
         NativeDocumentListChecks.Run(checks);
         NativeDocumentTabMenuChecks.Run(checks);
         await NativeStreamingSaveChecks.RunAsync(checks);
+        NativeLineNavigationChecks.Run(checks);
     }
 }

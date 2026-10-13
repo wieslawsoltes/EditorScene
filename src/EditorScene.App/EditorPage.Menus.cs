@@ -136,17 +136,6 @@ public sealed partial class EditorPage
         AddDocument(new EditorDocument(text.ToString(), "large-document.txt"), _languages.Get("plaintext")!);
         AddEvent("Loaded 100,000-line document");
     }
-    private async Task GoToLineAsync()
-    {
-        var input = new TextBox { Text = _active.Document.Buffer.GetLineByOffset(_active.CaretOffset).LineNumber.ToString(), MinWidth = 240, PlaceholderText = "Line[:column]", FontSize = 14 };
-        Register("Go to line input", input);
-        var dialog = new ContentDialog { Title = $"Go to line (1–{_active.Document.Buffer.LineCount:N0})", Content = input, PrimaryButtonText = "Go", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
-        var pieces = input.Text.Split(':');
-        if (!int.TryParse(pieces[0], out var line) || line <= 0 || line > _active.Document.Buffer.LineCount || pieces.Length > 2 || (pieces.Length == 2 && !int.TryParse(pieces[1], out _))) throw new FormatException("Enter a valid line number, optionally followed by :column.");
-        var column = pieces.Length == 2 ? Math.Max(1, int.Parse(pieces[1], System.Globalization.CultureInfo.InvariantCulture)) : 1;
-        _active.GoToLine(line, column);
-    }
     private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
     {
         if (_dialog is not null) return ContentDialogResult.None;
