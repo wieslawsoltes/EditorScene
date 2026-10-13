@@ -5,6 +5,7 @@ import path from 'node:path';
 export async function checkLineNavigation({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks}) {
   await command('File','New');
   const text='first\n\t🙂z\nlast'; await paste(text); await page.keyboard.press('Control+Home');
+  await wait(()=>globalThis.__editorSceneState?.CaretOffset===0&&globalThis.__editorSceneState.SelectionLength===0);
   const revision=(await state()).Revision;
   async function open(keyboard=false) {
     if(keyboard)await page.keyboard.press('Control+g');else await command('Edit','Go To Line…');
@@ -28,7 +29,14 @@ export async function checkLineNavigation({page,state,wait,textIs,paste,click,fi
   checks.push('Go To Line keeps invalid ranges and split-surrogate positions open for correction, then Enter navigates without editing');
 
   await page.keyboard.press('Control+Home');for(let i=0;i<3;i++)await page.keyboard.press('Shift+ArrowRight');
-  const before=await state();await open(true);await input('3:2');await click('Dialog Cancel');
+  // The observation bridge publishes asynchronously. Capturing immediately after
+  // the third key can still read the second key's selection; require the actual
+  // intended native selection before comparing Cancel with that baseline.
+  const before=await wait(()=>{
+    const s=globalThis.__editorSceneState;
+    return s?.CaretOffset===3&&s.SelectionStart===0&&s.SelectionLength===3;
+  });
+  await open(true);await input('3:2');await click('Dialog Cancel');
   await wait(()=>!globalThis.__editorSceneState?.GoToLineOpen&&globalThis.__editorSceneState.FocusedControl?.endsWith('.TextArea'));
   let s=await state();assert.equal(s.CaretOffset,before.CaretOffset);assert.equal(s.SelectionStart,before.SelectionStart);assert.equal(s.SelectionLength,before.SelectionLength);
   await page.keyboard.type('Z');await textIs('Zst\n\t🙂z\nlast');await page.keyboard.press('Control+z');await textIs(text);
