@@ -9,7 +9,10 @@ export async function checkLineEndings({page,state,wait,textIs,paste,click,comma
   await page.keyboard.press('Control+z'); await textIs(source);
   await page.keyboard.press('Control+y'); await textIs('first\r\nsecond\r\nthird\r\nfourth🙂');
   await page.keyboard.press('Control+Home'); await page.keyboard.press('Shift+ArrowRight');
-  const before=await state();
+  const before=await wait(()=>{
+    const s=globalThis.__editorSceneState;
+    return s?.CaretOffset===1&&s.SelectionStart===0&&s.SelectionLength===1;
+  });
   await command('Advanced','Convert Line Endings to CRLF');
   await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0&&globalThis.__editorSceneState.FocusedControl?.endsWith('.TextArea'));
   let s=await state();
@@ -26,11 +29,15 @@ export async function checkLineEndings({page,state,wait,textIs,paste,click,comma
 
   await paste('one\ntwo\n');await page.keyboard.press('Control+z');await textIs(source);
   await page.keyboard.press('Control+y');await textIs('one\ntwo\n');
-  await page.keyboard.press('Control+Home');await page.keyboard.type('X');await page.keyboard.press('Control+z');await textIs('one\ntwo\n');
-  const redoRevision=(await state()).Revision;
+  await page.keyboard.press('Control+Home');await page.keyboard.type('X');await textIs('Xone\ntwo\n');
+  await page.keyboard.press('Control+z');
+  const redoBaseline=await wait(()=>{
+    const s=globalThis.__editorSceneState;
+    return s?.TextPrefix==='one\ntwo\n'&&s.CommandSurfaceEnabled?.['Toolbar Redo']===true;
+  });
   await command('Advanced','Convert Line Endings to LF');
-  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
-  assert.equal((await state()).Revision,redoRevision);
+  await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0&&globalThis.__editorSceneState.FocusedControl?.endsWith('.TextArea'));
+  assert.equal((await state()).Revision,redoBaseline.Revision);
   await page.keyboard.press('Control+y');await textIs('Xone\ntwo\n');
   checks.push('A canonical LF command preserves the redo branch instead of silently replacing already-correct line breaks');
 
