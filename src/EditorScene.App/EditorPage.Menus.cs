@@ -51,6 +51,7 @@ public sealed partial class EditorPage
         Command(advanced, "Duplicate Line / Selection", EditorCommand.DuplicateLine); Command(advanced, "Delete Lines", EditorCommand.DeleteLine, "Ctrl+Shift+L"); Command(advanced, "Sort Selected Lines", EditorCommand.SortLines); Separator(advanced);
         AddWhitespaceMenu(advanced);
         Command(advanced, "Convert Line Endings to LF", EditorCommand.ConvertToLf); Command(advanced, "Convert Line Endings to CRLF", EditorCommand.ConvertToCrLf);
+        Command(advanced, "Convert Line Endings to CR", EditorCommand.ConvertToCr);
         var prompt = Menu("IntelliPrompt");
         Command(prompt, "Complete Word", EditorCommand.CompleteWord, "Ctrl+Space"); Command(prompt, "Quick Info", EditorCommand.QuickInfo); Command(prompt, "Signature Help", EditorCommand.SignatureHelp, "Ctrl+Shift+Space");
         Toggle(prompt, "Automatically Show Completion", () => _active.AutoShowCompletion, () => _active.AutoShowCompletion = !_active.AutoShowCompletion);

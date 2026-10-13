@@ -12,5 +12,5 @@ public enum EditorCommand
     SelectNextOccurrence, ClearExtraSelections, ConvertToLf, ConvertToCrLf,
     SelectAllOccurrences, GoToMatchingBracket, SelectToMatchingBracket, ExpandSelection, ContractSelection,
     TabifySelectedLines, UntabifySelectedLines, ConvertSelectedSpacesToTabs, ConvertSelectedTabsToSpaces,
-    ToggleDefaultContextMenu, ToggleSecondaryPointerCaret
+    ToggleDefaultContextMenu, ToggleSecondaryPointerCaret, ConvertToCr
 }

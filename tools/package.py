@@ -59,6 +59,8 @@ using EditorScene.LanguageServices;
 using System.Reflection;
 using var document = new EditorDocument("using System; class C { int M() => Math.Abs(-1); }", "consumer.cs");
 var snapshot = document.Snapshot();
+var delimiterPlan = LineEndingEditPlan.Create(snapshot, "\n");
+if (delimiterPlan.DocumentId != document.Id || delimiterPlan.Revision != snapshot.Revision) throw new Exception("Packaged line-ending planning failed.");
 if (!LineNavigationTarget.TryParse(snapshot, "1:2", out var lineTarget, out _) || lineTarget.Offset != 1 || !lineTarget.IsCurrent(snapshot)) throw new Exception("Packaged line navigation failed.");
 var saveContent = SnapshotSaveContent.Create(snapshot, new System.Text.UTF8Encoding(false, true));
 using var savedBytes = new MemoryStream();
@@ -181,6 +183,8 @@ public sealed class ConsumerControl : UserControl
         _ = EditorFileIcons.CreateSaveAll();
         using var navigationDraft = new EditorGoToLineView(Editor.Document.Snapshot(), 0);
         if (!navigationDraft.TryGetTarget(out var lineTarget) || !Editor.TryNavigateTo(lineTarget)) throw new Exception("Packaged native navigation failed.");
+        _ = Editor.ChangeLineEndings("\n");
+        _ = Editor.GetCommandState(EditorCommand.ConvertToCr, EditorCommandQueryMode.CommandSurface);
         Commands.Editor = Editor;
         var copyButton = new Button { Content = "Copy" };
         Commands.Bind(copyButton, EditorCommand.Copy);

@@ -20,6 +20,7 @@ import {checkDocumentNavigation} from './browser-document-navigation.mjs';
 import {checkDocumentClosing} from './browser-document-closing.mjs';
 import {checkSaveAll} from './browser-save-all.mjs';
 import {checkLineNavigation} from './browser-line-navigation.mjs';
+import {checkLineEndings} from './browser-line-endings.mjs';
 const root = path.resolve(process.argv[2] ?? 'artifacts/site');
 const base = '/EditorScene/';
 const output = path.resolve('artifacts/browser-tests');
@@ -151,6 +152,7 @@ try {
   await checkDocumentClosing({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
   await checkSaveAll({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
   await checkLineNavigation({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});
+  await checkLineEndings({page,state,wait,textIs,paste,click,command,focusEditor,output,checks});
   const snippetXml='<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet"><CodeSnippet Format="1.0.0"><Header><Title>Browser Imported</Title><Shortcut>custom</Shortcut></Header><Snippet><Declarations><Literal><ID>value</ID><Default>imported</Default></Literal></Declarations><Code Language="CSharp"><![CDATA[$value$-$value$$end$]]></Code></Snippet></CodeSnippet></CodeSnippets>';
   const snippetChooser=page.waitForEvent('filechooser');await command('IntelliPrompt','Import Snippets…');
   await(await snippetChooser).setFiles({name:'browser-custom.snippet',mimeType:'application/xml',buffer:Buffer.from(snippetXml)});
