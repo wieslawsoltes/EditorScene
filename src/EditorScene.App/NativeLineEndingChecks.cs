@@ -61,6 +61,7 @@ internal static class NativeLineEndingChecks
         document.Changed += MoveCaret;
         try { editor.ChangeLineEndings("\n"); } finally { document.Changed -= MoveCaret; }
         Check(editor.Text == "a\nb" && editor.CaretOffset == 1, "Minimal line-ending application preserves a newer caret chosen by a document-change observer");
+        NativeLineEndingStatusChecks.Run(checks);
     }
     private sealed class Permissions(Func<int, bool> insert, Func<ISegment, IEnumerable<ISegment>> delete) : IReadOnlySectionProvider
     {

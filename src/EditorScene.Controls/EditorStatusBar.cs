@@ -1,4 +1,5 @@
 using EditorScene.Rendering.Skia;
+using EditorScene.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -22,9 +23,9 @@ public sealed class EditorStatusBar : UserControl, IDisposable
     private StatusKey? _last;
     private string _prefix = "";
     private bool _updating, _disposed;
-    private Guid _endingDocument;
-    private long _endingRevision = -1;
-    private string _ending = "LF";
+    private LineEndingInfo? _formatInfo;
+    private string? _formatEncoding;
+    private string _ending = "";
     public EditorStatusBar()
     {
         IsTabStop = false;
@@ -37,6 +38,7 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         AutomationProperties.SetName(_zoom, "Editor zoom");
         AutomationProperties.SetHelpText(_zoom, "Editor font size, from 8 to 40 points. The adjacent button shows the percentage and resets to 100 percent.");
         AutomationProperties.SetName(_position, "Caret position");
+        AutomationProperties.SetName(_encoding, "Document format");
         _mode.Click += (_, _) => { if (_editor is { } editor) { editor.IsOverstrike = !editor.IsOverstrike; if (!_disposed && !editor.IsDisposed && ReferenceEquals(_editor, editor)) editor.FocusEditor(); } };
         _less.Click += (_, _) => { if (_editor is { } editor) _ = editor.ExecuteAsync(EditorCommand.ZoomOut); };
         _more.Click += (_, _) => { if (_editor is { } editor) _ = editor.ExecuteAsync(EditorCommand.ZoomIn); };
@@ -63,8 +65,12 @@ public sealed class EditorStatusBar : UserControl, IDisposable
     public Slider ZoomSlider => _zoom;
     public Button ResetZoomButton => _percent;
     public Button OverwriteButton => _mode;
+    public TextBlock DocumentFormatLabel => _encoding;
+    public string DocumentFormatText => _encoding.Text;
+    public string LineEndingText => _ending;
     public string PositionText => _position.Text;
     public long RefreshCount { get; private set; }
+    public long DocumentFormatRefreshCount { get; private set; }
     public void ApplyTheme(EditorTheme theme)
     {
         ArgumentNullException.ThrowIfNull(theme);
@@ -85,27 +91,40 @@ public sealed class EditorStatusBar : UserControl, IDisposable
         if (_disposed) return;
         var editor = _editor;
         if (editor?.IsDisposed == true) { Editor = null; return; }
-        if (editor is null) { _message.Text = _position.Text = _encoding.Text = ""; _last = null; IsEnabled = false; return; }
+        if (editor is null)
+        {
+            _message.Text = _position.Text = _encoding.Text = _ending = "";
+            _formatInfo = null; _formatEncoding = null; _last = null; IsEnabled = false;
+            AutomationProperties.SetHelpText(_encoding, ""); ToolTipService.SetToolTip(_encoding, null); return;
+        }
         if (!IsEnabled) IsEnabled = true;
         var document = editor.Document;
         var key = new StatusKey(document.Id, document.Revision, editor.CaretOffset, editor.IsOverstrike, editor.IsReadOnly, editor.FontSize, editor.Status, document.Encoding.WebName, _prefix, editor.TabSize);
         if (_last == key) return;
         _last = key; RefreshCount++;
-        if (_endingDocument != document.Id || _endingRevision != document.Revision)
-        {
-            _endingDocument = document.Id; _endingRevision = document.Revision;
-            _ending = document.PreferredLineEnding switch { "\r\n" => "CRLF", "\r" => "CR", _ => "LF" };
-        }
+        RefreshDocumentFormat(document);
         var location = document.Buffer.GetLocation(editor.CaretOffset);
         // Ch is a line-local character position, not the absolute document offset.
         _position.Text = $"Ln {location.Line:N0}   Col {editor.GetCaretTabColumn():N0}   Ch {location.Column:N0}";
         _message.Text = _prefix + (editor.IsReadOnly ? "Read only" : editor.Status);
-        _encoding.Text = document.Encoding.WebName.ToUpperInvariant() + "  " + _ending;
         _mode.Content = editor.IsOverstrike ? "OVR" : "INS";
         _percent.Content = $"{Math.Round(editor.FontSize / 13 * 100):0}%";
         _updating = true;
         try { _zoom.Value = Math.Clamp(editor.FontSize, _zoom.Minimum, _zoom.Maximum); }
         finally { _updating = false; }
+    }
+    private void RefreshDocumentFormat(EditorDocument document)
+    {
+        var info = document.Snapshot().GetLineEndings(); var encoding = document.Encoding.WebName;
+        // Metadata is incrementally maintained by the document. Caret changes and
+        // ordinary character edits neither rescan source nor rebuild this label.
+        if (ReferenceEquals(info, _formatInfo) && encoding == _formatEncoding) return;
+        _formatInfo = info; _formatEncoding = encoding; DocumentFormatRefreshCount++;
+        _ending = info.Kind switch { LineEndingKind.CrLf => "CRLF", LineEndingKind.Cr => "CR", LineEndingKind.Lf => "LF", LineEndingKind.Mixed => "Mixed", _ => "None" };
+        _encoding.Text = encoding.ToUpperInvariant() + "  " + _ending;
+        var description = info.DelimiterCount == 0 ? "No CR, LF or CRLF line terminators."
+            : $"Line terminators: CRLF {info.CrLfCount:N0}, LF {info.LfCount:N0}, CR {info.CrCount:N0}.";
+        AutomationProperties.SetHelpText(_encoding, description); ToolTipService.SetToolTip(_encoding, description);
     }
     private void AdaptWidth()
     {
@@ -117,7 +136,7 @@ public sealed class EditorStatusBar : UserControl, IDisposable
     {
         if (_disposed) return;
         if (_editor is not null) _editor.StateChanged -= StateChanged;
-        _editor = null; _last = null; _disposed = true; base.Dispose();
+        _editor = null; _last = null; _formatInfo = null; _disposed = true; base.Dispose();
     }
     private readonly record struct StatusKey(Guid Document, long Revision, int Offset, bool Overwrite, bool ReadOnly, double FontSize, string Status, string Encoding, string Prefix, int TabSize);
 }
