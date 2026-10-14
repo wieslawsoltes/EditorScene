@@ -32,11 +32,10 @@ public sealed partial class EditorPage
         submenu.Items.Add(item);
     }
 
-    private bool TryDismissToolbarRoot(MenuFlyoutSubItem group, KeyRoutedEventArgs args)
+    private bool TryDismissToolbarRoot(MenuFlyoutSubItem group, KeyRoutedEventArgs args, string route)
     {
-        if (args.Key != VirtualKey.Escape || !_toolbarOverflow.Items.Contains(group)
-            || XamlRoot is not { } root || !ReferenceEquals(FocusManager.GetFocusedElement(root), group)) return false;
-
+        if (args.Key != VirtualKey.Escape || !_toolbarOverflow.Items.Contains(group) || XamlRoot is not { } root) return false;
+        var focused = ReferenceEquals(FocusManager.GetFocusedElement(root), group);
         var rootOpen = false; var childOpen = false;
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
         {
@@ -50,22 +49,48 @@ public sealed partial class EditorPage
             if (containsOwner) rootOpen = true;
             else if (containsChildItem) childOpen = true;
         }
-        if (!rootOpen || childOpen) return false;
+        if (_diagnostics) Console.WriteLine($"OVERFLOW_ESCAPE route={route} group={group.Text} handled={args.Handled} focused={focused} root={rootOpen} child={childOpen} source={args.OriginalSource?.GetType().Name}");
+        if (!focused || !rootOpen || childOpen) return false;
         args.Handled = true;
         _toolbarOverflow.Hide();
         QueueDiagnostics();
         return true;
     }
 
-    private sealed class ToolbarOverflowGroup(EditorPage page) : MenuFlyoutSubItem
+    private sealed class ToolbarOverflowGroup : MenuFlyoutSubItem
     {
+        private readonly EditorPage _page;
+        private KeyRoutedEventArgs? _observedEscape;
+        internal ToolbarOverflowGroup(EditorPage page)
+        {
+            _page = page;
+            // Popup input can arrive already handled, skipping the normal virtual
+            // callback. Observe the bubbling event on its actual native owner too.
+            AddHandler(KeyDownEvent, new KeyEventHandler(OnRoutedKeyDown), true);
+            Unloaded += (_, _) => _observedEscape = null;
+        }
         protected override void OnKeyDown(KeyRoutedEventArgs args)
         {
-            // Popup-owned menu items do not reliably receive tunneled PreviewKeyDown.
-            // Inspect the native popup state BEFORE the base control can close a child.
-            // The first Escape remains native; only an already-closed child's focused
-            // root owner dismisses the enclosing flyout. Other keys remain untouched.
-            if (!page.TryDismissToolbarRoot(this, args)) base.OnKeyDown(args);
+            if (args.Key == VirtualKey.Escape) _observedEscape = args;
+            // Capture BEFORE native processing can close a child. Never reconsider
+            // this same event against its post-close state in the fallback below.
+            if (!_page.TryDismissToolbarRoot(this, args, "override")) base.OnKeyDown(args);
+        }
+        private void OnRoutedKeyDown(object sender, KeyRoutedEventArgs args)
+        {
+            if (args.Key != VirtualKey.Escape) return;
+            var observed = ReferenceEquals(args, _observedEscape); _observedEscape = null;
+            if (observed) return;
+            // Do not reinterpret a child-presenter event that restored owner focus
+            // while bubbling. Only an event originating in this owner is eligible.
+            DependencyObject? source = args.OriginalSource as DependencyObject;
+            while (source is not null && !ReferenceEquals(source, this)) source = VisualTreeHelper.GetParent(source);
+            if (ReferenceEquals(source, this)) _page.TryDismissToolbarRoot(this, args, "handled-owner");
+        }
+        protected override void OnKeyUp(KeyRoutedEventArgs args)
+        {
+            _observedEscape = null;
+            base.OnKeyUp(args);
         }
     }
 }
