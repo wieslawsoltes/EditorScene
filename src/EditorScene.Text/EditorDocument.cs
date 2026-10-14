@@ -17,13 +17,15 @@ public sealed class DocumentSnapshot
     private readonly ITextSource _source;
     private readonly Lazy<string> _text;
     private readonly Lazy<SnapshotLineIndex> _lines;
-    internal DocumentSnapshot(Guid id, long revision, string fileName, ITextSource source, SnapshotLineIndex? lines = null)
+    private LineEndingInfo? _lineEndings;
+    internal DocumentSnapshot(Guid id, long revision, string fileName, ITextSource source, SnapshotLineIndex? lines = null, LineEndingInfo? lineEndings = null)
     {
-        DocumentId = id; Revision = revision; FileName = fileName; _source = source;
+        DocumentId = id; Revision = revision; FileName = fileName; _source = source; _lineEndings = lineEndings;
         _text = new Lazy<string>(() => _source.Text);
         _lines = new Lazy<SnapshotLineIndex>(() => lines ?? SnapshotLineIndex.Build(_source));
     }
     internal SnapshotLineIndex? BuiltLineIndex => _lines.IsValueCreated ? _lines.Value : null;
+    internal LineEndingInfo? BuiltLineEndings => Volatile.Read(ref _lineEndings);
     public Guid DocumentId { get; }
     public long Revision { get; }
     public string FileName { get; }
@@ -31,6 +33,22 @@ public sealed class DocumentSnapshot
     public string Text => _text.Value;
     public int LineCount => _lines.Value.LineCount;
     public ITextSource TextSource => _source;
+    /// <summary>Return cached immutable delimiter metadata, without flattening text or
+    /// building the line index. An uncached scan is bounded and cancellable. Concurrent
+    /// first readers may scan independently; a cancelled scan never poisons the cache.</summary>
+    public LineEndingInfo GetLineEndings(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = Volatile.Read(ref _lineEndings);
+        if (result is null)
+        {
+            var scanned = LineEndingInfo.Scan(_source, cancellationToken);
+            result = Interlocked.CompareExchange(ref _lineEndings, scanned, null) ?? scanned;
+        }
+        cancellationToken.ThrowIfCancellationRequested(); return result;
+    }
+    public bool HasUniformLineTerminators => GetLineEndings().HasUniformLineTerminators;
+    public string InferredLineTerminator => GetLineEndings().InferredLineTerminator;
     public string GetText(int offset, int length) => _source.GetText(offset, length);
     /// <summary>Return a zero-based line without materializing the document text.</summary>
     public SnapshotLine GetLine(int lineNumber)
@@ -61,6 +79,9 @@ public sealed class EditorDocument : IDisposable
     private bool _disposed;
     private DocumentSnapshot? _snapshot;
     private SnapshotLineIndex? _lineIndex;
+    private LineEndingInfo? _lineEndings;
+    private (int Cr, int Lf, int CrLf)? _endingCounts;
+    private DocumentBoundaryReader? _endingBoundaryReader;
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     public EditorDocument(string text = "", string fileName = "Untitled.cs")
     {
@@ -90,16 +111,33 @@ public sealed class EditorDocument : IDisposable
         VerifyAccess();
         if (_snapshot is { } cached && cached.Revision == Revision && cached.FileName == FileName) return cached;
         _lineIndex ??= _snapshot?.BuiltLineIndex;
-        return _snapshot = new DocumentSnapshot(Id, Revision, FileName, Buffer.CreateSnapshot(), _lineIndex);
+        _lineEndings ??= _snapshot?.BuiltLineEndings;
+        if (_endingCounts is { } counts)
+        {
+            if (_lineEndings is null || _lineEndings.Counts != counts) _lineEndings = LineEndingInfo.FromCounts(counts);
+        }
+        else if (_lineEndings is { } known) _endingCounts = known.Counts;
+        return _snapshot = new DocumentSnapshot(Id, Revision, FileName, Buffer.CreateSnapshot(), _lineIndex, _lineEndings);
     }
     private void OnBufferChanged(object? sender, DocumentChangeEventArgs e)
     {
-        // A worker may still be building an old snapshot's lazy index. Never wait
-        // for it on the editing thread or retain a chain of unbuilt snapshots.
+        // Never wait for a worker still building an old snapshot's lazy metadata.
         _lineIndex ??= _snapshot?.BuiltLineIndex;
         _lineIndex = _lineIndex?.Replace(e.Offset, e.RemovalLength, e.InsertedText);
+        if (_endingCounts is null && _snapshot?.BuiltLineEndings is { } known)
+        { _lineEndings = known; _endingCounts = known.Counts; }
+        if (_endingCounts is { } counts)
+        {
+            char? prefix = e.Offset > 0 ? ReadEndingBoundary(e.Offset - 1) : null;
+            var end = e.Offset + e.InsertionLength;
+            char? suffix = end < Buffer.TextLength ? ReadEndingBoundary(end) : null;
+            _endingCounts = LineEndingInfo.ApplyChange(counts, e.RemovedText, e.InsertedText, prefix, suffix);
+        }
+        // Retain only value counters through a batch. Snapshot() publishes a new
+        // immutable result when needed, rather than allocating one per delimiter.
         _snapshot = null; Revision++;
     }
+    private char ReadEndingBoundary(int offset) => (_endingBoundaryReader ??= new DocumentBoundaryReader()).Read(Buffer, offset);
     private void OnTextChanged(object? sender, EventArgs e) => Changed?.Invoke(this, e);
     public void MarkSaved() { VerifyAccess(); Buffer.UndoStack.MarkAsOriginalFile(); }
 
@@ -165,6 +203,8 @@ public sealed class EditorDocument : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; _snapshot = null; _lineIndex = null; Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
+        _disposed = true; _snapshot = null; _lineIndex = null; _lineEndings = null; _endingCounts = null;
+        _endingBoundaryReader?.Dispose(); _endingBoundaryReader = null;
+        Buffer.Changed -= OnBufferChanged; Buffer.TextChanged -= OnTextChanged; Changed = null;
     }
 }

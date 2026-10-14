@@ -31,8 +31,8 @@ def tests(configuration):
         counters = ET.parse(trx).find('.//{*}Counters')
         if counters is None: raise RuntimeError(f'No test result counters: {trx}')
         result = {key:int(counters.get(key,'0')) for key in ('total','executed','passed','failed','error','timeout','aborted','notExecuted')}
-        if result['executed'] <= 0 or any(result[k] for k in ('failed','error','timeout','aborted')):
-            raise RuntimeError(f'Test failure: {name}: {result}')
+        if result['executed'] <= 0 or result['total'] != result['executed'] or result['passed'] != result['total'] or any(result[k] for k in ('failed','error','timeout','aborted','notExecuted')):
+            raise RuntimeError(f'Test failure or incomplete execution: {name}: {result}')
         results[name] = result
     (OUT/'tests/summary.json').write_text(json.dumps(results, indent=2)+'\n')
     print('REGRESSION_SUMMARY ' + json.dumps(results, separators=(',', ':')), flush=True)
@@ -54,7 +54,7 @@ def native_checks(configuration):
         raise RuntimeError('Expected exactly one complete native suite invocation.')
     if len(checks) != len(set(checks)):
         raise RuntimeError('Duplicate native assertions suggest suite reentry or ambiguous check names.')
-    if len(checks) < 414: raise RuntimeError('Native check evidence is incomplete.')
+    if len(checks) < 437: raise RuntimeError('Native check evidence is incomplete.')
     (OUT/'native-checks.json').write_text(json.dumps({'passed': True, 'count': len(checks), 'checks': checks}, indent=2)+'\n')
     print(f'{len(checks)} actual Uno-host checks passed.', flush=True)
     # Keep full raw samples in artifacts, with summaries visible in ordinary CI logs.

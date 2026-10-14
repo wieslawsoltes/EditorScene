@@ -68,6 +68,9 @@ public sealed class ConsumerControl : UserControl
         _ = diagnostics.GetColumnGrip(DiagnosticSortColumn.File);
         Resources.MergedDictionaries.Add(new DiagnosticTemplates());
         var status = new EditorStatusBar { Editor = Editor };
+        _ = status.DocumentFormatLabel;
+        _ = status.DocumentFormatRefreshCount;
+        if (status.LineEndingText != "None" || !status.DocumentFormatText.EndsWith("  None", StringComparison.Ordinal)) throw new Exception("Packaged format status failed.");
         var split = new ResizableSplitView { First = Editor, Ratio = .4 };
         Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
         Content = new StackPanel { Children = { documentTab, copyButton, navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };

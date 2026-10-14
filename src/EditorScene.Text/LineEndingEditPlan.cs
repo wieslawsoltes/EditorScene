@@ -22,38 +22,38 @@ public sealed class LineEndingEditPlan
     private LineEndingEditPlan(DocumentSnapshot snapshot, string delimiter, ImmutableArray<TextEdit> edits, int cr, int lf, int crlf)
     { DocumentId = snapshot.DocumentId; Revision = snapshot.Revision; Delimiter = delimiter; Edits = edits; CrCount = cr; LfCount = lf; CrLfCount = crlf; }
 
-    /// <summary>Scan immutable source with a bounded cleared reader buffer. CRLF is
-    /// one delimiter even across reader boundaries. Canonical input needs one scan;
-    /// noncanonical input needs a counting scan and an emitting scan, allocating
-    /// exactly one owned edit array without builder growth or a final array copy.
-    /// Cost is O(source length + changes), without building a full line index.</summary>
+    /// <summary>Use completed snapshot metadata when available. Otherwise count
+    /// delimiters with a bounded cleared reader buffer. Noncanonical text uses one
+    /// exact owned result array and an emitting scan, without builder growth/copy.
+    /// Canonical cached metadata needs no reader or source scan. An unobserved
+    /// snapshot still uses one counting scan, plus one emitting scan if needed.</summary>
     public static LineEndingEditPlan Create(DocumentSnapshot snapshot, string delimiter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (delimiter is not ("\n" or "\r" or "\r\n")) throw new ArgumentException("Choose LF, CRLF or CR.", nameof(delimiter));
         cancellationToken.ThrowIfCancellationRequested();
+        var known = snapshot.BuiltLineEndings;
+        (int Cr, int Lf, int CrLf) counts = known is null ? default : (known.CrCount, known.LfCount, known.CrLfCount);
+        if (known is not null && Changes(counts, delimiter) == 0)
+            return new(snapshot, delimiter, ImmutableArray<TextEdit>.Empty, counts.Cr, counts.Lf, counts.CrLf);
         var buffer = ArrayPool<char>.Shared.Rent(BufferLength);
         try
         {
-            var counts = Scan(snapshot, delimiter, null, buffer, cancellationToken);
-            var changed = delimiter switch
-            {
-                "\n" => counts.Cr + counts.CrLf,
-                "\r" => counts.Lf + counts.CrLf,
-                _ => counts.Cr + counts.Lf
-            };
+            if (known is null) counts = Scan(snapshot, delimiter, null, buffer, cancellationToken);
+            var changed = Changes(counts, delimiter);
             cancellationToken.ThrowIfCancellationRequested();
             if (changed == 0) return new(snapshot, delimiter, ImmutableArray<TextEdit>.Empty, counts.Cr, counts.Lf, counts.CrLf);
-
             var edits = new TextEdit[changed];
             Scan(snapshot, delimiter, edits, buffer, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            // This method is the array's sole owner. Scan is synchronous and retains
-            // nothing; after wrapping, no code mutates or pools the published array.
+            // This method owns the array. Scan retains nothing. Never mutate or
+            // pool the result after publishing it through the immutable wrapper.
             return new(snapshot, delimiter, ImmutableCollectionsMarshal.AsImmutableArray(edits), counts.Cr, counts.Lf, counts.CrLf);
         }
         finally { ArrayPool<char>.Shared.Return(buffer, clearArray: true); }
     }
+    private static int Changes((int Cr, int Lf, int CrLf) counts, string delimiter) => delimiter switch
+    { "\n" => counts.Cr + counts.CrLf, "\r" => counts.Lf + counts.CrLf, _ => counts.Cr + counts.Lf };
 
     private static (int Cr, int Lf, int CrLf) Scan(DocumentSnapshot snapshot, string delimiter,
         TextEdit[]? edits, char[] buffer, CancellationToken cancellationToken)
@@ -90,12 +90,10 @@ public sealed class LineEndingEditPlan
         if (pendingCr >= 0) Add(pendingCr, "\r");
         if (edits is not null && editIndex != edits.Length) throw new InvalidOperationException("The immutable line-ending scan produced inconsistent counts.");
         return (cr, lf, crlf);
-
         void Add(int offset, string source)
         {
             if (source == "\r\n") crlf++; else if (source == "\r") cr++; else lf++;
             if (edits is null || source == delimiter) return;
-            // Preserve any shared code unit rather than replacing a whole delimiter.
             edits[editIndex++] = (source, delimiter) switch
             {
                 ("\r\n", "\n") => new TextEdit(offset, 1, ""),

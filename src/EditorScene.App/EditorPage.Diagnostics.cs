@@ -75,6 +75,7 @@ public sealed partial class EditorPage
             if (!string.IsNullOrEmpty(name)) Add(name, element);
         }
         Add("Editor", view); Add("Primary editor", _primary.NativeEditor.TextArea.TextView); Add("Types", _navigator.TypeSelector); Add("Members", _navigator.MemberSelector);
+        Add("Document format", _editorStatus.DocumentFormatLabel);
         if (_secondary is not null) Add("Secondary editor", _secondary.NativeEditor.TextArea.TextView);
         if (_active.Search.IsOpened)
             foreach (var element in Descendants(_active.Search).Where(e => e.Name.StartsWith("PART_", StringComparison.Ordinal))) Add(element.Name, element);
@@ -141,6 +142,7 @@ public sealed partial class EditorPage
             TabSize = _active.TabSize, ConvertTabsToSpaces = _active.ConvertTabsToSpaces, RulerColumn = _active.RulerColumn,
             OptionsDialogOpen = _active.IsOptionsDialogOpen, ColumnMapBuilds = _active.ColumnMapBuildCount,
             StatusPosition = _editorStatus.PositionText, StatusRefreshes = _editorStatus.RefreshCount, OverwriteMode = _active.IsOverstrike,
+            StatusFormat = _editorStatus.DocumentFormatText, StatusLineEndings = _editorStatus.LineEndingText, StatusFormatRefreshes = _editorStatus.DocumentFormatRefreshCount,
             OptionInputs = optionInputs, OptionsValidation = optionsValidation, ContextMenuOpen = _active.IsEditorContextMenuOpen, ContextMenuBuilds = _active.ContextMenuBuildCount,
             ContextMenuEnabled = _active.IsDefaultContextMenuEnabled, SecondaryPointerMovesCaret = _active.CanMoveCaretForSecondaryPointerButton, ContextItems = contextItems,
             ActiveView = ReferenceEquals(_active, _primary) ? "Primary" : "Secondary",
@@ -243,6 +245,9 @@ internal sealed class BrowserState
     public long ColumnMapBuilds { get; set; }
     public string StatusPosition { get; set; } = "";
     public long StatusRefreshes { get; set; }
+    public string StatusFormat { get; set; } = "";
+    public string StatusLineEndings { get; set; } = "";
+    public long StatusFormatRefreshes { get; set; }
     public bool OverwriteMode { get; set; }
     public bool Ready { get; set; }
     public string FileName { get; set; } = "";
