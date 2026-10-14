@@ -9,6 +9,7 @@ namespace EditorScene.App;
 public sealed partial class EditorPage
 {
     private readonly Dictionary<string, MenuFlyoutSubItem> _toolbarGroups = new(StringComparer.Ordinal);
+    private MenuFlyoutPresenter? _toolbarRootPresenter;
 
     private void AddToolbarOverflow(MenuFlyoutItem item)
     {
@@ -32,6 +33,54 @@ public sealed partial class EditorPage
         submenu.Items.Add(item);
     }
 
+    private static bool IsWithinToolbarElement(object? element, DependencyObject ancestor)
+    {
+        for (var current = element as DependencyObject; current is not null; current = VisualTreeHelper.GetParent(current))
+            if (ReferenceEquals(current, ancestor)) return true;
+        return false;
+    }
+
+    private void AttachToolbarRoot(MenuFlyoutSubItem group)
+    {
+        if (!_toolbarOverflow.Items.Contains(group)) return;
+        for (var parent = VisualTreeHelper.GetParent(group); parent is not null; parent = VisualTreeHelper.GetParent(parent))
+        {
+            if (parent is not MenuFlyoutPresenter presenter) continue;
+            if (ReferenceEquals(presenter, _toolbarRootPresenter)) return;
+            DetachToolbarRoot();
+            _toolbarRootPresenter = presenter;
+            // This app's desktop/browser hosts both use Uno Skia. Preview runs
+            // before a native item/presenter can consume Escape or restore focus.
+            presenter.AddHandler(PreviewKeyDownEvent, new KeyEventHandler(OnToolbarRootPreviewKeyDown), true);
+            presenter.Unloaded += OnToolbarRootUnloaded;
+            return;
+        }
+    }
+
+    private void DetachToolbarRoot()
+    {
+        if (_toolbarRootPresenter is not { } presenter) return;
+        _toolbarRootPresenter = null;
+        presenter.RemoveHandler(PreviewKeyDownEvent, new KeyEventHandler(OnToolbarRootPreviewKeyDown));
+        presenter.Unloaded -= OnToolbarRootUnloaded;
+    }
+
+    private void OnToolbarRootUnloaded(object sender, RoutedEventArgs args)
+    { if (ReferenceEquals(sender, _toolbarRootPresenter)) DetachToolbarRoot(); }
+
+    private void OnToolbarRootPreviewKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        if (args.Key != VirtualKey.Escape || !ReferenceEquals(sender, _toolbarRootPresenter) || XamlRoot is not { } root) return;
+        var presenter = _toolbarRootPresenter!;
+        var sourceInRoot = IsWithinToolbarElement(args.OriginalSource, presenter);
+        var focused = FocusManager.GetFocusedElement(root);
+        if (_diagnostics) Console.WriteLine($"OVERFLOW_PREVIEW handled={args.Handled} sourceInRoot={sourceInRoot} source={args.OriginalSource?.GetType().Name} focus={focused?.GetType().Name}");
+        // Uno can reuse OriginalSource while focus changes between preview and
+        // bubbling. A child-presenter event must never dismiss this parent too.
+        if (!sourceInRoot || !IsWithinToolbarElement(focused, presenter)) return;
+        if (focused is MenuFlyoutSubItem group) TryDismissToolbarRoot(group, args, "preview-presenter");
+    }
+
     private bool TryDismissToolbarRoot(MenuFlyoutSubItem group, KeyRoutedEventArgs args, string route)
     {
         if (args.Key != VirtualKey.Escape || !_toolbarOverflow.Items.Contains(group) || XamlRoot is not { } root) return false;
@@ -44,7 +93,11 @@ public sealed partial class EditorPage
             foreach (var element in Descendants(child).Prepend(child))
             {
                 if (ReferenceEquals(element, group)) containsOwner = true;
-                else if (element is MenuFlyoutItemBase item && group.Items.Contains(item)) containsChildItem = true;
+                // Check all owned children, not just the focused group's items:
+                // keyboard navigation can change owners while another child exits.
+                else if (element is MenuFlyoutItemBase item)
+                    foreach (var candidate in _toolbarGroups.Values)
+                        if (candidate.Items.Contains(item)) { containsChildItem = true; break; }
             }
             if (containsOwner) rootOpen = true;
             else if (containsChildItem) childOpen = true;
@@ -64,8 +117,7 @@ public sealed partial class EditorPage
         internal ToolbarOverflowGroup(EditorPage page)
         {
             _page = page;
-            // Popup input can arrive already handled, skipping the normal virtual
-            // callback. Observe the bubbling event on its actual native owner too.
+            Loaded += (_, _) => _page.AttachToolbarRoot(this);
             AddHandler(KeyDownEvent, new KeyEventHandler(OnRoutedKeyDown), true);
             Unloaded += (_, _) => _observedEscape = null;
         }
@@ -81,11 +133,7 @@ public sealed partial class EditorPage
             if (args.Key != VirtualKey.Escape) return;
             var observed = ReferenceEquals(args, _observedEscape); _observedEscape = null;
             if (observed) return;
-            // Do not reinterpret a child-presenter event that restored owner focus
-            // while bubbling. Only an event originating in this owner is eligible.
-            DependencyObject? source = args.OriginalSource as DependencyObject;
-            while (source is not null && !ReferenceEquals(source, this)) source = VisualTreeHelper.GetParent(source);
-            if (ReferenceEquals(source, this)) _page.TryDismissToolbarRoot(this, args, "handled-owner");
+            if (IsWithinToolbarElement(args.OriginalSource, this)) _page.TryDismissToolbarRoot(this, args, "handled-owner");
         }
         protected override void OnKeyUp(KeyRoutedEventArgs args)
         {
