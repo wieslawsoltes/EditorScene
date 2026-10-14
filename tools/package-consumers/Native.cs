@@ -71,6 +71,10 @@ public sealed class ConsumerControl : UserControl
         _ = status.DocumentFormatLabel;
         _ = status.DocumentFormatRefreshCount;
         if (status.LineEndingText != "None" || !status.DocumentFormatText.EndsWith("  None", StringComparison.Ordinal)) throw new Exception("Packaged format status failed.");
+        using var paneSplitter = new EditorPaneSplitter { Axis = Orientation.Horizontal, PreferredExtent = 260, MaximumExtent = 400 };
+        paneSplitter.ResizeBy(10);
+        if (paneSplitter.EffectiveExtent != 250) throw new Exception("Packaged tool pane sizing failed.");
+        paneSplitter.ResetExtent(); paneSplitter.CancelResize();
         var split = new ResizableSplitView { First = Editor, Ratio = .4 };
         Resources.MergedDictionaries.Add(EditorChrome.Create(EditorScene.Rendering.Skia.EditorTheme.Light));
         Content = new StackPanel { Children = { documentTab, copyButton, navigation, split, status, diagnostics, outline, picker, new EditorIcon() } };

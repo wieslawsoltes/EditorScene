@@ -13,6 +13,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <WasmShellMonoRuntimeExecutionMode>Interpreter</WasmShellMonoRuntimeExecutionMode>
     <WasmShellEnableThreading>false</WasmShellEnableThreading>
+    <!-- Audit transitive dependencies too; do not suppress security diagnostics. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
     <!-- Roslyn is not trim-safe. Retain its compiler metadata/reflection paths instead of suppressing IL2104. -->
     <PublishTrimmed Condition="'$(TargetFramework)' == 'net10.0-browserwasm'">false</PublishTrimmed>
     <WasmShellWebAppBasePath Condition="'$(WasmShellWebAppBasePath)' == ''">/EditorScene/</WasmShellWebAppBasePath>
@@ -22,5 +25,8 @@
     <ProjectReference Include="../EditorScene.Languages.DotNet/EditorScene.Languages.DotNet.csproj" />
     <ProjectReference Include="../EditorScene.Languages.Structured/EditorScene.Languages.Structured.csproj" />
     <ProjectReference Include="../EditorScene.Protocol/EditorScene.Protocol.csproj" />
+    <!-- Override vulnerable transitive 10.0.12 references; October 2026 Microsoft advisories fix both in 10.0.13. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
   </ItemGroup>
 </Project>

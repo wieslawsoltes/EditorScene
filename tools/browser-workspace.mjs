@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import {checkDiagnosticGrid} from './browser-diagnostics.mjs';
 import {checkEditorOptions} from './browser-options.mjs';
+import {checkPaneSizing} from './browser-pane-sizing.mjs';
 
 export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks}) {
   await command('File','New');
@@ -58,6 +59,8 @@ export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,co
   s=await state();first=s.Controls['Primary editor'];second=s.Controls['Secondary editor'];
   assert.ok(second[0]>first[0]+first[2]-2&&Math.abs(second[1]-first[1])<2,'Expected side-by-side panes');
   await command('Window','Center Split');await wait(()=>globalThis.__editorSceneState?.SplitRatio===.5&&globalThis.__editorSceneState.OpenMenuCount===0);
+  s=await state();first=s.Controls['Primary editor'];second=s.Controls['Secondary editor'];
+  assert.ok(second[0]>first[0]+first[2]-2&&Math.abs(second[1]-first[1])<2,'Expected side-by-side panes after centering');
   await click('Theme');await click('Choice Light');await wait(()=>globalThis.__editorSceneState?.Theme==='Light');
   await page.screenshot({path:path.join(output,'classic-split-light.png')});
   checks.push('Changing split orientation and centering preserve shared text and read-only input protection');
@@ -84,6 +87,7 @@ export async function checkWorkspace({page,state,wait,textIs,paste,click,fill,co
   await focusEditor();
   await checkDiagnosticGrid({page,state,wait,textIs,paste,click,fill,command,focusEditor,output,checks});
   await checkEditorOptions({page,state,wait,textIs,paste,click,command,output,checks});
+  await checkPaneSizing({page,state,wait,click,focusEditor,output,checks});
 
   async function findThroughOverflow(screenshot) {
     await click('Toolbar commands');
