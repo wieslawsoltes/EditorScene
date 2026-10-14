@@ -71,6 +71,7 @@ internal static class NativeWorkspaceChecks
         errors.Dispose(); status.Dispose(); editor.IsOverstrike = !editor.IsOverstrike;
         Check(true, "Disposed workspace controls remain detached during subsequent editor events");
         NativeWorkspaceReviewChecks.Run(checks);
+        NativePaneSplitterChecks.Run(checks);
 
         async Task SetFilterAsync(string text)
         {
