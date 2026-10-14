@@ -84,4 +84,33 @@ export async function checkPaneSizing({page,state,wait,click,focusEditor,output,
   for(const key of ['FileName','Revision','TextPrefix','DocumentTabBuilds','DocumentCount']) assert.equal(current[key],original[key],key+' changed during tool-pane resizing');
   checks.push('Distinct native pane close controls retain extents through hide/reopen, tool switching and themes without rebuilding tabs or editing text');
   await focusEditor();
+  await checkOverflowDismissal();
+
+  async function checkOverflowDismissal() {
+    const before=await state();
+    for(const theme of ['Light','Dark']) {
+      await click('Theme');await click('Choice '+theme);await wait(t=>globalThis.__editorSceneState?.Theme===t,theme);
+      await click('Toolbar commands');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===1);
+      await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+      for(const group of ['File','Edit','IntelliPrompt','Formatting','Search','Navigation','Macros']) {
+        await click('Toolbar commands');await click('Visible submenu '+group);
+        await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===2&&Object.keys(globalThis.__editorSceneState.VisibleCommandEnabled).length>0);
+        await page.keyboard.press('Escape');
+        await wait(g=>{
+          const s=globalThis.__editorSceneState;
+          return s?.OpenMenuCount===1&&Object.keys(s.VisibleCommandEnabled).length===0&&!!s.Controls?.['Visible submenu '+g];
+        },group);
+        await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+        const after=await state();
+        for(const key of ['FileName','Revision','TextPrefix','DocumentTabBuilds','DocumentCount','Modified']) assert.equal(after[key],before[key],`${theme}/${group}: ${key} changed during Escape`);
+        for(const key of ['Command Undo','Command Redo']) assert.equal(after.CommandSurfaceEnabled[key],before.CommandSurfaceEnabled[key],`${theme}/${group}: ${key} changed during Escape`);
+      }
+      checks.push(`Native root-only and all seven overflow child/root Escape pairs preserve documents and undo history in ${theme}`);
+    }
+    if(before.Theme!=='Dark') {
+      await click('Theme');await click('Choice '+(before.Theme==='High Contrast'?'High contrast':before.Theme));
+      await wait(t=>globalThis.__editorSceneState?.Theme===t,before.Theme);
+    }
+    await focusEditor();
+  }
 }
