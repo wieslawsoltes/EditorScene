@@ -88,11 +88,36 @@ export async function checkPaneSizing({page,state,wait,click,focusEditor,output,
 
   async function checkOverflowDismissal() {
     const before=await state();
+    function unchanged(after,label) {
+      for(const key of ['FileName','Revision','TextPrefix','DocumentTabBuilds','DocumentCount','Modified']) assert.equal(after[key],before[key],`${label}: ${key} changed during menu interaction`);
+      for(const key of ['Command Undo','Command Redo']) assert.equal(after.CommandSurfaceEnabled[key],before.CommandSurfaceEnabled[key],`${label}: ${key} changed during menu interaction`);
+    }
+    async function hover(group) {
+      await wait(g=>!!globalThis.__editorSceneState?.Controls?.['Visible submenu '+g],group);
+      const b=(await state()).Controls['Visible submenu '+group];
+      await page.mouse.move(b[0]+b[2]/2,b[1]+b[3]/2);
+    }
+    async function closePair() {
+      await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===1);
+      await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
+    }
+    async function remainsClosed() {
+      // Observe continuously beyond two native hover-delay periods. Never hide
+      // a reopened popup or mutate application state to make the assertion pass.
+      await page.evaluate(()=>{globalThis.__overflowQuietProbe={start:performance.now(),last:null,samples:0};});
+      await wait(()=>{
+        const p=globalThis.__overflowQuietProbe,s=globalThis.__editorSceneState;
+        if(s?.OpenMenuCount!==0)throw new Error('A dismissed overflow submenu reopened after its timer delay');
+        if(p.last!==s){p.last=s;p.samples++;}
+        return p.samples>=3&&performance.now()-p.start>=900;
+      });
+    }
     for(const theme of ['Light','Dark']) {
       await click('Theme');await click('Choice '+theme);await wait(t=>globalThis.__editorSceneState?.Theme===t,theme);
       await click('Toolbar commands');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===1);
       await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
       for(const group of ['File','Edit','IntelliPrompt','Formatting','Search','Navigation','Macros']) {
+        console.log(`OVERFLOW_CHECK ${theme}/${group}`);
         await click('Toolbar commands');await click('Visible submenu '+group);
         await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===2&&Object.keys(globalThis.__editorSceneState.VisibleCommandEnabled).length>0);
         await page.keyboard.press('Escape');
@@ -101,11 +126,22 @@ export async function checkPaneSizing({page,state,wait,click,focusEditor,output,
           return s?.OpenMenuCount===1&&Object.keys(s.VisibleCommandEnabled).length===0&&!!s.Controls?.['Visible submenu '+g];
         },group);
         await page.keyboard.press('Escape');await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===0);
-        const after=await state();
-        for(const key of ['FileName','Revision','TextPrefix','DocumentTabBuilds','DocumentCount','Modified']) assert.equal(after[key],before[key],`${theme}/${group}: ${key} changed during Escape`);
-        for(const key of ['Command Undo','Command Redo']) assert.equal(after.CommandSurfaceEnabled[key],before.CommandSurfaceEnabled[key],`${theme}/${group}: ${key} changed during Escape`);
+        unchanged(await state(),`${theme}/${group}`);
       }
       checks.push(`Native root-only and all seven overflow child/root Escape pairs preserve documents and undo history in ${theme}`);
+      await click('Toolbar commands');await hover('File');
+      await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===2&&!!globalThis.__editorSceneState.Controls?.['Visible command New']);
+      await hover('Edit');
+      await wait(()=>{
+        const s=globalThis.__editorSceneState;
+        return s?.OpenMenuCount===2&&!!s.Controls?.['Visible command Paste']&&!s.Controls?.['Visible command New'];
+      });
+      await closePair();await remainsClosed();
+      await click('Toolbar commands');await hover('Search');
+      await wait(()=>globalThis.__editorSceneState?.OpenMenuCount===2&&!!globalThis.__editorSceneState.Controls?.['Visible command Find']);
+      await closePair();await remainsClosed();
+      unchanged(await state(),`${theme}/hover`);
+      checks.push(`Native hover-only submenu opening and sibling switching leave no delayed orphan popup after dismissal in ${theme}`);
     }
     if(before.Theme!=='Dark') {
       await click('Theme');await click('Choice '+(before.Theme==='High Contrast'?'High contrast':before.Theme));
