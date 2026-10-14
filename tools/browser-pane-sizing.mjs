@@ -15,7 +15,7 @@ export async function checkPaneSizing({page,state,wait,click,focusEditor,output,
   const extentIs=(name,dimension,expected)=>wait(({name,dimension,expected})=>Math.abs((globalThis.__editorSceneState?.Controls?.[name]?.[dimension]??-10000)-expected)<2,{name,dimension,expected});
   async function gripFocus(name) {
     await click(name);
-    await wait(()=>globalThis.__editorSceneState?.FocusedControl==='EditorScene.Controls.EditorPaneSplitter');
+    await wait(()=>globalThis.__editorSceneState?.FocusedControl==='Microsoft.UI.Xaml.Controls.Primitives.Thumb');
   }
   async function drag(name,dx,dy,cancel=false) {
     const b=(await state()).Controls[name],x=b[0]+b[2]/2,y=b[1]+b[3]/2;

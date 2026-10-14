@@ -10,10 +10,11 @@ using Windows.System;
 namespace EditorScene.Controls;
 
 /// <summary>A reusable separator for a trailing (right or bottom) tool pane.
-/// The host supplies available bounds and applies EffectiveExtent to its pane.
+/// Hosts the sealed native Thumb; the host applies EffectiveExtent to its pane.
 /// Temporary viewport constraints never overwrite the user's preferred extent.</summary>
-public sealed class EditorPaneSplitter : Thumb, IDisposable
+public sealed class EditorPaneSplitter : UserControl, IDisposable
 {
+    private readonly Thumb _separator = new() { MinHeight = 0, MinWidth = 0, IsTabStop = true, UseSystemFocusVisuals = true };
     private double _preferred = 240, _minimum = 120, _maximum = 600, _default = 240;
     private double _publishedPreferred = double.NaN, _publishedEffective = double.NaN;
     private double _dragStart;
@@ -22,16 +23,19 @@ public sealed class EditorPaneSplitter : Thumb, IDisposable
     private EditorTheme? _theme;
     public EditorPaneSplitter()
     {
-        MinHeight = MinWidth = 0; IsTabStop = true; UseSystemFocusVisuals = true;
-        Template = (ControlTemplate)XamlReader.Load("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}'/></ControlTemplate>");
-        AutomationProperties.SetName(this, "Resize tool pane");
-        ToolTipService.SetToolTip(this, "Drag or use arrows to resize · Home/End: limits · Enter/double-click: reset · Escape: cancel drag");
-        DragStarted += OnDragStarted; DragDelta += OnDragDelta; DragCompleted += OnDragCompleted;
-        KeyDown += OnKeyDownEvent; DoubleTapped += OnDoubleTapped;
-        AddHandler(PointerPressedEvent, new PointerEventHandler(OnPointerPressedEvent), true);
-        Unloaded += OnUnloaded;
+        MinHeight = MinWidth = 0; IsTabStop = false;
+        HorizontalContentAlignment = HorizontalAlignment.Stretch; VerticalContentAlignment = VerticalAlignment.Stretch;
+        _separator.Template = (ControlTemplate)XamlReader.Load("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}'/></ControlTemplate>");
+        AutomationProperties.SetName(this, "Resize tool pane"); AutomationProperties.SetName(_separator, "Resize tool pane");
+        ToolTipService.SetToolTip(_separator, "Drag or use arrows to resize · Home/End: limits · Enter/double-click: reset · Escape: cancel drag");
+        Content = _separator;
+        _separator.DragStarted += OnDragStarted; _separator.DragDelta += OnDragDelta; _separator.DragCompleted += OnDragCompleted;
+        _separator.KeyDown += OnKeyDownEvent; _separator.DoubleTapped += OnDoubleTapped;
+        _separator.AddHandler(PointerPressedEvent, new PointerEventHandler(OnPointerPressedEvent), true);
+        Loaded += OnLoaded; Unloaded += OnUnloaded;
         UpdateAxis(); ApplyTheme(EditorTheme.Light); Publish();
     }
+    public Thumb Separator => _separator;
     /// <summary>Horizontal adjusts width; Vertical adjusts height.</summary>
     public Orientation Axis
     {
@@ -65,7 +69,7 @@ public sealed class EditorPaneSplitter : Thumb, IDisposable
         Width = _axis == Orientation.Horizontal ? 6 : double.NaN;
         Height = _axis == Orientation.Vertical ? 6 : double.NaN;
         HorizontalAlignment = HorizontalAlignment.Stretch; VerticalAlignment = VerticalAlignment.Stretch;
-        BorderThickness = _axis == Orientation.Horizontal ? new Thickness(1, 0, 1, 0) : new Thickness(0, 1, 0, 1);
+        _separator.BorderThickness = _axis == Orientation.Horizontal ? new Thickness(1, 0, 1, 0) : new Thickness(0, 1, 0, 1);
     }
     /// <summary>Physical right/down movement shrinks a trailing pane. Uses its
     /// effective visible extent so an old off-screen preference cannot cause a jump.</summary>
@@ -81,7 +85,7 @@ public sealed class EditorPaneSplitter : Thumb, IDisposable
     {
         Verify(); if (!_dragging) return;
         var original = _dragStart; _dragging = false;
-        CancelDrag();
+        _separator.CancelDrag();
         if (!_disposed) PreferredExtent = original;
     }
     private void Publish(bool forceHelp = false)
@@ -89,7 +93,8 @@ public sealed class EditorPaneSplitter : Thumb, IDisposable
         var effective = EffectiveExtent;
         if (!forceHelp && _publishedPreferred == _preferred && _publishedEffective == effective) return;
         _publishedPreferred = _preferred; _publishedEffective = effective;
-        AutomationProperties.SetHelpText(this, $"Tool pane {(_axis == Orientation.Horizontal ? "width" : "height")}: {effective:0} pixels. Arrow keys resize; Home and End select limits; Enter resets; Escape cancels a drag.");
+        var help = $"Tool pane {(_axis == Orientation.Horizontal ? "width" : "height")}: {effective:0} pixels. Arrow keys resize; Home and End select limits; Enter resets; Escape cancels a drag.";
+        AutomationProperties.SetHelpText(this, help); AutomationProperties.SetHelpText(_separator, help);
         ExtentChanged?.Invoke(this, EventArgs.Empty);
     }
     public void ApplyTheme(EditorTheme theme)
@@ -97,10 +102,17 @@ public sealed class EditorPaneSplitter : Thumb, IDisposable
         Verify(); ArgumentNullException.ThrowIfNull(theme);
         if (ReferenceEquals(theme, _theme)) return;
         _theme = theme; RequestedTheme = theme.IsDark ? ElementTheme.Dark : ElementTheme.Light;
-        Background = SyntaxEditor.Brush(theme.Chrome); BorderBrush = SyntaxEditor.Brush(theme.Border);
+        Background = _separator.Background = SyntaxEditor.Brush(theme.Chrome); _separator.BorderBrush = SyntaxEditor.Brush(theme.Border);
+    }
+    private void OnLoaded(object sender, RoutedEventArgs args)
+    {
+        if (_disposed) return;
+        // Hosts can give the wrapper a distinct name before mounting it; expose
+        // that same name on the actual keyboard/drag target, not only its parent.
+        AutomationProperties.SetName(_separator, AutomationProperties.GetName(this));
     }
     private void OnPointerPressedEvent(object sender, PointerRoutedEventArgs args)
-    { if (!_disposed && IsEnabled && args.GetCurrentPoint(this).Properties.IsLeftButtonPressed) Focus(FocusState.Pointer); }
+    { if (!_disposed && IsEnabled && args.GetCurrentPoint(_separator).Properties.IsLeftButtonPressed) _separator.Focus(FocusState.Pointer); }
     private void OnDragStarted(object sender, DragStartedEventArgs args)
     { if (_disposed) return; _dragStart = _preferred; _dragging = true; }
     private void OnDragDelta(object sender, DragDeltaEventArgs args)
@@ -129,10 +141,11 @@ public sealed class EditorPaneSplitter : Thumb, IDisposable
     public new void Dispose()
     {
         if (_disposed) return;
-        _disposed = true; _dragging = false; ExtentChanged = null; CancelDrag();
-        DragStarted -= OnDragStarted; DragDelta -= OnDragDelta; DragCompleted -= OnDragCompleted;
-        KeyDown -= OnKeyDownEvent; DoubleTapped -= OnDoubleTapped; Unloaded -= OnUnloaded;
-        RemoveHandler(PointerPressedEvent, new PointerEventHandler(OnPointerPressedEvent));
-        _theme = null; base.Dispose();
+        _disposed = true; _dragging = false; ExtentChanged = null;
+        _separator.DragStarted -= OnDragStarted; _separator.DragDelta -= OnDragDelta; _separator.DragCompleted -= OnDragCompleted;
+        _separator.KeyDown -= OnKeyDownEvent; _separator.DoubleTapped -= OnDoubleTapped;
+        Loaded -= OnLoaded; Unloaded -= OnUnloaded;
+        _separator.RemoveHandler(PointerPressedEvent, new PointerEventHandler(OnPointerPressedEvent));
+        _separator.CancelDrag(); _theme = null; base.Dispose();
     }
 }

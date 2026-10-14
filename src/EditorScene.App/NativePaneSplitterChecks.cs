@@ -13,7 +13,7 @@ internal static class NativePaneSplitterChecks
         void Check(bool value, string name) { if (!value) throw new InvalidOperationException("Native pane splitter: " + name); checks.Add(name); }
         using var splitter = new EditorPaneSplitter(); var changes = 0;
         splitter.ExtentChanged += (_, _) => changes++;
-        Check(splitter.EffectiveExtent == 240 && splitter.Height == 6 && splitter.IsTabStop && splitter.UseSystemFocusVisuals,
+        Check(splitter.EffectiveExtent == 240 && splitter.Height == 6 && !splitter.IsTabStop && splitter.Separator.IsTabStop && splitter.Separator.UseSystemFocusVisuals,
             "Native tool splitter has a compact keyboard-focusable default separator");
         splitter.PreferredExtent = 320; splitter.MaximumExtent = 180;
         Check(splitter.PreferredExtent == 320 && splitter.EffectiveExtent == 180,
