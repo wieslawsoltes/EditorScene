@@ -53,7 +53,10 @@ public sealed partial class EditorPage
         _editorGrid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); _editorGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); _editorGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _views.First = _primary; _views.Orientation = _splitOrientation; _views.LayoutChanged += (_, _) => QueueDiagnostics(); _editorGrid.Children.Add(_views); Register("Split separator", _views.Separator);
         var outlineGrid = new Grid(); outlineGrid.RowDefinitions.Add(new() { Height = GridLength.Auto }); outlineGrid.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        var outlineHeading = PaneHeading("Document Outline", ToggleOutline); outlineGrid.Children.Add(outlineHeading); Grid.SetRow(_outline, 1); outlineGrid.Children.Add(_outline); _outlinePane.Child = outlineGrid;
+        var outlineHeading = PaneHeading("Document Outline", ToggleOutline); outlineGrid.Children.Add(outlineHeading); Grid.SetRow(_outline, 1); outlineGrid.Children.Add(_outline);
+        var outlineHost = new Grid(); outlineHost.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); outlineHost.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        outlineHost.Children.Add(_outlineSplitter); Grid.SetColumn(outlineGrid, 1); outlineHost.Children.Add(outlineGrid); _outlinePane.Child = outlineHost;
+        Register("Resize document outline", _outlineSplitter);
         Grid.SetColumn(_outlinePane, 1); _editorGrid.Children.Add(_outlinePane); _chromeBorders.Add(_outlinePane);
         var rail = new StackPanel { Width = 24 };
         var tabCanvas = new Canvas { Width = 22, Height = 126 };
@@ -62,10 +65,7 @@ public sealed partial class EditorPage
         var outlineButton = new Button { Content = tabCanvas, Width = 24, Height = 132, Padding = new Thickness(0), BorderThickness = new Thickness(0) };
         outlineButton.Click += (_, _) => ToggleOutline(); Register("Document outline", outlineButton); rail.Children.Add(outlineButton); _chromePanels.Add(rail); Grid.SetColumn(rail, 2); _editorGrid.Children.Add(rail); Put(_editorGrid, 5);
         var toolGrid = new Grid(); toolGrid.RowDefinitions.Add(new() { Height = GridLength.Auto }); toolGrid.RowDefinitions.Add(new() { Height = GridLength.Auto }); toolGrid.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        var resize = new Thumb { Height = 5, MinHeight = 5, Background = SyntaxEditor.Brush(_theme.Chrome), IsTabStop = false };
-        resize.Template = (ControlTemplate)XamlReader.Load("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='{TemplateBinding Background}'/></ControlTemplate>");
-        resize.DragDelta += (_, e) => _toolPane.Height = Math.Clamp(_toolPane.Height - e.VerticalChange, 120, Math.Max(120, ActualHeight * .6));
-        Register("Resize tool window", resize); toolGrid.Children.Add(resize);
+        Register("Resize tool window", _toolSplitter); toolGrid.Children.Add(_toolSplitter);
         var heading = PaneHeading(_toolTitle, () => { _toolPane.Visibility = Visibility.Collapsed; QueueDiagnostics(); }); Grid.SetRow(heading, 1); toolGrid.Children.Add(heading);
         _toolContent.Content = _errors; Grid.SetRow(_toolContent, 2); toolGrid.Children.Add(_toolContent); _toolPane.Child = toolGrid; Put(_toolPane, 6); _chromeBorders.Add(_toolPane);
         _errors.RowsChanged += (_, _) => { UpdateErrorCaption(); QueueDiagnostics(); };
@@ -76,15 +76,17 @@ public sealed partial class EditorPage
         var eventTab = new Button { Content = "Events", Height = 24, MinHeight = 24, FontSize = 11, Padding = new Thickness(10, 2, 10, 2), BorderThickness = new Thickness(0) };
         eventTab.Click += (_, _) => ToggleToolPane(true); Register("Events", eventTab); toolTabs.Children.Add(eventTab); Put(toolTabs, 7); _chromePanels.Add(toolTabs);
         Put(_editorStatus, 8); Register("Status bar", _editorStatus); Register("Editor zoom", _editorStatus.ZoomSlider); Register("Reset zoom", _editorStatus.ResetZoomButton); Register("Insert or overwrite", _editorStatus.OverwriteButton);
+        InitializePaneSizing();
     }
     private Grid PaneHeading(string title, Action close) => PaneHeading(new TextBlock { Text = title, FontSize = 12, Margin = new Thickness(7, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center }, close);
     private Grid PaneHeading(TextBlock title, Action close)
     {
         var grid = new Grid { Height = 25 };
         grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        grid.Children.Add(title);
+        title.TextTrimming = TextTrimming.CharacterEllipsis; _paneCaptions.Add(title); grid.Children.Add(title);
         var button = new Button { Content = NewIcon(EditorIconKind.Close), Width = 24, Height = 24, MinHeight = 24, Padding = new Thickness(4), BorderThickness = new Thickness(0) };
-        button.Click += (_, _) => close(); ToolTipService.SetToolTip(button, "Hide tool window"); Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Hide tool window");
+        button.Click += (_, _) => close(); ToolTipService.SetToolTip(button, "Hide tool window");
+        Register(ReferenceEquals(title, _toolTitle) ? "Hide bottom tool window" : "Hide " + title.Text, button);
         Grid.SetColumn(button, 1); grid.Children.Add(button); _chromePanels.Add(grid); return grid;
     }
     private void BuildClassicToolbar()
@@ -154,7 +156,7 @@ public sealed partial class EditorPage
     {
         if (_chromeResources is not null) Resources.MergedDictionaries.Remove(_chromeResources);
         _chromeResources = EditorChrome.Create(theme); Resources.MergedDictionaries.Add(_chromeResources);
-        _editorStatus.ApplyTheme(theme); _errors.ApplyTheme(theme); _views.ApplyTheme(theme);
+        _editorStatus.ApplyTheme(theme); _errors.ApplyTheme(theme); _views.ApplyTheme(theme); ApplyPaneSizingTheme(theme);
         foreach (var separator in _toolbarSeparators) separator.Background = SyntaxEditor.Brush(theme.Border);
         foreach (var icon in _icons) icon.IsHighContrast = ReferenceEquals(theme, EditorTheme.HighContrast);
     }
