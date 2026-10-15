@@ -40,6 +40,7 @@ public sealed partial class SyntaxEditor : UserControl, IDisposable
     {
         IsTabStop = false; Content = _editor; FontSize = 13;
         _editor.ShowLineNumbers = true; _editor.FontSize = 13;
+        InitializeScrollBarIndicators();
         AutomationProperties.SetName(this, "Syntax editor"); AutomationProperties.SetName(_editor.TextArea, "Code editor input");
         _input = new InputHandler(this); _editor.TextArea.PushStackedInputHandler(_input);
         _editor.TextArea.TextEntering += OnTextEntering; _editor.TextArea.TextEntered += OnTextEntered;
