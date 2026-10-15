@@ -82,6 +82,15 @@ export async function checkScrollBars({browser, origin, output, checks, log}) {
       assert.ok(Math.abs(bar.Maximum-Math.max(0,bar.Extent-bar.ViewportSize))<.5);
       assert.ok(Math.abs(bar.Value-bar.Offset)<.1);
     };
+    const hoverRail = async key => {
+      // Native dynamic templates contract arrows/track after pointer exit while
+      // retaining the thumb. Enter that painted thumb, then wait for the real
+      // hover animation before requiring the arrow or paging button to be opaque.
+      await page.mouse.move(...center(thumb((await state()).EditorScrollBars[key]).Bounds));
+      await wait(k => globalThis.__editorSceneState?.EditorScrollBars?.[k]?.Parts.some(
+        p => p.Visible && p.Name.endsWith('SmallIncrease') && p.Opacity>.98), key);
+      return (await state()).EditorScrollBars[key];
+    };
     const screenshotRail = async bar => {
       // Exclude shared cell borders; all sampled pixels belong to the native
       // scrollbar, never text/caret pixels that happen to change when scrolling.
@@ -110,21 +119,23 @@ export async function checkScrollBars({browser, origin, output, checks, log}) {
           let s=await state(), bar=s.EditorScrollBars[key];
           checkGeometry(bar,axis); thumb(bar);
           const revision=s.Revision, caret=s.CaretOffset;
-          await page.mouse.move(2,2); await page.waitForTimeout(1100);
+          await page.mouse.move(2,2); await page.waitForTimeout(3000);
           const before=await screenshotRail((await state()).EditorScrollBars[key]);
           // Exercise the existing native arrow-button -> ValueChanged -> viewport path.
+          bar=await hoverRail(key);
           await page.mouse.click(...center(part(bar,'SmallIncrease').Bounds));
           await wait(k=>globalThis.__editorSceneState?.EditorScrollBars?.[k]?.Value>0,key); await synced(key);
           bar=(await state()).EditorScrollBars[key];
           assert.ok(Math.abs(bar.Value-bar.SmallChange)<.5, 'Arrow click moves exactly one native small step');
           await drag(key);
-          await page.mouse.move(2,2); await page.waitForTimeout(1100);
+          await page.mouse.move(2,2); await page.waitForTimeout(3000);
           bar=(await state()).EditorScrollBars[key]; checkGeometry(bar,axis); thumb(bar);
           const after=await screenshotRail(bar);
           assert.ok(!before.equals(after), 'Moving the thumb must change actual scrollbar raster pixels, not merely its numeric Value');
           await writeFile(path.join(output,`scrollbar-${axis.toLowerCase()}-${theme.toLowerCase()}-${scale}x-start.png`),before);
           await writeFile(path.join(output,`scrollbar-${axis.toLowerCase()}-${theme.toLowerCase()}-${scale}x-scrolled.png`),after);
           const previous=bar.Value, step=Math.min(previous,bar.LargeChange);
+          bar=await hoverRail(key);
           await page.mouse.click(...center(part(bar,'LargeDecrease').Bounds));
           await wait(({key,previous})=>globalThis.__editorSceneState?.EditorScrollBars?.[key]?.Value<previous,{key,previous}); await synced(key);
           bar=(await state()).EditorScrollBars[key];
@@ -132,7 +143,7 @@ export async function checkScrollBars({browser, origin, output, checks, log}) {
           s=await state(); assert.equal(s.Revision,revision); assert.equal(s.CaretOffset,caret);
           checks.push(`Painted ${axis.toLowerCase()} native scrollbar survives idle/pointer exit, arrow, thumb drag and track paging / ${theme} / ${scale}x`);
         }
-        await page.mouse.move(2,2); await page.waitForTimeout(1100);
+        await page.mouse.move(2,2); await page.waitForTimeout(3000);
         await page.screenshot({path:path.join(output,`scrollbars-${theme.toLowerCase()}-${scale}x.png`)});
       }
       await home();
@@ -161,7 +172,7 @@ export async function checkScrollBars({browser, origin, output, checks, log}) {
       checks.push(`Shared-document split views own painted, independent native scrollbars and close cleanly / ${scale}x`);
       await page.setViewportSize({width:640,height:560});
       await wait(()=>globalThis.__editorSceneState?.Controls?.Editor?.[2]<640);
-      await home(); await page.mouse.move(2,2); await page.waitForTimeout(1100);
+      await home(); await page.mouse.move(2,2); await page.waitForTimeout(3000);
       for (const [key,bar] of Object.entries((await state()).EditorScrollBars)) { checkGeometry(bar,key.split('.')[1]); thumb(bar); }
       await page.screenshot({path:path.join(output,`scrollbars-narrow-${scale}x.png`)});
       await page.setViewportSize({width:1280,height:800}); await wait(()=>globalThis.__editorSceneState?.Controls?.Editor?.[2]>640);
