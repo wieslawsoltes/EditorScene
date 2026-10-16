@@ -31,7 +31,7 @@ internal static class NativeScrollBarChecks
             ? "Editor vertical scrollbar" : "Editor horizontal scrollbar")), "Native editor scrollbars have axis-specific accessible names");
         Check(bars.All(b => b.Orientation == Orientation.Vertical ? b.Width == 14 : b.Height == 14),
             "Native scrollbar visibility preserves the compact native rail dimensions");
-        using var unrelated = new ScrollBar();
+        var unrelated = new ScrollBar();
         ((Panel)editor.NativeEditor.TextArea.Content).Children.Add(unrelated);
         foreach (var theme in new[] { EditorTheme.Light, EditorTheme.Dark, EditorTheme.HighContrast })
         {
