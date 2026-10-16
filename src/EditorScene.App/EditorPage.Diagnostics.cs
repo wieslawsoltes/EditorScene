@@ -139,6 +139,7 @@ public sealed partial class EditorPage
             DiagnosticProjectionBuilds = _errors.ProjectionBuildCount, DiagnosticFilterBuilds = _errors.FilterBuildCount,
             DiagnosticRenderedTexts = Descendants(_errors.RowsView).OfType<TextBlock>().Select(t => t.Text).Take(200).ToArray(),
             DiagnosticGrid = CaptureDiagnosticGrid(),
+            EditorScrollBars = CaptureEditorScrollBars(),
             TabSize = _active.TabSize, ConvertTabsToSpaces = _active.ConvertTabsToSpaces, RulerColumn = _active.RulerColumn,
             OptionsDialogOpen = _active.IsOptionsDialogOpen, ColumnMapBuilds = _active.ColumnMapBuildCount,
             StatusPosition = _editorStatus.PositionText, StatusRefreshes = _editorStatus.RefreshCount, OverwriteMode = _active.IsOverstrike,
@@ -225,6 +226,7 @@ internal sealed class BrowserState
     public long ContextMenuBuilds { get; set; }
     public Dictionary<string, bool> ContextCommands { get; set; } = [];
     public DiagnosticGridState DiagnosticGrid { get; set; } = new();
+    public Dictionary<string, EditorScrollBarState> EditorScrollBars { get; set; } = [];
     public string SplitOrientation { get; set; } = "";
     public double SplitRatio { get; set; }
     public double FontSize { get; set; }

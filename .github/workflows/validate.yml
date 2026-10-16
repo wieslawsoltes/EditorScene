@@ -101,7 +101,7 @@ jobs:
   browser:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -125,6 +125,7 @@ jobs:
       - name: Install pinned browser test tools
         run: |
           node --check tools/browser-smoke.mjs
+          node --check tools/browser-scrollbars.mjs
           node --check tools/lsp-fixture.mjs
           node --check tools/browser-lsp.mjs
           npm install --prefix tools --no-save --package-lock=false playwright@1.64.0 ws@8.18.3

@@ -21,6 +21,7 @@ jobs:
           git bundle create artifacts/source/EditorScene.bundle HEAD
           git -C external/UnoEdit bundle create "$PWD/artifacts/source/UnoEdit.bundle" HEAD
           git rev-parse HEAD > artifacts/source/REVISION.txt
+          git rev-parse HEAD^{tree} > artifacts/source/TREE.txt
           git -C external/UnoEdit rev-parse HEAD > artifacts/source/DEPENDENCY-REVISION.txt
           cd artifacts/source
           sha256sum *.bundle > SHA256SUMS.txt
